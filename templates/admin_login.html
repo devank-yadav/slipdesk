@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin Login</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Arial', sans-serif;
+      background-color: #ffffff;
+      color: #1c1c1e;
+    }
+    h2 {
+      text-align: center;
+      margin-top: 60px;
+      font-weight: 600;
+    }
+    .login-form {
+      width: 300px;
+      margin: 40px auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    label {
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+    input[type="text"],
+    input[type="password"] {
+      padding: 10px;
+      border: 1px solid #d2d2d7;
+      border-radius: 6px;
+      font-size: 14px;
+      outline: none;
+    }
+    input[type="text"]:focus,
+    input[type="password"]:focus {
+      border-color: #007aff;
+    }
+    input[type="submit"] {
+      background: #007aff;
+      color: #fff;
+      padding: 12px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 600;
+      margin-top: 10px;
+    }
+    input[type="submit"]:hover {
+      background: #005eb8;
+    }
+    .message {
+      color: red;
+      text-align: center;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Admin Login</h2>
+  <form class="login-form" action="/admin_login" method="post">
+    <div>
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" required>
+    </div>
+
+    <div>
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" required>
+    </div>
+
+    <input type="submit" value="Login">
+
+    {% if error %}
+      <p class="message">{{ error }}</p>
+    {% endif %}
+  </form>
+</body>
+</html>

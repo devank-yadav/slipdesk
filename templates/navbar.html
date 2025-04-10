@@ -1,0 +1,55 @@
+<!-- templates/navbar.html -->
+<style>
+    .navbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 18px 36px;
+      background-color: #f9f9f9;
+      border-bottom: 1px solid #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      font-size: 16px;
+    }
+  
+    .navbar .user {
+      font-weight: 600;
+      color: #1c1c1e;
+    }
+  
+    .navbar .menu {
+      display: flex;
+      gap: 28px;
+    }
+  
+    .navbar .menu a {
+      text-decoration: none;
+      font-weight: 500;
+      color: #007aff;
+      transition: color 0.2s;
+    }
+  
+    .navbar .menu a:hover {
+      color: #0051cc;
+    }
+  
+    .navbar .logout {
+      color: #ff3b30;
+      font-weight: 600;
+    }
+  
+    .navbar .logout:hover {
+      color: #c62828;
+    }
+  </style>
+  
+  <div class="navbar">
+    <div class="user">👤 {{ session['admin'] }}</div>
+    <div class="menu">
+        <a href="/admin_portal">Dashboard</a>
+        <a href="/generator">Generator</a>
+
+      <a href="/settings">Settings</a>
+      <a href="/logout" class="logout">Logout</a>
+    </div>
+  </div>
+  

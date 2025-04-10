@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Duty Slip Generator</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Arial', sans-serif;
+      background-color: #ffffff;
+      color: #1c1c1e;
+    }
+    h2 {
+      text-align: center;
+      margin-top: 40px;
+      font-weight: 600;
+    }
+    .generator-form {
+      width: 600px;
+      margin: 20px auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    label {
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+    input[type="text"],
+    input[type="date"],
+    input[type="time"],
+    select {
+      padding: 8px;
+      border: 1px solid #d2d2d7;
+      border-radius: 6px;
+      font-size: 14px;
+      outline: none;
+      width: 100%;
+    }
+    input[type="text"]:focus,
+    input[type="date"]:focus,
+    input[type="time"]:focus,
+    select:focus {
+      border-color: #007aff;
+    }
+    input[type="submit"] {
+      background: #007aff;
+      color: #fff;
+      padding: 12px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 600;
+      margin-top: 10px;
+    }
+    input[type="submit"]:hover {
+      background: #005eb8;
+    }
+  </style>
+</head>
+<body>
+  {% include 'navbar.html' %}
+
+  <h2>Duty Slip Generator</h2>
+  <form class="generator-form" action="/generate" method="post">
+
+    <!-- CUSTOMER & COMPANY -->
+    <div>
+      <label for="customer_name">Customer Name</label>
+      <input type="text" id="customer_name" name="customer_name" required>
+    </div>
+    <div>
+      <label for="company_name">Company Name</label>
+      <input type="text" id="company_name" name="company_name">
+    </div>
+
+    <!-- DATE & DUTY SLIP NO -->
+    <div>
+      <label for="date">Date</label>
+      <input type="date" id="date" name="date" required>
+    </div>
+    <div>
+      <label for="duty_slip_no">Duty Slip No</label>
+      <input type="text" id="duty_slip_no" name="duty_slip_no">
+    </div>
+
+    <!-- VEHICLE INFO -->
+    <div>
+      <label for="vehicle_type">Type of Vehicle</label>
+      <input type="text" id="vehicle_type" name="vehicle_type">
+    </div>
+    <div>
+      <label for="vehicle_no">Vehicle No</label>
+      <input type="text" id="vehicle_no" name="vehicle_no">
+    </div>
+
+    <!-- KM INFO -->
+    <div>
+      <label for="starting_km">Starting KM</label>
+      <input type="text" id="starting_km" name="starting_km">
+    </div>
+    <div>
+      <label for="closing_km">Closing KM</label>
+      <input type="text" id="closing_km" name="closing_km">
+    </div>
+    <div>
+      <label for="total_km">Total KM</label>
+      <input type="text" id="total_km" name="total_km">
+    </div>
+
+    <!-- TIME INFO -->
+    <div>
+      <label for="starting_time">Starting Time</label>
+      <input type="time" id="starting_time" name="starting_time">
+    </div>
+    <div>
+      <label for="closing_time">Closing Time</label>
+      <input type="time" id="closing_time" name="closing_time">
+    </div>
+    <div>
+      <label for="total_time">Total Time</label>
+      <input type="text" id="total_time" name="total_time">
+    </div>
+
+    <!-- DN & REMARKS -->
+    <div>
+      <label for="dn">DN</label>
+      <input type="text" id="dn" name="dn">
+    </div>
+    <div>
+      <label for="remarks">Remarks</label>
+      <input type="text" id="remarks" name="remarks">
+    </div>
+
+    <!-- ROUTE COVERED with Speech Recognition -->
+    <div>
+      <label for="route_covered">Route Covered</label>
+      <div style="display: flex; align-items: flex-start; gap: 8px;">
+        <textarea id="route_covered" name="route_covered" rows="4" style="flex: 1; resize: vertical; padding: 8px; border-radius: 6px; border: 1px solid #d2d2d7; font-size: 14px;"></textarea>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <button type="button" id="micStartBtn">Start</button>
+          <button type="button" id="micStopBtn" disabled>Stop</button>
+        </div>
+      </div>
+    </div>
+    
+
+    <!-- DRIVER NAME -->
+    <div>
+      <label for="driver_name">Driver Name</label>
+      <select id="driver_name" name="driver_name" required>
+        <option value="">-- Select Driver --</option>
+        {% for d in driver_list %}
+          <option value="{{ d }}">{{ d }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <input type="submit" value="Generate Duty Slip">
+  </form>
+
+  <!-- JAVASCRIPT FOR WEB SPEECH API -->
+  <script>
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-US';
+      recognition.continuous = true;   // keep recording until manual stop
+      recognition.interimResults = false;
+
+      const micStartBtn = document.getElementById('micStartBtn');
+      const micStopBtn = document.getElementById('micStopBtn');
+      const routeCoveredInput = document.getElementById('route_covered');
+
+      micStartBtn.addEventListener('click', () => {
+        recognition.start();
+        micStartBtn.disabled = true;
+        micStopBtn.disabled = false;
+        console.log('Recording started...');
+      });
+
+      micStopBtn.addEventListener('click', () => {
+        recognition.stop();
+        micStartBtn.disabled = false;
+        micStopBtn.disabled = true;
+        console.log('Recording stopped...');
+      });
+
+      recognition.addEventListener('result', (e) => {
+        const transcript = e.results[e.results.length - 1][0].transcript;
+        console.log('Transcript:', transcript);
+        // Append recognized text, so we don't overwrite previous sentences
+        routeCoveredInput.value += transcript + " ";
+      });
+
+      recognition.addEventListener('end', () => {
+        console.log('Recognition ended or mic was stopped.');
+      });
+    } else {
+      console.warn('SpeechRecognition not supported in this browser.');
+      // Hide or disable the mic buttons
+      document.getElementById('micStartBtn').style.display = 'none';
+      document.getElementById('micStopBtn').style.display = 'none';
+    }
+  </script>
+  <script>
+    // KM calculation
+    const startKm = document.getElementById("starting_km");
+    const closeKm = document.getElementById("closing_km");
+    const totalKm = document.getElementById("total_km");
+  
+    function updateKM() {
+      const start = parseFloat(startKm.value);
+      const end = parseFloat(closeKm.value);
+      if (!isNaN(start) && !isNaN(end)) {
+        const total = end - start;
+        totalKm.value = total >= 0 ? total : '';
+      }
+    }
+  
+    startKm.addEventListener('input', updateKM);
+    closeKm.addEventListener('input', updateKM);
+  
+    // Time calculation
+    const startTime = document.getElementById("starting_time");
+    const closeTime = document.getElementById("closing_time");
+    const totalTime = document.getElementById("total_time");
+  
+    function updateTime() {
+      if (startTime.value && closeTime.value) {
+        const start = new Date(`1970-01-01T${startTime.value}:00`);
+        const end = new Date(`1970-01-01T${closeTime.value}:00`);
+  
+        let diffMs = end - start;
+        if (diffMs < 0) diffMs += 24 * 60 * 60 * 1000; // handle overnight shifts
+  
+        const hours = Math.floor(diffMs / 3600000);
+        const minutes = Math.floor((diffMs % 3600000) / 60000);
+  
+        totalTime.value = `${hours}h ${minutes}m`;
+      }
+    }
+  
+    startTime.addEventListener('change', updateTime);
+    closeTime.addEventListener('change', updateTime);
+  </script>
+  
+</body>
+</html>

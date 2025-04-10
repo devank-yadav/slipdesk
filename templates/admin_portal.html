@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Portal</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Arial', sans-serif;
+      background-color: #ffffff;
+      color: #1c1c1e;
+    }
+
+    /* Top navigation bar */
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px;
+    }
+    .topbar-left {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+    .topbar-left a {
+      text-decoration: none;
+      font-weight: 600;
+      border-radius: 6px;
+      padding: 6px 12px;
+    }
+    .logout {
+      color: #d00;
+    }
+    .logout:hover {
+      background: #f5f5f5;
+    }
+    .settings {
+      background: #007aff;
+      color: #fff;
+    }
+    .settings:hover {
+      background: #005eb8;
+    }
+    .generate-button {
+      background: #007aff;
+      color: #fff;
+      text-decoration: none;
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-weight: 600;
+    }
+    .generate-button:hover {
+      background: #005eb8;
+    }
+
+    h2 {
+      text-align: center;
+      margin: 0;
+      margin-top: 8px;
+      font-weight: 600;
+    }
+
+    /* Filter form container */
+    .filter-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 20px auto;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+    }
+    .filter-group label {
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+    .filter-group input,
+    .filter-group select {
+      padding: 6px;
+      border: 1px solid #d2d2d7;
+      border-radius: 6px;
+      outline: none;
+      width: 150px;
+    }
+    .filter-group input:focus,
+    .filter-group select:focus {
+      border-color: #007aff;
+    }
+
+    .filter-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 4px;
+    }
+    .filter-actions button {
+      background: #007aff;
+      color: #fff;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .filter-actions button:hover {
+      background: #005eb8;
+    }
+    .filter-actions a {
+      text-decoration: none;
+      color: #007aff;
+      font-weight: 500;
+    }
+    .filter-actions a:hover {
+      text-decoration: underline;
+    }
+
+    /* Bulk actions (delete/download selected) */
+    .bulk-actions {
+      text-align: center;
+      margin: 20px auto;
+    }
+    .bulk-actions button {
+      background: #007aff;
+      color: #fff;
+      padding: 8px 14px;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      margin: 0 6px;
+      cursor: pointer;
+    }
+    .bulk-actions button:hover {
+      background: #005eb8;
+    }
+
+    /* Invoice list styling */
+    .invoice-list {
+      margin: 0 auto;
+      width: 80%;
+      max-width: 800px;
+      list-style-type: none;
+      padding: 0;
+    }
+    .invoice-item {
+      margin-bottom: 10px;
+      padding: 6px;
+      border-bottom: 1px solid #d2d2d7;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .invoice-item input[type="checkbox"] {
+      margin-right: 10px;
+      transform: scale(1.2);
+      cursor: pointer;
+    }
+    .info {
+      line-height: 1.4;
+      flex: 1;
+    }
+    .info strong {
+      font-weight: 600;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-left: 10px;
+    }
+    .download {
+      text-decoration: none;
+      color: #007aff;
+      font-weight: 600;
+    }
+    .download:hover {
+      color: #005eb8;
+    }
+    .delete-btn {
+      background: #ff3b30;
+      color: #fff;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .delete-btn:hover {
+      background: #d12b21;
+    }
+
+    /* Autocomplete suggestions */
+    .autocomplete-suggestions {
+      position: absolute;
+      background: #fff;
+      border: 1px solid #d2d2d7;
+      border-radius: 6px;
+      max-height: 150px;
+      overflow-y: auto;
+      width: 150px;
+      z-index: 999;
+    }
+    .autocomplete-suggestions div {
+      padding: 6px;
+      cursor: pointer;
+    }
+    .autocomplete-suggestions div:hover {
+      background: #f0f0f5;
+    }
+  </style>
+</head>
+<body>
+  {% include 'navbar.html' %}
+
+
+
+  <h2>Admin Portal</h2>
+
+  <!-- FILTER FORM -->
+  <form class="filter-form" action="/admin_portal" method="get">
+    <!-- Customer Filter with Autocomplete -->
+    <div class="filter-group" style="position: relative;">
+      <label for="customer_name">Customer</label>
+      <input
+        type="text"
+        name="customer_name"
+        id="customer_name"
+        value="{{ customer_name }}"
+        autocomplete="off"
+      />
+      <!-- Suggestions container -->
+      <div id="customer_suggestions" class="autocomplete-suggestions" style="display: none;"></div>
+    </div>
+
+    <!-- Driver Filter -->
+    <div class="filter-group">
+      <label for="driver">Driver</label>
+      <select name="driver" id="driver">
+        <option value="">All Drivers</option>
+        {% for d in driver_names %}
+          <option value="{{ d }}" {% if driver_filter == d %}selected{% endif %}>{{ d }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Month Filter -->
+    <div class="filter-group">
+      <label for="month">Month</label>
+      <input type="month" id="month" name="month" value="{{ month_filter }}">
+    </div>
+
+    <!-- Date Range Filters -->
+    <div class="filter-group">
+      <label for="date_from">Date From</label>
+      <input type="date" id="date_from" name="date_from" value="{{ date_from }}">
+    </div>
+    <div class="filter-group">
+      <label for="date_to">Date To</label>
+      <input type="date" id="date_to" name="date_to" value="{{ date_to }}">
+    </div>
+
+    <!-- Apply / Clear -->
+    <div class="filter-actions">
+      <button type="submit">Apply</button>
+      {% if customer_name or driver_filter or month_filter or date_from or date_to %}
+        <a href="/admin_portal">Clear</a>
+      {% endif %}
+    </div>
+  </form>
+
+  <!-- BULK ACTIONS FORM -->
+  <form method="post" action="/bulk_action">
+    <div class="bulk-actions">
+      <button type="submit" name="action" value="delete" onclick="return confirm('Delete selected invoices?')">Delete Selected</button>
+      <button type="submit" name="action" value="download">Download Selected</button>
+    </div>
+
+    <ul class="invoice-list">
+      {% for invoice in invoices %}
+        <li class="invoice-item">
+          <input type="checkbox" name="selected_invoices" value="{{ invoice[0] }}">
+          <div class="info">
+            <strong>{{ invoice[1] }}</strong><br>
+            Date Input: {{ invoice[2] }}<br>
+            Driver: {{ invoice[5] if invoice[5] else 'N/A' }}<br>
+            Generated: {{ invoice[4] }}
+          </div>
+          <div class="actions">
+            <a class="download" href="/{{ invoice[3] }}">Download</a>
+            <!-- Single Delete Form with confirmation -->
+            <form method="post" action="/delete_invoice/{{ invoice[0] }}" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete this invoice?');">
+              <button class="delete-btn" type="submit">Delete</button>
+            </form>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  </form>
+
+  <!-- AUTOCOMPLETE SCRIPT FOR CUSTOMER NAME -->
+  <script>
+    const customerInput = document.getElementById('customer_name');
+    const suggestionsBox = document.getElementById('customer_suggestions');
+    let timer = null;
+
+    customerInput.addEventListener('keyup', function() {
+      const query = this.value.trim();
+      clearTimeout(timer);
+
+      if (!query) {
+        suggestionsBox.style.display = 'none';
+        return;
+      }
+
+      timer = setTimeout(() => {
+        fetch(`/customer_autocomplete?query=${encodeURIComponent(query)}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.length === 0) {
+              suggestionsBox.style.display = 'none';
+              return;
+            }
+            let html = '';
+            data.forEach(name => {
+              html += `<div>${name}</div>`;
+            });
+            suggestionsBox.innerHTML = html;
+            suggestionsBox.style.display = 'block';
+          })
+          .catch(err => {
+            console.error(err);
+            suggestionsBox.style.display = 'none';
+          });
+      }, 200);
+    });
+
+    // Click suggestion -> fill input
+    suggestionsBox.addEventListener('click', function(e) {
+      if (e.target && e.target.nodeName === 'DIV') {
+        customerInput.value = e.target.textContent;
+        suggestionsBox.style.display = 'none';
+      }
+    });
+
+    // Click outside -> hide suggestions
+    document.addEventListener('click', function(e) {
+      if (!suggestionsBox.contains(e.target) && e.target !== customerInput) {
+        suggestionsBox.style.display = 'none';
+      }
+    });
+  </script>
+</body>
+</html>
