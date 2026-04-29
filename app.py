@@ -121,6 +121,17 @@ INVOICE_DIR = str(INVOICE_DIR_PATH)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 DATABASE_PATH = None
+
+# Turso integration (Vercel) provides TURSO_DATABASE_URL + TURSO_AUTH_TOKEN.
+# Build a libsql SQLAlchemy URL from them when DATABASE_URL isn't set directly.
+if not DATABASE_URL:
+    _turso_url = os.environ.get("TURSO_DATABASE_URL")  # e.g. libsql://name.turso.io
+    _turso_token = os.environ.get("TURSO_AUTH_TOKEN", "")
+    if _turso_url:
+        # Convert libsql:// → libsql+https:// for the SQLAlchemy dialect
+        _turso_http = _turso_url.replace("libsql://", "libsql+https://", 1)
+        DATABASE_URL = f"{_turso_http}?authToken={_turso_token}"
+
 if not DATABASE_URL:
     DATABASE_PATH = ensure_writable_file(
         BASE_DIR / "invoices.db",
