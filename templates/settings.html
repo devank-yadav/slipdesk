@@ -3,112 +3,51 @@
 <head>
   <meta charset="UTF-8">
   <title>Settings</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'Arial', sans-serif;
-      background-color: #ffffff;
-      color: #1c1c1e;
-    }
-    .topbar {
-      display: flex;
-      justify-content: flex-end;
-      align-items: center;
-      margin: 20px;
-    }
-    .logout a {
-      color: #d00;
-      text-decoration: none;
-      font-weight: 600;
-      padding: 6px 12px;
-      border-radius: 6px;
-    }
-    .logout a:hover {
-      background: #f5f5f5;
-    }
-    h2 {
-      text-align: center;
-      margin: 10px;
-      font-weight: 600;
-    }
-    .stats {
-      display: flex;
-      justify-content: center;
-      gap: 40px;
-      margin-top: 20px;
-      font-size: 16px;
-    }
-    .stats .block {
-      text-align: center;
-    }
-    .add-driver-form {
-      width: 300px;
-      margin: 40px auto;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-    input[type="text"] {
-      padding: 10px;
-      border: 1px solid #d2d2d7;
-      border-radius: 6px;
-      font-size: 14px;
-      outline: none;
-    }
-    input[type="text"]:focus {
-      border-color: #007aff;
-    }
-    input[type="submit"] {
-      background: #007aff;
-      color: #fff;
-      padding: 12px;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 16px;
-      font-weight: 600;
-    }
-    input[type="submit"]:hover {
-      background: #005eb8;
-    }
-    .message {
-      text-align: center;
-      margin-top: 10px;
-      color: green;
-      font-weight: 600;
-    }
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 </head>
-<body>
+<body class="app-shell">
     {% include 'navbar.html' %}
 
 
-  <h2>Settings</h2>
+  <main class="page-content">
+    <section class="card">
+      <header>
+        <h1 class="page-title">Control Center</h1>
+        <p class="page-subtitle">Keep an eye on your performance metrics and maintain the driver roster.</p>
+      </header>
 
-  <div class="stats">
-    <div class="block">
-      <strong>Total Invoices:</strong><br>
-      {{ total_invoices }}
-    </div>
-    <div class="block">
-      <strong>This Month:</strong><br>
-      {{ invoices_this_month }}
-    </div>
-    <div class="block">
-      <strong>Total Drivers:</strong><br>
-      {{ total_drivers }}
-    </div>
-  </div>
+      <div class="stats-grid mt-lg">
+        <div class="stat-card">
+          <span class="hint">Total Invoices</span>
+          <strong>{{ total_invoices }}</strong>
+        </div>
+        <div class="stat-card">
+          <span class="hint">This Month</span>
+          <strong>{{ invoices_this_month }}</strong>
+        </div>
+        <div class="stat-card">
+          <span class="hint">Registered Drivers</span>
+          <strong>{{ total_drivers }}</strong>
+        </div>
+      </div>
+    </section>
 
-  <form class="add-driver-form" action="/settings" method="post">
-    <label for="new_driver">Add a New Driver</label>
-    <input type="text" id="new_driver" name="new_driver" placeholder="Driver Name">
-    <input type="submit" value="Add Driver">
-  </form>
-
-  {% if message %}
-    <p class="message">{{ message }}</p>
-  {% endif %}
+    <section class="card">
+      <header>
+        <h2 class="section-title">Add a New Driver</h2>
+        <p class="page-subtitle mt-sm">Create quick shortcuts for frequent assignments.</p>
+      </header>
+      <form class="form-grid mt-md" action="/settings" method="post">
+        <div class="field-group">
+          <label for="new_driver">Driver Name</label>
+          <input type="text" id="new_driver" name="new_driver" placeholder="e.g. Aman Verma">
+        </div>
+        <input class="btn btn-primary" type="submit" value="Add Driver">
+      </form>
+      {% if message %}
+        <p class="message">{{ message }}</p>
+      {% endif %}
+    </section>
+  </main>
 </body>
 </html>
