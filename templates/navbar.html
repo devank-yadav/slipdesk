@@ -10,9 +10,10 @@
     </div>
   </div>
   <nav class="app-navbar__links">
-    <a class="nav-link" href="/admin_portal">Dashboard</a>
-    <a class="nav-link" href="/generator">Generator</a>
-    <a class="nav-link" href="/settings">Settings</a>
+    <a class="nav-link {% if request.path == '/admin_portal' %}active{% endif %}" href="/admin_portal">Dashboard</a>
+    <a class="nav-link {% if request.path == '/generator' %}active{% endif %}" href="/generator">Generator</a>
+    <a class="nav-link {% if request.path.startswith('/templates') %}active{% endif %}" href="/templates">Templates</a>
+    <a class="nav-link {% if request.path == '/settings' %}active{% endif %}" href="/settings">Settings</a>
     <a class="nav-link logout" href="/logout">Logout</a>
   </nav>
 </div>

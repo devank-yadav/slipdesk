@@ -14,6 +14,7 @@
     <p class="auth-subtitle">Enter your credentials to access the dashboard.</p>
 
     <form class="form-grid" action="/admin_login" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field-group">
         <label for="username">Username</label>
         <input type="text" id="username" name="username" required>

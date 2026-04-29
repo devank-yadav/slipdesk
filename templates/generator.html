@@ -4,6 +4,37 @@
   <meta charset="UTF-8">
   <title>Duty Slip Generator</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <style>
+    /* Map Builder styles */
+    .route-mode-toggle { display:flex; gap:6px; margin-bottom:10px; }
+    .route-mode-toggle .mode-btn { padding:6px 14px; border:1px solid #d0d4dc; background:#fff; border-radius:18px; cursor:pointer; font-size:13px; font-weight:500; }
+    .route-mode-toggle .mode-btn.active { background:#2563eb; color:#fff; border-color:#2563eb; }
+    #mapSection { border:1px solid #e6e8ee; border-radius:10px; padding:14px; background:#fafbff; }
+    .waypoint-row { display:flex; align-items:center; gap:8px; margin:6px 0; padding:8px 10px; background:#fff; border:1px solid #e3e6ec; border-radius:8px; }
+    .waypoint-row .wp-icon { font-size:14px; color:#2563eb; }
+    .waypoint-row.origin { background:#eff6ff; border-color:#bfdbfe; }
+    .waypoint-row .waypoint-input { flex:1; border:none; outline:none; font-size:14px; padding:4px 6px; background:transparent; }
+    .waypoint-row .drag-handle { cursor:grab; color:#94a3b8; user-select:none; padding:0 4px; }
+    .waypoint-row .btn-remove-wp { background:transparent; border:none; cursor:pointer; color:#94a3b8; font-size:16px; padding:0 4px; }
+    .waypoint-row .btn-remove-wp:hover { color:#dc2626; }
+    .builder-actions { display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; }
+    .btn-add-stop { padding:6px 14px; background:#fff; border:1px dashed #94a3b8; border-radius:8px; cursor:pointer; font-size:13px; color:#475569; }
+    .btn-add-stop:hover { background:#f1f5f9; border-color:#475569; }
+    .return-label { display:flex; align-items:center; gap:6px; font-size:13px; color:#475569; margin:6px 0; }
+    #mapPreview { width:100%; height:280px; background:#e8edf5; border-radius:8px; margin:10px 0; display:flex; align-items:center; justify-content:center; color:#94a3b8; font-size:13px; overflow:hidden; }
+    .map-footer { display:flex; justify-content:space-between; align-items:center; margin-top:10px; flex-wrap:wrap; gap:10px; }
+    .distance-display { font-size:14px; color:#475569; }
+    .distance-display.ready { color:#059669; font-weight:600; }
+    .btn-apply-route { padding:8px 20px; background:#059669; color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:500; }
+    .btn-apply-route:disabled { background:#cbd5e1; cursor:not-allowed; }
+    .no-key-notice { padding:12px; background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; color:#92400e; font-size:13px; margin-bottom:10px; }
+    .template-bar { display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap; padding:10px 12px; background:#f1f5f9; border-radius:8px; }
+    .template-bar select, .template-bar input { padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; }
+    .autocomplete-suggestions { position:absolute; background:#fff; border:1px solid #e3e6ec; border-radius:6px; max-height:160px; overflow-y:auto; z-index:50; box-shadow:0 4px 12px rgba(0,0,0,0.08); }
+    .autocomplete-suggestions div { padding:6px 10px; cursor:pointer; font-size:13px; }
+    .autocomplete-suggestions div:hover { background:#f1f5f9; }
+    .field-group { position:relative; }
+  </style>
 </head>
 <body class="app-shell">
   {% include 'navbar.html' %}
@@ -15,25 +46,43 @@
         <p class="page-subtitle">Craft a perfectly aligned duty slip that mirrors your official template.</p>
       </header>
 
-      <form class="generator-form" action="/generate" method="post">
+      <!-- TEMPLATE BAR -->
+      <div class="template-bar">
+        <strong style="font-size:13px;">Template:</strong>
+        <select id="templateSelect">
+          <option value="">— Use a saved template —</option>
+          {% for t in template_list %}
+            <option value="{{ t.id }}">{{ t.template_name }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" class="btn btn-soft" onclick="loadTemplate()">Load</button>
+        <span style="margin-left:auto;font-size:13px;color:#475569;">Save current form as:</span>
+        <input type="text" id="newTemplateName" placeholder="Template name">
+        <button type="button" class="btn btn-soft" onclick="saveTemplate()">Save Template</button>
+        <a class="btn btn-ghost" href="/templates">Manage</a>
+      </div>
+
+      <form class="generator-form" action="/generate" method="post" id="slipForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <section>
           <h3 class="section-title">Customer & Booking</h3>
           <div class="form-grid form-grid--two">
             <div class="field-group">
               <label for="customer_name">Customer Name</label>
-              <input type="text" id="customer_name" name="customer_name" required>
+              <input type="text" id="customer_name" name="customer_name" required value="{{ prefill.customer_name|default('') }}" autocomplete="off">
+              <div id="customerSuggestions" class="autocomplete-suggestions" style="display:none;"></div>
             </div>
             <div class="field-group">
               <label for="company_name">Company Name</label>
-              <input type="text" id="company_name" name="company_name">
+              <input type="text" id="company_name" name="company_name" value="{{ prefill.company_name|default('') }}">
             </div>
             <div class="field-group">
               <label for="date">Date</label>
-              <input type="date" id="date" name="date" required>
+              <input type="date" id="date" name="date" required value="{{ prefill.date|default('') }}">
             </div>
             <div class="field-group">
               <label for="duty_slip_no">Duty Slip No</label>
-              <input type="text" id="duty_slip_no" name="duty_slip_no">
+              <input type="text" id="duty_slip_no" name="duty_slip_no" value="{{ next_duty_slip_no|default('') }}">
             </div>
           </div>
         </section>
@@ -43,11 +92,11 @@
           <div class="form-grid form-grid--two">
             <div class="field-group">
               <label for="vehicle_type">Type of Vehicle</label>
-              <input type="text" id="vehicle_type" name="vehicle_type">
+              <input type="text" id="vehicle_type" name="vehicle_type" value="{{ prefill.vehicle_type|default('') }}">
             </div>
             <div class="field-group">
               <label for="vehicle_no">Vehicle No</label>
-              <input type="text" id="vehicle_no" name="vehicle_no">
+              <input type="text" id="vehicle_no" name="vehicle_no" value="{{ prefill.vehicle_no|default('') }}">
             </div>
           </div>
         </section>
@@ -57,7 +106,7 @@
           <div class="form-grid form-grid--three">
             <div class="field-group">
               <label for="starting_km">Starting KM</label>
-              <input type="text" id="starting_km" name="starting_km">
+              <input type="text" id="starting_km" name="starting_km" value="{{ prefill.starting_km|default('') }}">
             </div>
             <div class="field-group">
               <label for="closing_km">Closing KM</label>
@@ -65,7 +114,7 @@
             </div>
             <div class="field-group">
               <label for="total_km">Total KM</label>
-              <input type="text" id="total_km" name="total_km">
+              <input type="text" id="total_km" name="total_km" value="{{ prefill.total_km|default('') }}">
             </div>
             <div class="field-group">
               <label for="starting_time">Starting Time</label>
@@ -87,23 +136,66 @@
           <div class="form-grid form-grid--two">
             <div class="field-group">
               <label for="dn">DN</label>
-              <input type="text" id="dn" name="dn">
+              <input type="text" id="dn" name="dn" value="{{ prefill.dn|default('') }}">
             </div>
             <div class="field-group">
               <label for="remarks">Remarks</label>
-              <input type="text" id="remarks" name="remarks">
+              <input type="text" id="remarks" name="remarks" value="{{ prefill.remarks|default('') }}">
             </div>
           </div>
+
           <div class="field-group">
-            <label for="route_covered">Route Covered</label>
-            <div class="textarea-with-actions">
-              <textarea id="route_covered" name="route_covered" rows="4"></textarea>
-              <div class="mic-buttons">
-                <button type="button" class="btn btn-soft" id="micStartBtn">🎙 Start</button>
-                <button type="button" class="btn btn-ghost" id="micStopBtn" disabled>⏹ Stop</button>
+            <label>Route Covered</label>
+
+            <div class="route-mode-toggle">
+              <button type="button" class="mode-btn active" id="btnManual" onclick="setRouteMode('manual')">Manual</button>
+              <button type="button" class="mode-btn" id="btnMap" onclick="setRouteMode('map')">Map Builder</button>
+            </div>
+
+            <!-- MANUAL MODE -->
+            <div id="manualSection">
+              <div class="textarea-with-actions">
+                <textarea id="route_covered" name="route_covered" rows="4">{{ prefill.route_covered|default('') }}</textarea>
+                <div class="mic-buttons">
+                  <button type="button" class="btn btn-soft" id="micStartBtn">Start Voice</button>
+                  <button type="button" class="btn btn-ghost" id="micStopBtn" disabled>Stop</button>
+                </div>
+              </div>
+              <span class="hint">Use voice input or switch to Map Builder for auto-distance.</span>
+            </div>
+
+            <!-- MAP BUILDER MODE -->
+            <div id="mapSection" style="display:none;">
+              <div id="noKeyNotice" class="no-key-notice" style="display:none;">
+                Google Maps API key is not configured. Contact the administrator.
+              </div>
+              <div id="mapsLoading" style="padding:8px 0;color:#475569;font-size:13px;display:none;">Loading map…</div>
+
+              <div id="mapBuilder" style="display:none;">
+                <div class="waypoint-row origin">
+                  <span class="wp-icon">●</span>
+                  <input type="text" id="originInput" class="waypoint-input" placeholder="Starting point…" autocomplete="off">
+                </div>
+
+                <div id="waypointsList"></div>
+
+                <div class="builder-actions">
+                  <button type="button" class="btn-add-stop" onclick="addWaypoint()">+ Add Stop</button>
+                </div>
+
+                <label class="return-label">
+                  <input type="checkbox" id="returnToOrigin" checked onchange="debouncedCalc()">
+                  Return to origin
+                </label>
+
+                <div id="mapPreview"><span>Map will appear here</span></div>
+
+                <div class="map-footer">
+                  <span class="distance-display" id="distanceDisplay">Add a starting point and stops to calculate distance</span>
+                  <button type="button" class="btn-apply-route" id="btnApply" onclick="applyRoute()" disabled>Apply to Slip</button>
+                </div>
               </div>
             </div>
-            <span class="hint">Use voice input to capture the full journey narrative.</span>
           </div>
         </section>
 
@@ -112,12 +204,12 @@
           <div class="form-grid">
             <div class="field-group">
               <label for="driver_name">Driver Name</label>
-              <select id="driver_name" name="driver_name" required>
-                <option value="">-- Select Driver --</option>
+              <input type="text" id="driver_name" name="driver_name" list="driver_options" placeholder="Type or select driver" autocomplete="off" value="{{ prefill.driver_name|default('') }}">
+              <datalist id="driver_options">
                 {% for d in driver_list %}
-                  <option value="{{ d }}">{{ d }}</option>
+                  <option value="{{ d }}">
                 {% endfor %}
-              </select>
+              </datalist>
             </div>
           </div>
         </section>
@@ -129,91 +221,287 @@
     </section>
   </main>
 
-  <!-- JAVASCRIPT FOR WEB SPEECH API -->
+  <!-- =================================================================== -->
+  <!-- SPEECH RECOGNITION -->
+  <!-- =================================================================== -->
   <script>
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.lang = 'en-US';
-      recognition.continuous = true;   // keep recording until manual stop
-      recognition.interimResults = false;
-
-      const micStartBtn = document.getElementById('micStartBtn');
-      const micStopBtn = document.getElementById('micStopBtn');
-      const routeCoveredInput = document.getElementById('route_covered');
-
-      micStartBtn.addEventListener('click', () => {
-        recognition.start();
-        micStartBtn.disabled = true;
-        micStopBtn.disabled = false;
-        console.log('Recording started...');
+    (function () {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        document.getElementById('micStartBtn').style.display = 'none';
+        document.getElementById('micStopBtn').style.display = 'none';
+        return;
+      }
+      const rec = new SR();
+      rec.lang = 'en-US';
+      rec.continuous = true;
+      rec.interimResults = false;
+      const startBtn = document.getElementById('micStartBtn');
+      const stopBtn  = document.getElementById('micStopBtn');
+      const route    = document.getElementById('route_covered');
+      startBtn.addEventListener('click', () => { rec.start(); startBtn.disabled = true; stopBtn.disabled = false; });
+      stopBtn.addEventListener('click',  () => { rec.stop();  startBtn.disabled = false; stopBtn.disabled = true; });
+      rec.addEventListener('result', e => {
+        route.value += e.results[e.results.length - 1][0].transcript + ' ';
       });
-
-      micStopBtn.addEventListener('click', () => {
-        recognition.stop();
-        micStartBtn.disabled = false;
-        micStopBtn.disabled = true;
-        console.log('Recording stopped...');
-      });
-
-      recognition.addEventListener('result', (e) => {
-        const transcript = e.results[e.results.length - 1][0].transcript;
-        console.log('Transcript:', transcript);
-        // Append recognized text, so we don't overwrite previous sentences
-        routeCoveredInput.value += transcript + " ";
-      });
-
-      recognition.addEventListener('end', () => {
-        console.log('Recognition ended or mic was stopped.');
-      });
-    } else {
-      console.warn('SpeechRecognition not supported in this browser.');
-      // Hide or disable the mic buttons
-      document.getElementById('micStartBtn').classList.add('is-hidden');
-      document.getElementById('micStopBtn').classList.add('is-hidden');
-    }
+    })();
   </script>
+
+  <!-- =================================================================== -->
+  <!-- KM + TIME AUTO-CALCULATION -->
+  <!-- =================================================================== -->
   <script>
-    // KM calculation
-    const startKm = document.getElementById("starting_km");
-    const closeKm = document.getElementById("closing_km");
-    const totalKm = document.getElementById("total_km");
-  
+    const startKm = document.getElementById('starting_km');
+    const closeKm = document.getElementById('closing_km');
+    const totalKmEl = document.getElementById('total_km');
     function updateKM() {
-      const start = parseFloat(startKm.value);
-      const end = parseFloat(closeKm.value);
-      if (!isNaN(start) && !isNaN(end)) {
-        const total = end - start;
-        totalKm.value = total >= 0 ? total : '';
+      const a = parseFloat(startKm.value), b = parseFloat(closeKm.value);
+      if (!isNaN(a) && !isNaN(b)) {
+        const total = b - a;
+        totalKmEl.value = total >= 0 ? total : '';
+      } else {
+        totalKmEl.value = totalKmEl.value || '';
       }
     }
-  
     startKm.addEventListener('input', updateKM);
     closeKm.addEventListener('input', updateKM);
-  
-    // Time calculation
-    const startTime = document.getElementById("starting_time");
-    const closeTime = document.getElementById("closing_time");
-    const totalTime = document.getElementById("total_time");
-  
+
+    const startTime = document.getElementById('starting_time');
+    const closeTime = document.getElementById('closing_time');
+    const totalTime = document.getElementById('total_time');
     function updateTime() {
-      if (startTime.value && closeTime.value) {
-        const start = new Date(`1970-01-01T${startTime.value}:00`);
-        const end = new Date(`1970-01-01T${closeTime.value}:00`);
-  
-        let diffMs = end - start;
-        if (diffMs < 0) diffMs += 24 * 60 * 60 * 1000; // handle overnight shifts
-  
-        const hours = Math.floor(diffMs / 3600000);
-        const minutes = Math.floor((diffMs % 3600000) / 60000);
-  
-        totalTime.value = `${hours}h ${minutes}m`;
-      }
+      if (!startTime.value || !closeTime.value) { totalTime.value = ''; return; }
+      const a = new Date(`1970-01-01T${startTime.value}:00`);
+      const b = new Date(`1970-01-01T${closeTime.value}:00`);
+      let diff = b - a;
+      if (diff < 0) diff += 24 * 60 * 60 * 1000;
+      const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
+      totalTime.value = `${h}h ${m}m`;
     }
-  
     startTime.addEventListener('change', updateTime);
     closeTime.addEventListener('change', updateTime);
   </script>
-  
+
+  <!-- =================================================================== -->
+  <!-- CUSTOMER AUTOCOMPLETE -->
+  <!-- =================================================================== -->
+  <script>
+    (function () {
+      const input = document.getElementById('customer_name');
+      const box   = document.getElementById('customerSuggestions');
+      let timer;
+      input.addEventListener('input', () => {
+        const q = input.value.trim();
+        clearTimeout(timer);
+        if (!q) { box.style.display = 'none'; return; }
+        timer = setTimeout(() => {
+          fetch('/customer_autocomplete?query=' + encodeURIComponent(q))
+            .then(r => r.json())
+            .then(rows => {
+              if (!rows.length) { box.style.display = 'none'; return; }
+              box.innerHTML = rows.map(n => `<div>${n}</div>`).join('');
+              box.style.display = 'block';
+              const rect = input.getBoundingClientRect();
+              box.style.width = rect.width + 'px';
+            }).catch(() => box.style.display = 'none');
+        }, 200);
+      });
+      box.addEventListener('click', e => {
+        if (e.target.tagName === 'DIV') {
+          input.value = e.target.textContent;
+          box.style.display = 'none';
+        }
+      });
+      document.addEventListener('click', e => {
+        if (e.target !== input && !box.contains(e.target)) box.style.display = 'none';
+      });
+    })();
+  </script>
+
+  <!-- =================================================================== -->
+  <!-- TEMPLATES (load + save) -->
+  <!-- =================================================================== -->
+  <script>
+    function loadTemplate() {
+      const sel = document.getElementById('templateSelect');
+      if (!sel.value) return;
+      window.location.href = '/generator?from_template=' + sel.value;
+    }
+    function saveTemplate() {
+      const name = document.getElementById('newTemplateName').value.trim();
+      if (!name) { alert('Please enter a template name.'); return; }
+      const form = document.getElementById('slipForm');
+      const fd = new FormData(form);
+      fd.append('template_name', name);
+      fetch('/templates/create', { method: 'POST', body: fd, headers: { 'X-CSRFToken': '{{ csrf_token() }}' } })
+        .then(r => r.json())
+        .then(d => {
+          if (d.ok) { alert('Template saved!'); window.location.reload(); }
+          else { alert('Save failed: ' + (d.error || 'unknown error')); }
+        });
+    }
+  </script>
+
+  <!-- =================================================================== -->
+  <!-- MAP BUILDER -->
+  <!-- =================================================================== -->
+  <script>
+    let mapsKey = '';
+    let mapsLoaded = false;
+    let mapInstance = null;
+    let dirService = null;
+    let dirRenderer = null;
+    let currentRoute = null;
+    let wpCounter = 0;
+
+    // Eager load Maps script when key arrives
+    fetch('/config/maps_key')
+      .then(r => r.json())
+      .then(d => {
+        mapsKey = d.key || '';
+        if (!mapsKey) {
+          document.getElementById('noKeyNotice').style.display = '';
+          return;
+        }
+        const s = document.createElement('script');
+        s.src = 'https://maps.googleapis.com/maps/api/js?key=' + mapsKey + '&libraries=places&callback=_onMapsReady';
+        s.async = true;
+        document.head.appendChild(s);
+      })
+      .catch(() => { document.getElementById('noKeyNotice').style.display = ''; });
+
+    function setRouteMode(mode) {
+      document.getElementById('btnManual').classList.toggle('active', mode === 'manual');
+      document.getElementById('btnMap').classList.toggle('active', mode === 'map');
+      document.getElementById('manualSection').style.display = mode === 'manual' ? '' : 'none';
+      document.getElementById('mapSection').style.display    = mode === 'map'    ? '' : 'none';
+      if (mode === 'map') {
+        if (!mapsKey) {
+          document.getElementById('noKeyNotice').style.display = '';
+        } else if (!mapsLoaded) {
+          document.getElementById('mapsLoading').style.display = '';
+        } else if (mapInstance) {
+          setTimeout(() => google.maps.event.trigger(mapInstance, 'resize'), 50);
+        }
+      }
+    }
+
+    window._onMapsReady = function () {
+      mapsLoaded = true;
+      document.getElementById('mapsLoading').style.display = 'none';
+      document.getElementById('mapBuilder').style.display = '';
+
+      mapInstance = new google.maps.Map(document.getElementById('mapPreview'), {
+        center: { lat: 28.4595, lng: 77.0266 }, // Gurgaon default
+        zoom: 11,
+        disableDefaultUI: true,
+        zoomControl: true,
+      });
+      dirService = new google.maps.DirectionsService();
+      dirRenderer = new google.maps.DirectionsRenderer({ map: mapInstance, suppressMarkers: false });
+
+      // Attach autocomplete to the static origin field
+      attachAutocomplete(document.getElementById('originInput'));
+      document.getElementById('originInput').addEventListener('blur', debouncedCalc);
+
+      if (document.getElementById('mapSection').style.display !== 'none') {
+        setTimeout(() => google.maps.event.trigger(mapInstance, 'resize'), 50);
+      }
+    };
+
+    function attachAutocomplete(input) {
+      if (!window.google || !google.maps.places) return;
+      const ac = new google.maps.places.Autocomplete(input, {
+        componentRestrictions: { country: 'in' },
+        fields: ['name', 'formatted_address'],
+      });
+      ac.addListener('place_changed', () => {
+        const place = ac.getPlace();
+        if (place && place.formatted_address) input.value = place.formatted_address;
+        debouncedCalc();
+      });
+    }
+
+    function addWaypoint(prefillValue) {
+      wpCounter++;
+      const row = document.createElement('div');
+      row.className = 'waypoint-row';
+      row.innerHTML =
+        '<span class="wp-icon">○</span>' +
+        '<input type="text" class="waypoint-input" placeholder="Stop ' + wpCounter + '…" autocomplete="off">' +
+        '<button type="button" class="btn-remove-wp" onclick="removeWaypoint(this)" title="Remove">×</button>';
+      document.getElementById('waypointsList').appendChild(row);
+      const input = row.querySelector('.waypoint-input');
+      if (prefillValue) input.value = prefillValue;
+      attachAutocomplete(input);
+      input.addEventListener('blur', debouncedCalc);
+    }
+
+    function removeWaypoint(btn) {
+      btn.closest('.waypoint-row').remove();
+      debouncedCalc();
+    }
+
+    let calcTimer = null;
+    function debouncedCalc() { clearTimeout(calcTimer); calcTimer = setTimeout(calculateRoute, 500); }
+
+    function calculateRoute() {
+      if (!dirService) return;
+      const originEl = document.getElementById('originInput');
+      const origin = (originEl.value || '').trim();
+      const distEl = document.getElementById('distanceDisplay');
+      const applyEl = document.getElementById('btnApply');
+
+      if (!origin) {
+        distEl.textContent = 'Add a starting point';
+        applyEl.disabled = true;
+        return;
+      }
+
+      const stops = [...document.querySelectorAll('#waypointsList .waypoint-input')]
+        .map(el => el.value.trim()).filter(v => v);
+
+      const returnChecked = document.getElementById('returnToOrigin').checked;
+      if (!stops.length && !returnChecked) {
+        distEl.textContent = 'Add at least one stop';
+        applyEl.disabled = true;
+        return;
+      }
+
+      const destination = returnChecked ? origin : (stops[stops.length - 1] || origin);
+      const waypointsForAPI = returnChecked
+        ? stops.map(s => ({ location: s, stopover: true }))
+        : stops.slice(0, -1).map(s => ({ location: s, stopover: true }));
+
+      dirService.route({
+        origin, destination, waypoints: waypointsForAPI,
+        travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false,
+      }, (result, status) => {
+        if (status === 'OK') {
+          dirRenderer.setDirections(result);
+          const meters = result.routes[0].legs.reduce((sum, leg) => sum + leg.distance.value, 0);
+          const km = (meters / 1000).toFixed(1);
+          const stopList = [origin, ...stops];
+          if (returnChecked) stopList.push(origin);
+          currentRoute = { km, stops: stopList };
+          distEl.textContent = 'Total distance: ' + km + ' km';
+          distEl.className = 'distance-display ready';
+          applyEl.disabled = false;
+        } else {
+          distEl.textContent = 'Could not calculate (' + status + ')';
+          distEl.className = 'distance-display';
+          applyEl.disabled = true;
+          currentRoute = null;
+        }
+      });
+    }
+
+    function applyRoute() {
+      if (!currentRoute) return;
+      document.getElementById('route_covered').value = currentRoute.stops.join(' → ');
+      totalKmEl.value = currentRoute.km;
+      setRouteMode('manual');
+    }
+  </script>
 </body>
 </html>

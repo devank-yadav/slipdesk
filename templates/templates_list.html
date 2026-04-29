@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Slip Templates</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body class="app-shell">
+  {% include 'navbar.html' %}
+
+  <main class="page-content">
+    <section class="card">
+      <header class="card-header">
+        <h1 class="page-title">Slip Templates</h1>
+        <a class="btn btn-primary" href="/generator">Create New Slip</a>
+      </header>
+      <p class="page-subtitle">Saved templates let you spin up a new duty slip in one click.</p>
+
+      {% if templates %}
+        <ul class="invoice-list mt-md">
+          {% for t in templates %}
+          <li class="invoice-item">
+            <div class="info">
+              <strong>{{ t.template_name }}</strong>
+              <div class="meta">
+                <span>Customer: {{ t.customer_name or '—' }}</span>
+                <span>Driver: {{ t.driver_name or '—' }}</span>
+                <span>Saved: {{ t.created_at }}</span>
+              </div>
+              {% if t.route_covered %}
+              <div class="meta" style="margin-top:4px;">Route: <em>{{ t.route_covered[:120] }}{% if t.route_covered|length > 120 %}…{% endif %}</em></div>
+              {% endif %}
+            </div>
+            <div class="actions">
+              <a class="btn btn-outline" href="/generator?from_template={{ t.id }}">Use</a>
+              <form method="post" action="/templates/{{ t.id }}/delete" onsubmit="return confirm('Delete template {{ t.template_name }}?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-danger" type="submit">Delete</button>
+              </form>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="empty-state mt-md">
+          <strong>No templates yet</strong>
+          <span>Open the generator, fill in fields, then click "Save Template" to create one.</span>
+        </div>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>

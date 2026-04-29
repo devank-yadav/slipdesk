@@ -38,6 +38,7 @@
         <p class="page-subtitle mt-sm">Create quick shortcuts for frequent assignments.</p>
       </header>
       <form class="form-grid mt-md" action="/settings" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field-group">
           <label for="new_driver">Driver Name</label>
           <input type="text" id="new_driver" name="new_driver" placeholder="e.g. Aman Verma">
@@ -45,8 +46,64 @@
         <input class="btn btn-primary" type="submit" value="Add Driver">
       </form>
       {% if message %}
-        <p class="message">{{ message }}</p>
+        <p class="message {% if message_type == 'error' %}error{% endif %}">{{ message }}</p>
       {% endif %}
+
+      {% if driver_list %}
+      <div class="mt-md">
+        <h3 class="section-title" style="font-size:14px;margin-bottom:10px;">Registered Drivers</h3>
+        <ul class="invoice-list">
+          {% for driver in driver_list %}
+          <li class="invoice-item">
+            <div class="info"><strong>{{ driver.name }}</strong></div>
+            <div class="actions">
+              <form method="post" action="/delete_driver/{{ driver.id }}" onsubmit="return confirm('Remove {{ driver.name }}?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-danger" type="submit">Remove</button>
+              </form>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <header>
+        <h2 class="section-title">Monthly Export & Report</h2>
+        <p class="page-subtitle mt-sm">Pick a month to download all slips as Excel or as a summary PDF report.</p>
+      </header>
+      <form class="form-grid mt-md" id="monthForm" onsubmit="return false;">
+        <div class="field-group">
+          <label for="report_month">Month</label>
+          <input type="month" id="report_month" value="{{ current_month }}">
+        </div>
+        <div class="filter-actions">
+          <a class="btn btn-primary" id="excelMonthBtn" href="#">Export Month to Excel</a>
+          <a class="btn btn-soft" id="reportMonthBtn" href="#">View Monthly Report</a>
+          <a class="btn btn-outline" id="reportMonthPdfBtn" href="#">Download Report PDF</a>
+        </div>
+      </form>
+      <script>
+        const monthInput = document.getElementById('report_month');
+        function updateLinks() {
+          const m = monthInput.value;
+          document.getElementById('excelMonthBtn').href = '/export/excel/month/' + m;
+          document.getElementById('reportMonthBtn').href = '/report/month/' + m;
+          document.getElementById('reportMonthPdfBtn').href = '/report/month/' + m + '?format=pdf';
+        }
+        monthInput.addEventListener('change', updateLinks);
+        updateLinks();
+      </script>
+    </section>
+
+    <section class="card">
+      <header>
+        <h2 class="section-title">Slip Templates</h2>
+        <p class="page-subtitle mt-sm">Manage saved templates for trips you run repeatedly.</p>
+      </header>
+      <a class="btn btn-soft mt-md" href="/templates">Manage Templates</a>
     </section>
   </main>
 </body>
