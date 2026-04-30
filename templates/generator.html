@@ -810,18 +810,12 @@
           set('#closing_time', d.closing_time);
           set('#project_code', d.project_code);
           set('#mail_approval_date', d.mail_approval_date);
-          const hasMap = d.route_stops_json && mapsLoaded;
-          if (hasMap) {
-            // Map builder will rebuild waypoints and auto-fill route_covered + total_km
-            try { restoreFromTemplate(JSON.parse(d.route_stops_json)); } catch(e) {
-              // fallback to manual if restore fails
-              if (d.route_covered) document.getElementById('route_covered').value = d.route_covered;
-              if (d.total_km) totalKmEl.value = d.total_km;
-            }
-          } else {
-            // Manual mode: fill text + total_km directly from template
-            if (d.route_covered) document.getElementById('route_covered').value = d.route_covered;
-            if (d.total_km) totalKmEl.value = d.total_km;
+          // Always fill from stored template data immediately — never rely on recalculation
+          if (d.route_covered) document.getElementById('route_covered').value = d.route_covered;
+          if (d.total_km) { totalKmEl.value = d.total_km; recalcCloseFromStartAndTotal(); }
+          // Also restore Map Builder waypoints if available (for editing), without auto-apply
+          if (d.route_stops_json && mapsLoaded) {
+            try { restoreFromTemplate(JSON.parse(d.route_stops_json)); } catch(e) {}
           }
           // bump use_count silently
           fetch('/templates/' + id + '/use', { method: 'POST' });
@@ -1292,8 +1286,7 @@
       const retEl = document.getElementById('returnToOrigin');
       if (retEl) retEl.checked = !!data.return_to_origin;
 
-      // Switch to map mode, then auto-apply once distance is calculated
-      _pendingAutoApply = true;
+      // Switch to map mode so waypoints are visible and editable
       setRouteMode('map');
       setTimeout(debouncedCalc, 300);
     }

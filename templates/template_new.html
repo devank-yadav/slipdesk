@@ -463,7 +463,7 @@
           <div class="map-footer">
             <span class="distance-display" id="distanceDisplay">Add stops to calculate distance</span>
             <button type="button" class="btn-apply-route" id="btnApply"
-                    onclick="applyRoute()" disabled>↓ Apply to Template</button>
+                    onclick="saveMapBuilder()" disabled>Save Map Builder</button>
           </div>
         </div>
       </div>
@@ -804,6 +804,8 @@
           const stops = [originShort, ...stopShorts];
           if (returnChecked) stops.push(originShort);
           currentRoute = { distance_km: totalKm, stops };
+          // Always keep route_stops_json in sync so it's saved even without clicking the button
+          document.getElementById('route_stops_json').value = JSON.stringify(serializeStops());
           distEl.textContent = 'Total distance: ' + totalKm + ' km';
           distEl.className   = 'distance-display ready';
           applyEl.disabled   = false;
@@ -842,12 +844,16 @@
       };
     }
 
-    function applyRoute() {
+    function saveMapBuilder() {
       if (!currentRoute) return;
       document.getElementById('route_covered').value    = currentRoute.stops.join(' → ');
       document.getElementById('total_km').value         = currentRoute.distance_km;
       document.getElementById('route_stops_json').value = JSON.stringify(serializeStops());
-      setRouteMode('manual');   // switch to manual so user sees the filled text
+      // Stay in map mode — confirm visually
+      const btn = document.getElementById('btnApply');
+      btn.textContent = 'Saved ✓';
+      btn.style.background = '#166534';
+      setTimeout(() => { btn.textContent = 'Save Map Builder'; btn.style.background = ''; }, 2000);
     }
   </script>
 </body>
