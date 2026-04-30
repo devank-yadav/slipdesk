@@ -638,10 +638,32 @@
     }
 
     function mirrorStops() {
-      const rows = [...document.querySelectorAll('#waypointsList .waypoint-row[data-type="stop"]')];
-      if (!rows.length) { alert('Add at least one stop before mirroring.'); return; }
-      rows.map(r => ({ value: r.querySelector('.waypoint-input').value.trim(), short: r.querySelector('.waypoint-input').dataset.shortName || '' }))
-          .forEach(it => { if (it.value) addWaypoint(it.value, it.short); });
+      const allRows = [...document.querySelectorAll('#waypointsList > .waypoint-row')];
+      if (!allRows.length) { alert('Add at least one stop before mirroring.'); return; }
+      for (const row of [...allRows].reverse()) {
+        if (row.dataset.type === 'loop') {
+          const fromIn  = row.querySelector('.loop-from');
+          const toIn    = row.querySelector('.loop-to');
+          const fromVal = fromIn.value.trim(), fromShort = fromIn.dataset.shortName || '';
+          const toVal   = toIn.value.trim(),   toShort   = toIn.dataset.shortName   || '';
+          const count   = parseInt(row.querySelector('.loop-count').value, 10) || 2;
+          addLoopBlock();
+          const newRows = document.querySelectorAll('#waypointsList > .waypoint-row[data-type="loop"]');
+          const newRow  = newRows[newRows.length - 1];
+          if (newRow) {
+            const nf = newRow.querySelector('.loop-from');
+            const nt = newRow.querySelector('.loop-to');
+            const nc = newRow.querySelector('.loop-count');
+            if (nf) { nf.value = toVal;   if (toShort)   nf.dataset.shortName = toShort; }
+            if (nt) { nt.value = fromVal; if (fromShort) nt.dataset.shortName = fromShort; }
+            if (nc) nc.value = count;
+            updateLoopPreview(newRow);
+          }
+        } else {
+          const i = row.querySelector('.waypoint-input');
+          if (i.value.trim()) addWaypoint(i.value.trim(), i.dataset.shortName || '');
+        }
+      }
       debouncedCalc();
     }
 

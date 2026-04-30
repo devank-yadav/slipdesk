@@ -810,9 +810,18 @@
           set('#closing_time', d.closing_time);
           set('#project_code', d.project_code);
           set('#mail_approval_date', d.mail_approval_date);
-          if (d.route_covered) document.getElementById('route_covered').value = d.route_covered;
-          if (d.route_stops_json) {
-            try { if (mapsLoaded) restoreFromTemplate(JSON.parse(d.route_stops_json)); } catch(e) {}
+          const hasMap = d.route_stops_json && mapsLoaded;
+          if (hasMap) {
+            // Map builder will rebuild waypoints and auto-fill route_covered + total_km
+            try { restoreFromTemplate(JSON.parse(d.route_stops_json)); } catch(e) {
+              // fallback to manual if restore fails
+              if (d.route_covered) document.getElementById('route_covered').value = d.route_covered;
+              if (d.total_km) totalKmEl.value = d.total_km;
+            }
+          } else {
+            // Manual mode: fill text + total_km directly from template
+            if (d.route_covered) document.getElementById('route_covered').value = d.route_covered;
+            if (d.total_km) totalKmEl.value = d.total_km;
           }
           // bump use_count silently
           fetch('/templates/' + id + '/use', { method: 'POST' });
@@ -871,6 +880,7 @@
     let dirService   = null;
     let dirRenderer  = null;
     let currentRoute = null;
+    let _pendingAutoApply = false;
     let wpCounter    = 0;
     let dragSrcRow   = null;
 
@@ -1006,17 +1016,34 @@
     // MIRROR — duplicate all current stops in same order (pick & drop)
     // =====================================================================
     function mirrorStops() {
-      const sourceRows = [...document.querySelectorAll('#waypointsList .waypoint-row[data-type="stop"]')];
-      if (sourceRows.length === 0) {
+      const allRows = [...document.querySelectorAll('#waypointsList > .waypoint-row')];
+      if (allRows.length === 0) {
         alert('Add at least one stop before mirroring.');
         return;
       }
-      const items = sourceRows.map(row => {
-        const i = row.querySelector('.waypoint-input');
-        return { value: i.value.trim(), short: i.dataset.shortName || '' };
-      });
-      for (const it of items) {
-        if (it.value) addWaypoint(it.value, it.short);
+      // Reverse order for a true reflection (A→B→C mirrors as C→B→A)
+      for (const row of [...allRows].reverse()) {
+        if (row.dataset.type === 'loop') {
+          const fromIn   = row.querySelector('.loop-from');
+          const toIn     = row.querySelector('.loop-to');
+          const fromVal  = fromIn.value.trim(), fromShort = fromIn.dataset.shortName || '';
+          const toVal    = toIn.value.trim(),   toShort   = toIn.dataset.shortName   || '';
+          const count    = parseInt(row.querySelector('.loop-count').value, 10) || 2;
+          const newRow   = addLoopBlock();
+          if (newRow) {
+            const nf = newRow.querySelector('.loop-from');
+            const nt = newRow.querySelector('.loop-to');
+            const nc = newRow.querySelector('.loop-count');
+            // Swap from/to so the loop direction is reflected
+            if (nf) { nf.value = toVal;   if (toShort)   nf.dataset.shortName = toShort;   attachAutocomplete(nf); }
+            if (nt) { nt.value = fromVal; if (fromShort) nt.dataset.shortName = fromShort; attachAutocomplete(nt); }
+            if (nc) nc.value = count;
+            updateLoopPreview(newRow);
+          }
+        } else {
+          const i = row.querySelector('.waypoint-input');
+          if (i.value.trim()) addWaypoint(i.value.trim(), i.dataset.shortName || '');
+        }
       }
       debouncedCalc();
     }
@@ -1214,6 +1241,11 @@
           distEl.textContent  = 'Total distance: ' + totalKm + ' km';
           distEl.className    = 'distance-display ready';
           applyEl.disabled    = false;
+
+          if (_pendingAutoApply) {
+            _pendingAutoApply = false;
+            _silentApply();
+          }
         } else {
           console.error('Directions API error:', status);
           distEl.textContent  = 'Could not calculate (' + status + ')';
@@ -1260,7 +1292,8 @@
       const retEl = document.getElementById('returnToOrigin');
       if (retEl) retEl.checked = !!data.return_to_origin;
 
-      // Switch to map mode and calculate
+      // Switch to map mode, then auto-apply once distance is calculated
+      _pendingAutoApply = true;
       setRouteMode('map');
       setTimeout(debouncedCalc, 300);
     }
@@ -1268,6 +1301,16 @@
     // =====================================================================
     // APPLY ROUTE TO SLIP
     // =====================================================================
+    function _silentApply() {
+      // Auto-fills route_covered + total_km but stays in map mode
+      if (!currentRoute) return;
+      document.getElementById('route_covered').value = currentRoute.stops.join(' → ');
+      kmSyncLock = true;
+      totalKmEl.value = currentRoute.distance_km;
+      recalcCloseFromStartAndTotal();
+      kmSyncLock = false;
+    }
+
     function applyRoute() {
       if (!currentRoute) return;
 
