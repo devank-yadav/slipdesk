@@ -314,6 +314,23 @@ def _turso_pipeline(stmts):
         return _json.loads(resp.read())["results"]
 
 
+def _coerce_cell(cell):
+    t, v = cell.get("type"), cell.get("value")
+    if t == "null" or v is None:
+        return None
+    if t == "integer":
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            return v
+    if t == "float":
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return v
+    return v  # text / blob → keep as string
+
+
 class _TursoCursor:
     def __init__(self, result):
         r = result.get("response", {}).get("result", {})
@@ -327,10 +344,7 @@ class _TursoCursor:
         raw = r.get("rows", [])
         self._rows = []
         for raw_row in raw:
-            self._rows.append(tuple(
-                None if cell["type"] == "null" else cell["value"]
-                for cell in raw_row
-            ))
+            self._rows.append(tuple(_coerce_cell(cell) for cell in raw_row))
         self._idx = 0
 
     def fetchone(self):
