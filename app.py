@@ -303,7 +303,11 @@ def _db_connect(database, *args, **kwargs):
     if USE_TURSO:
         global _turso_shared_conn
         if _turso_shared_conn is None:
-            _turso_shared_conn = libsql.connect(TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
+            # libsql-experimental requires https:// not libsql:// for remote connections
+            turso_url = TURSO_DATABASE_URL
+            if turso_url.startswith('libsql://'):
+                turso_url = 'https://' + turso_url[len('libsql://'):]
+            _turso_shared_conn = libsql.connect(turso_url, auth_token=TURSO_AUTH_TOKEN)
         # Do not close shared connection on exit; just commit when needed.
         return _ConnectionProxy(_turso_shared_conn)
     return _sqlite_connect(database, *args, **kwargs)
