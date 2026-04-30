@@ -1,33 +1,125 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Admin Login</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-</head>
-<body class="auth-shell">
-  <div class="card auth-card">
-    <div class="brand-badge brand-badge--center">
-      <strong>Duty Slip</strong>
-    </div>
-    <h1 class="auth-title">Osprey Travels</h1>
-    <p class="auth-subtitle">Enter your credentials to access the dashboard.</p>
+  <meta charset="UTF-8">
+  <title>Login — Osprey Travels</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
 
-    <form class="form-grid" action="/admin_login" method="post">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="field-group">
-        <label for="username">Username</label>
-        <input type="text" id="username" name="username" required>
-      </div>
-      <div class="field-group">
-        <label for="password">Password</label>
-        <input type="password" id="password" name="password" required>
-      </div>
-      <input class="btn btn-primary" type="submit" value="Login">
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      background: #f2f2f7;
+      color: #1c1c1e;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .login-wrap {
+      width: 360px;
+    }
+
+    .login-brand {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .login-brand h1 {
+      margin: 0;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+    .login-brand h1 span { color: #007aff; }
+    .login-brand p {
+      margin: 6px 0 0;
+      font-size: 13px;
+      color: #8e8e93;
+    }
+
+    .login-card {
+      background: #fff;
+      border-radius: 14px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.09);
+      padding: 28px 28px 24px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-bottom: 14px;
+    }
+    .field label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: #8e8e93;
+    }
+    .field input {
+      padding: 10px 12px;
+      border: 1px solid #e5e5ea;
+      border-radius: 8px;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.15s;
+      color: #1c1c1e;
+    }
+    .field input:focus { border-color: #007aff; }
+
+    .btn-login {
+      width: 100%;
+      background: #007aff;
+      color: #fff;
+      border: none;
+      padding: 12px;
+      border-radius: 9px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.15s;
+    }
+    .btn-login:hover { background: #0062cc; }
+
+    .error-msg {
+      margin-top: 14px;
+      padding: 10px 14px;
+      background: #fdecea;
+      border-radius: 8px;
+      color: #c62828;
+      font-size: 13px;
+      font-weight: 500;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-brand">
+      <h1>Osprey <span>Travels</span></h1>
+      <p>Duty Slip Management</p>
+    </div>
+
+    <div class="login-card">
+      <form action="/admin_login" method="post">
+        <div class="field">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" required autofocus>
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required>
+        </div>
+        <button type="submit" class="btn-login">Sign In</button>
+      </form>
+
       {% if error %}
-        <p class="message error">{{ error }}</p>
+        <div class="error-msg">{{ error }}</div>
       {% endif %}
-    </form>
+    </div>
   </div>
 </body>
 </html>

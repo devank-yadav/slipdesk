@@ -2,169 +2,538 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Admin Portal</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <title>Dashboard — Osprey Travels</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_portal.css') }}">
 </head>
-<body class="app-shell">
+<body>
   {% include 'navbar.html' %}
 
-  <main class="page-content">
-    <section class="card">
-      <header>
-        <h1 class="page-title">Admin Portal</h1>
-        <p class="page-subtitle">Filter and export your duty slips in a few clicks.</p>
-      </header>
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-greeting">
+      <h1>Dashboard</h1>
+      <div class="date">{{ today_str }}</div>
+    </div>
+    <a href="/generator" class="btn-new"><svg class="icon" width="16" height="16"><use href="#icon-plus"/></svg> New Duty Slip</a>
+  </div>
 
-      <form class="filter-form" action="/admin_portal" method="get">
-        <div class="filter-row">
-          <div class="filter-group filter-group--autocomplete">
-            <label for="customer_name">Customer</label>
-            <input
-              type="text"
-              name="customer_name"
-              id="customer_name"
-              value="{{ customer_name }}"
-              autocomplete="off"
-              placeholder="Search customer"
-            />
-            <div id="customer_suggestions" class="autocomplete-suggestions is-hidden"></div>
-          </div>
+  <!-- STATS CARDS (clickable filters) -->
+  <div class="stats">
+    <a href="/admin_portal" class="stat total">
+      <span class="icon"><svg width="22" height="22"><use href="#icon-chart-bar"/></svg></span>
+      <div class="num">{{ stats_total }}</div>
+      <div class="lbl">Total Slips</div>
+    </a>
+    <a href="/admin_portal?date_quick=month" class="stat month">
+      <span class="icon"><svg width="22" height="22"><use href="#icon-calendar"/></svg></span>
+      <div class="num">{{ stats_this_month }}</div>
+      <div class="lbl">This Month</div>
+    </a>
+    <a href="/admin_portal?status_quick=pending_bill" class="stat pending">
+      <span class="icon"><svg width="22" height="22"><use href="#icon-document"/></svg></span>
+      <div class="num">{{ stats_pending_bill }}</div>
+      <div class="lbl">Not Submitted</div>
+    </a>
+    <a href="/admin_portal?status_quick=pending_pay" class="stat pending-pay">
+      <span class="icon"><svg width="22" height="22"><use href="#icon-clock"/></svg></span>
+      <div class="num">{{ stats_pending_pay }}</div>
+      <div class="lbl">Awaiting Payment</div>
+    </a>
+    <a href="/admin_portal?status_quick=paid" class="stat paid">
+      <span class="icon"><svg width="22" height="22"><use href="#icon-currency"/></svg></span>
+      <div class="num">{{ stats_paid_month }}</div>
+      <div class="lbl">Paid This Month</div>
+    </a>
+  </div>
 
-          <div class="filter-group">
-            <label for="driver">Driver</label>
-            <select name="driver" id="driver">
-              <option value="">All Drivers</option>
-              {% for d in driver_names %}
-                <option value="{{ d }}" {% if driver_filter == d %}selected{% endif %}>{{ d }}</option>
-              {% endfor %}
-            </select>
-          </div>
+  <!-- SEARCH BAR -->
+  <div class="search-wrap">
+    <form action="/admin_portal" method="get" class="search-bar">
+      <span class="search-icon"><svg width="16" height="16"><use href="#icon-search"/></svg></span>
+      <input type="text" name="q" value="{{ search_q }}" placeholder="Search by customer, vehicle, driver, slip number…">
+    </form>
+  </div>
 
-          <div class="filter-group">
-            <label for="month">Month</label>
-            <input type="month" id="month" name="month" value="{{ month_filter }}">
-          </div>
+  <!-- QUICK FILTER CHIPS — two independent rows: Date and Status -->
+  <div class="filter-rows">
+    <div class="filter-row">
+      <span class="filter-row-label"><svg class="icon" width="13" height="13"><use href="#icon-calendar"/></svg> Date</span>
+      <div class="chips">
+        <a href="/admin_portal?{% if status_quick %}status_quick={{ status_quick }}&{% endif %}{% if search_q %}q={{ search_q }}&{% endif %}"
+           class="chip {% if not date_quick %}active{% endif %}">All Time</a>
+        <a href="/admin_portal?date_quick=today{% if status_quick %}&status_quick={{ status_quick }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}"
+           class="chip {% if date_quick == 'today' %}active{% endif %}">
+          <svg class="icon" width="13" height="13"><use href="#icon-calendar"/></svg> Today</a>
+        <a href="/admin_portal?date_quick=week{% if status_quick %}&status_quick={{ status_quick }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}"
+           class="chip {% if date_quick == 'week' %}active{% endif %}">
+          <svg class="icon" width="13" height="13"><use href="#icon-calendar"/></svg> This Week</a>
+        <a href="/admin_portal?date_quick=month{% if status_quick %}&status_quick={{ status_quick }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}"
+           class="chip {% if date_quick == 'month' %}active{% endif %}">
+          <svg class="icon" width="13" height="13"><use href="#icon-calendar"/></svg> This Month</a>
+        <a href="/admin_portal?date_quick=last_month{% if status_quick %}&status_quick={{ status_quick }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}"
+           class="chip {% if date_quick == 'last_month' %}active{% endif %}">Last Month</a>
+        <a href="/admin_portal?date_quick=last7{% if status_quick %}&status_quick={{ status_quick }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}"
+           class="chip {% if date_quick == 'last7' %}active{% endif %}">Last 7 Days</a>
+      </div>
+    </div>
+    <div class="filter-row">
+      <span class="filter-row-label"><svg class="icon" width="13" height="13"><use href="#icon-tag"/></svg> Status</span>
+      <div class="chips">
+        <a href="/admin_portal?{% if date_quick %}date_quick={{ date_quick }}&{% endif %}{% if search_q %}q={{ search_q }}&{% endif %}"
+           class="chip {% if not status_quick %}active{% endif %}">All</a>
+        <a href="/admin_portal?status_quick=pending_bill{% if date_quick %}&date_quick={{ date_quick }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}"
+           class="chip {% if status_quick == 'pending_bill' %}active{% endif %}">
+          <svg class="icon" width="13" height="13"><use href="#icon-document"/></svg> Not Submitted</a>
+        <a href="/admin_portal?status_quick=pending_pay{% if date_quick %}&date_quick={{ date_quick }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}"
+           class="chip {% if status_quick == 'pending_pay' %}active{% endif %}">
+          <svg class="icon" width="13" height="13"><use href="#icon-clock"/></svg> Awaiting Payment</a>
+        <a href="/admin_portal?status_quick=paid{% if date_quick %}&date_quick={{ date_quick }}{% endif %}{% if search_q %}&q={{ search_q }}{% endif %}"
+           class="chip {% if status_quick == 'paid' %}active{% endif %}">
+          <svg class="icon" width="13" height="13"><use href="#icon-check"/></svg> Paid</a>
+      </div>
+    </div>
+  </div>
 
-          <div class="filter-group">
-            <label for="date_from">Date From</label>
-            <input type="date" id="date_from" name="date_from" value="{{ date_from }}">
-          </div>
+  <!-- ADVANCED FILTERS TOGGLE -->
+  <button class="adv-toggle" id="advToggle" onclick="toggleAdv()">
+    <svg class="icon" width="13" height="13"><use href="#icon-filter"/></svg>
+    <span>More Filters</span>
+    <svg class="icon arrow" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+  </button>
 
-          <div class="filter-group">
-            <label for="date_to">Date To</label>
-            <input type="date" id="date_to" name="date_to" value="{{ date_to }}">
-          </div>
+  <!-- ADVANCED FILTERS -->
+  <div class="adv-filters" id="advFilters">
+    <form action="/admin_portal" method="get">
+      <div class="adv-row">
+        <div class="adv-group">
+          <label>Customer</label>
+          <input type="text" name="customer_name" value="{{ customer_name }}" placeholder="Customer name">
         </div>
-
-        <div class="filter-actions">
-          <button class="btn btn-primary" type="submit">Apply Filters</button>
-          {% if customer_name or driver_filter or month_filter or date_from or date_to %}
-            <a class="btn btn-ghost" href="/admin_portal">Clear</a>
-          {% endif %}
-          <a class="btn btn-soft" href="/generator">Create New Duty Slip</a>
-        </div>
-      </form>
-    </section>
-
-    <section class="card">
-      <header class="card-header">
-        <h2 class="section-title">Recent Duty Slips</h2>
-        <span class="pill">{{ invoices|length }} record{{ invoices|length != 1 and 's' or '' }} found</span>
-      </header>
-
-      <form method="post" action="/bulk_action" id="bulkForm">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="bulk-actions">
-          <button class="btn btn-danger" type="submit" name="action" value="delete" onclick="return confirm('Delete selected invoices?')">Delete Selected</button>
-          <button class="btn btn-outline" type="submit" name="action" value="download">Download Selected</button>
-          <button class="btn btn-soft" type="submit" name="action" value="export_excel" formaction="/export/excel">Export to Excel</button>
-        </div>
-
-        {% if invoices %}
-          <ul class="invoice-list">
-            {% for invoice in invoices %}
-              <li class="invoice-item">
-                <input type="checkbox" name="selected_invoices" value="{{ invoice[0] }}">
-                <div class="info">
-                  <strong>{{ invoice[1] }}</strong>
-                  <div class="meta">
-                    <span>Date: {{ invoice[2] }}</span>
-                    <span>Driver: {{ invoice[5] if invoice[5] else 'N/A' }}</span>
-                    <span>Generated: {{ invoice[4] }}</span>
-                  </div>
-                </div>
-                <div class="actions">
-                  <a class="btn btn-outline" href="{{ url_for('download_invoice', invoice_id=invoice[0]) }}">Download</a>
-                  <form method="post" action="/delete_invoice/{{ invoice[0] }}" onsubmit="return confirm('Are you sure you want to delete this invoice?');">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-danger" type="submit">Delete</button>
-                  </form>
-                </div>
-              </li>
+        <div class="adv-group">
+          <label>Driver</label>
+          <select name="driver">
+            <option value="">All Drivers</option>
+            {% for d in driver_names %}
+              <option value="{{ d }}" {% if driver_filter == d %}selected{% endif %}>{{ d }}</option>
             {% endfor %}
-          </ul>
-        {% else %}
-          <div class="empty-state">
-            <strong>No duty slips yet</strong>
-            <span>Create your first entry from the generator page.</span>
-          </div>
+          </select>
+        </div>
+        <div class="adv-group">
+          <label>Vehicle</label>
+          <select name="vehicle">
+            <option value="">All Vehicles</option>
+            {% for v in vehicle_names %}
+              <option value="{{ v }}" {% if vehicle_filter == v %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="adv-group">
+          <label>Status</label>
+          <select name="status">
+            <option value="">All Statuses</option>
+            <option value="Bill Generated"   {% if status_filter == 'Bill Generated'   %}selected{% endif %}>Bill Generated</option>
+            <option value="Bill Submitted"   {% if status_filter == 'Bill Submitted'   %}selected{% endif %}>Bill Submitted</option>
+            <option value="Payment Received" {% if status_filter == 'Payment Received' %}selected{% endif %}>Payment Received</option>
+          </select>
+        </div>
+        <div class="adv-group">
+          <label>Date From</label>
+          <input type="date" name="date_from" value="{{ date_from }}">
+        </div>
+        <div class="adv-group">
+          <label>Date To</label>
+          <input type="date" name="date_to" value="{{ date_to }}">
+        </div>
+      </div>
+      <div class="adv-actions">
+        <button type="submit">Apply Filters</button>
+        {% if customer_name or driver_filter or vehicle_filter or month_filter or date_from or date_to or status_filter or search_q or date_quick or status_quick %}
+          <a href="/admin_portal">Clear All</a>
         {% endif %}
-      </form>
-    </section>
-  </main>
+      </div>
+    </form>
+  </div>
+
+  <!-- BULK ACTIONS -->
+  <div class="bulk-bar empty" id="bulkBar">
+    <span class="count" id="selectedCount">0 selected</span>
+    <button class="btn-bulk btn-bulk-print"  onclick="submitBulk('print')"      disabled><svg class="icon" width="14" height="14"><use href="#icon-printer"/></svg> Print</button>
+    <button class="btn-bulk btn-bulk-dl"     onclick="submitBulk('download')"   disabled><svg class="icon" width="14" height="14"><use href="#icon-download"/></svg> Download</button>
+    <button class="btn-bulk btn-bulk-excel"  onclick="submitBulk('excel')"      disabled><svg class="icon" width="14" height="14"><use href="#icon-download"/></svg> Export to Excel</button>
+    <button class="btn-bulk btn-bulk-status" onclick="openBulkStatusModal()"    disabled><svg class="icon" width="14" height="14"><use href="#icon-refresh"/></svg> Change Status</button>
+    <button class="btn-bulk btn-bulk-delete" onclick="submitBulk('delete')"     disabled><svg class="icon" width="14" height="14"><use href="#icon-trash"/></svg> Delete</button>
+  </div>
+
+  <!-- TABLE -->
+  <div class="table-card">
+    <div class="table-meta">
+      {% set total_pages = ((total_results + page_size - 1) // page_size) if total_results is not none else 1 %}
+      Showing <strong>{{ invoices|length }}</strong> slip{{ 's' if invoices|length != 1 else '' }}
+      <span style="color:var(--text-muted);font-weight:600;">
+        — Page {{ page }} of {{ total_pages }} ({{ total_results }} total)
+      </span>
+    </div>
+    <table id="invoiceTable">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="selectAll" title="Select all"></th>
+          <th>Slip #</th>
+          <th>Customer</th>
+          <th>Date</th>
+          <th>Driver</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if invoices %}
+          {% for inv in invoices %}
+          {% set status = inv[8] or 'Bill Generated' %}
+          {% if status == 'Bill Generated' %}
+            {% set badge_class = 'badge-generated' %}
+            {% set status_icon = 'icon-document' %}
+          {% elif status == 'Bill Submitted' %}
+            {% set badge_class = 'badge-submitted' %}
+            {% set status_icon = 'icon-clock' %}
+          {% else %}
+            {% set badge_class = 'badge-received' %}
+            {% set status_icon = 'icon-check' %}
+          {% endif %}
+          <tr class="data-row" onclick="toggleExpand({{ inv[0] }}, event)">
+            <td>
+              <input type="checkbox" class="row-check" value="{{ inv[0] }}">
+            </td>
+            <td class="slip-no">{{ inv[4] or '—' }}</td>
+            <td>
+              <div class="cust-cell">
+                <div class="cust-avatar">{{ inv[1][0]|upper if inv[1] else '?' }}</div>
+                <div class="cust-info">
+                  <div class="cust-name">{{ inv[1] }}</div>
+                  {% if inv[2] %}<div class="cust-company">{{ inv[2] }}</div>{% endif %}
+                </div>
+              </div>
+            </td>
+            <td>{{ inv[3] or '—' }}</td>
+            <td class="driver-cell">{{ inv[7] or '—' }}</td>
+            <td>
+              <span class="badge {{ badge_class }}"
+                    data-id="{{ inv[0] }}"
+                    data-status="{{ status }}"
+                    data-paydate="{{ inv[9] or '' }}"
+                    onclick="openModal(this); event.stopPropagation();"
+                    title="Click to update status">
+                <svg class="icon" width="12" height="12"><use href="#{{ status_icon }}"/></svg> {{ status }}
+              </span>
+              {% if inv[9] and status == 'Payment Received' %}
+                <span class="payment-date-hint"><svg class="icon" width="11" height="11"><use href="#icon-calendar"/></svg> {{ inv[9] }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="row-actions">
+                <a class="icon-btn" href="/invoice/{{ inv[0] }}/download" title="Download PDF" onclick="event.stopPropagation()"><svg class="icon" width="15" height="15"><use href="#icon-download"/></svg></a>
+                <a class="icon-btn" href="/clone/{{ inv[0] }}" title="Clone slip" onclick="event.stopPropagation()"><svg class="icon" width="15" height="15"><use href="#icon-copy"/></svg></a>
+                <form method="post" action="/delete_invoice/{{ inv[0] }}" style="display:inline;"
+                      onsubmit="return confirm('Delete this invoice permanently?')" onclick="event.stopPropagation()">
+                  <button class="icon-btn danger" type="submit" title="Delete"><svg class="icon" width="15" height="15"><use href="#icon-trash"/></svg></button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          <tr class="expand-row" id="expand-{{ inv[0] }}">
+            <td colspan="7">
+              <div class="expand-inner">
+                <div class="ef">
+                  <span class="ef-label">Vehicle Type</span>
+                  <span class="ef-value">{{ inv[10] or '—' }}</span>
+                </div>
+                <div class="ef">
+                  <span class="ef-label">Vehicle No.</span>
+                  <span class="ef-value">{{ inv[11] or '—' }}</span>
+                </div>
+                <div class="ef">
+                  <span class="ef-label">Project Code</span>
+                  <span class="ef-value">{{ inv[21] if inv|length > 21 and inv[21] else (inv[18] or '—') }}</span>
+                </div>
+                <div class="ef">
+                  <span class="ef-label">Mail Approval</span>
+                  <span class="ef-value">{{ inv[22] if inv|length > 22 and inv[22] else (inv[19] or '—') }}</span>
+                </div>
+                <div class="ef">
+                  <span class="ef-label">Starting KM</span>
+                  <span class="ef-value">{{ inv[12] or '—' }}</span>
+                </div>
+                <div class="ef">
+                  <span class="ef-label">Closing KM</span>
+                  <span class="ef-value">{{ inv[13] or '—' }}</span>
+                </div>
+                <div class="ef">
+                  <span class="ef-label">Total KM</span>
+                  <span class="ef-value">{{ inv[14] or '—' }}</span>
+                </div>
+                <div class="ef">
+                  <span class="ef-label">Starting Time</span>
+                  <span class="ef-value">{{ inv[15] or '—' }}</span>
+                </div>
+                <div class="ef">
+                  <span class="ef-label">Closing Time</span>
+                  <span class="ef-value">{{ inv[16] or '—' }}</span>
+                </div>
+                <div class="ef">
+                  <span class="ef-label">Total Time</span>
+                  <span class="ef-value">{{ inv[17] or '—' }}</span>
+                </div>
+                {% if inv[20] %}
+                <div class="ef full">
+                  <span class="ef-label">Route Covered</span>
+                  <span class="ef-value">{{ inv[20] }}</span>
+                </div>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="7">
+              <div class="empty-state">
+                <div class="empty-icon"><svg width="48" height="48" style="opacity:0.35"><use href="#icon-document"/></svg></div>
+                <p>No duty slips found{% if search_q or date_quick or status_quick %} for the current filters{% endif %}.</p>
+                {% if search_q or date_quick or status_quick or customer_name or driver_filter or vehicle_filter or status_filter %}
+                  <a href="/admin_portal"><svg class="icon" width="14" height="14"><use href="#icon-x"/></svg> Clear filters</a>
+                {% else %}
+                  <a href="/generator"><svg class="icon" width="14" height="14"><use href="#icon-plus"/></svg> Create your first slip</a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    {% if total_pages > 1 %}
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-top:1px solid var(--border);gap:10px;flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;align-items:center;">
+        {% if page > 1 %}
+          <a class="chip" href="/admin_portal?{% if base_query %}{{ base_query }}&{% endif %}page={{ page-1 }}&page_size={{ page_size }}">← Prev</a>
+        {% else %}
+          <span class="chip" style="opacity:.45;pointer-events:none;">← Prev</span>
+        {% endif %}
+        {% if page < total_pages %}
+          <a class="chip" href="/admin_portal?{% if base_query %}{{ base_query }}&{% endif %}page={{ page+1 }}&page_size={{ page_size }}">Next →</a>
+        {% else %}
+          <span class="chip" style="opacity:.45;pointer-events:none;">Next →</span>
+        {% endif %}
+      </div>
+
+      <div style="display:flex;gap:10px;align-items:center;">
+        <span style="font-size:12px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px;">Rows</span>
+        <select onchange="location.href=this.value" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:10px;background:#fff;font-weight:600;">
+          {% for s in [50,100,200] %}
+            <option value="/admin_portal?{% if base_query %}{{ base_query }}&{% endif %}page=1&page_size={{ s }}" {% if page_size == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- BULK STATUS MODAL -->
+  <div class="modal-overlay" id="bulkStatusModal">
+    <div class="modal-box">
+      <h3>Change Status for <span id="bulkCount">0</span> Slip(s)</h3>
+      <div class="modal-field">
+        <label>New Status</label>
+        <select id="bulk-status" onchange="toggleBulkPayDate(this.value)">
+          <option value="Bill Generated">Bill Generated</option>
+          <option value="Bill Submitted">Bill Submitted</option>
+          <option value="Payment Received">Payment Received</option>
+        </select>
+      </div>
+      <div class="modal-field" id="bulk-paydate-row" style="display:none;">
+        <label>Payment Date</label>
+        <input type="date" id="bulk-paydate">
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" onclick="closeBulkModal()">Cancel</button>
+        <button class="btn-save"   onclick="saveBulkStatus()">Update All</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SINGLE STATUS MODAL -->
+  <div class="modal-overlay" id="statusModal">
+    <div class="modal-box">
+      <h3>Update Bill Status</h3>
+      <input type="hidden" id="modal-invoice-id">
+      <div class="modal-field">
+        <label>Status</label>
+        <select id="modal-status" onchange="togglePayDate(this.value)">
+          <option value="Bill Generated">Bill Generated</option>
+          <option value="Bill Submitted">Bill Submitted</option>
+          <option value="Payment Received">Payment Received</option>
+        </select>
+      </div>
+      <div class="modal-field" id="modal-paydate-row" style="display:none;">
+        <label>Payment Date</label>
+        <input type="date" id="modal-paydate">
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+        <button class="btn-save"   onclick="saveStatus()">Save</button>
+      </div>
+    </div>
+  </div>
 
   <script>
-    const customerInput = document.getElementById('customer_name');
-    const suggestionsBox = document.getElementById('customer_suggestions');
-    let timer = null;
+    // ========== ADV FILTERS TOGGLE ==========
+    function toggleAdv() {
+      document.getElementById('advFilters').classList.toggle('open');
+      document.getElementById('advToggle').classList.toggle('open');
+    }
+    // Auto-open if any advanced filter is set
+    {% if customer_name or driver_filter or vehicle_filter or date_from or date_to or status_filter %}
+      toggleAdv();
+    {% endif %}
 
-    customerInput.addEventListener('keyup', function() {
-      const query = this.value.trim();
-      clearTimeout(timer);
+    // ========== SELECT ALL & BULK BAR ==========
+    const selectAll  = document.getElementById('selectAll');
+    const checkboxes = document.querySelectorAll('.row-check');
+    const countEl    = document.getElementById('selectedCount');
+    const bulkBar    = document.getElementById('bulkBar');
+    const bulkBtns   = document.querySelectorAll('.btn-bulk');
 
-      if (!query) {
-        suggestionsBox.classList.add('is-hidden');
-        return;
-      }
+    function updateCount() {
+      const n = document.querySelectorAll('.row-check:checked').length;
+      countEl.textContent = n + ' selected';
+      bulkBar.classList.toggle('empty', n === 0);
+      bulkBtns.forEach(b => b.disabled = (n === 0));
+    }
+    selectAll.addEventListener('change', () => {
+      checkboxes.forEach(cb => cb.checked = selectAll.checked);
+      updateCount();
+    });
+    checkboxes.forEach(cb => cb.addEventListener('change', updateCount));
+    updateCount();
 
-      timer = setTimeout(() => {
-        fetch(`/customer_autocomplete?query=${encodeURIComponent(query)}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.length === 0) {
-              suggestionsBox.classList.add('is-hidden');
-              return;
-            }
-            let html = '';
-            data.forEach(name => {
-              html += `<div>${name}</div>`;
-            });
-            suggestionsBox.innerHTML = html;
-            suggestionsBox.classList.remove('is-hidden');
-          })
-          .catch(err => {
-            console.error(err);
-            suggestionsBox.classList.add('is-hidden');
-          });
-      }, 200);
+    // ========== ROW EXPAND ==========
+    function toggleExpand(id, event) {
+      if (event.target.closest('input[type="checkbox"], .row-actions, .badge, .icon-btn, form')) return;
+      const row = document.getElementById('expand-' + id);
+      if (row) row.classList.toggle('open');
+    }
+
+    // ========== BULK SUBMIT ==========
+    function submitBulk(action) {
+      const checked = document.querySelectorAll('.row-check:checked');
+      if (checked.length === 0) { alert('Select at least one invoice first.'); return; }
+      if (action === 'delete' && !confirm('Delete ' + checked.length + ' invoice(s) permanently?')) return;
+
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '/bulk_action';
+      if (action === 'print') form.target = '_blank';
+
+      const a = document.createElement('input');
+      a.type = 'hidden'; a.name = 'action'; a.value = action;
+      form.appendChild(a);
+
+      checked.forEach(cb => {
+        const inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = 'selected_invoices'; inp.value = cb.value;
+        form.appendChild(inp);
+      });
+
+      document.body.appendChild(form);
+      form.submit();
+      document.body.removeChild(form);
+    }
+
+    // ========== BULK STATUS MODAL ==========
+    function openBulkStatusModal() {
+      const checked = document.querySelectorAll('.row-check:checked');
+      if (checked.length === 0) { alert('Select at least one invoice first.'); return; }
+      document.getElementById('bulkCount').textContent = checked.length;
+      document.getElementById('bulk-status').value = 'Bill Generated';
+      document.getElementById('bulk-paydate').value = '';
+      document.getElementById('bulk-paydate-row').style.display = 'none';
+      document.getElementById('bulkStatusModal').classList.add('open');
+    }
+    function closeBulkModal() { document.getElementById('bulkStatusModal').classList.remove('open'); }
+    function toggleBulkPayDate(s) {
+      document.getElementById('bulk-paydate-row').style.display = s === 'Payment Received' ? 'block' : 'none';
+    }
+    async function saveBulkStatus() {
+      const checked = document.querySelectorAll('.row-check:checked');
+      const status  = document.getElementById('bulk-status').value;
+      const payDate = document.getElementById('bulk-paydate').value;
+      const fd = new FormData();
+      fd.append('status', status);
+      fd.append('payment_date', payDate);
+      checked.forEach(cb => fd.append('selected_invoices', cb.value));
+      const res = await fetch('/bulk_update_status', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!data.ok) { alert('Failed to update statuses.'); return; }
+      checked.forEach(cb => updateBadgeDom(cb.value, status, payDate));
+      closeBulkModal();
+    }
+    document.getElementById('bulkStatusModal').addEventListener('click', e => {
+      if (e.target.id === 'bulkStatusModal') closeBulkModal();
     });
 
-    // Click suggestion -> fill input AND auto-submit filter form
-    suggestionsBox.addEventListener('click', function(e) {
-      if (e.target && e.target.nodeName === 'DIV') {
-        customerInput.value = e.target.textContent;
-        suggestionsBox.classList.add('is-hidden');
-        const filterForm = customerInput.closest('form');
-        if (filterForm) filterForm.submit();
-      }
+    // ========== SINGLE STATUS MODAL ==========
+    let activeBadge = null;
+    function openModal(el) {
+      activeBadge = el;
+      document.getElementById('modal-invoice-id').value = el.dataset.id;
+      document.getElementById('modal-status').value     = el.dataset.status || 'Bill Generated';
+      document.getElementById('modal-paydate').value    = el.dataset.paydate || '';
+      togglePayDate(el.dataset.status);
+      document.getElementById('statusModal').classList.add('open');
+    }
+    function closeModal() { document.getElementById('statusModal').classList.remove('open'); activeBadge = null; }
+    function togglePayDate(s) {
+      document.getElementById('modal-paydate-row').style.display = s === 'Payment Received' ? 'block' : 'none';
+    }
+    async function saveStatus() {
+      const id      = document.getElementById('modal-invoice-id').value;
+      const status  = document.getElementById('modal-status').value;
+      const payDate = document.getElementById('modal-paydate').value;
+      const fd = new FormData();
+      fd.append('status', status);
+      fd.append('payment_date', payDate);
+      const res = await fetch('/update_status/' + id, { method: 'POST', body: fd });
+      if (!res.ok) { alert('Failed.'); return; }
+      updateBadgeDom(id, status, payDate);
+      closeModal();
+    }
+    document.getElementById('statusModal').addEventListener('click', e => {
+      if (e.target.id === 'statusModal') closeModal();
     });
 
-    // Click outside -> hide suggestions
-    document.addEventListener('click', function(e) {
-      if (!suggestionsBox.contains(e.target) && e.target !== customerInput) {
-        suggestionsBox.classList.add('is-hidden');
-      }
-    });
+    function updateBadgeDom(id, status, payDate) {
+      const badge = document.querySelector('.badge[data-id="' + id + '"]');
+      if (!badge) return;
+      badge.innerHTML = badgeSVG(status) + ' ' + status;
+      badge.dataset.status  = status;
+      badge.dataset.paydate = payDate;
+      badge.className       = 'badge ' + badgeClass(status);
+      const td = badge.closest('td');
+      let hint = td.querySelector('.payment-date-hint');
+      if (status === 'Payment Received' && payDate) {
+        if (!hint) { hint = document.createElement('span'); hint.className = 'payment-date-hint'; td.appendChild(hint); }
+        hint.innerHTML = '<svg class="icon" width="11" height="11"><use href="#icon-calendar"/></svg> ' + payDate;
+      } else if (hint) { hint.remove(); }
+    }
+    function badgeClass(s) {
+      if (s === 'Bill Generated')   return 'badge-generated';
+      if (s === 'Bill Submitted')   return 'badge-submitted';
+      if (s === 'Payment Received') return 'badge-received';
+      return 'badge-generated';
+    }
+    function badgeSVG(s) {
+      const icon = s === 'Payment Received' ? 'icon-check' : s === 'Bill Submitted' ? 'icon-clock' : 'icon-document';
+      return '<svg class="icon" width="12" height="12"><use href="#' + icon + '"/></svg>';
+    }
   </script>
 </body>
 </html>

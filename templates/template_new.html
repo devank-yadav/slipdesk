@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>New Template — Osprey Travels</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --primary: #007aff;
+      --primary-hover: #0062cc;
+      --primary-light: #e8f0fe;
+      --purple: #7c3aed;
+      --purple-hover: #6d28d9;
+      --purple-light: #f5f3ff;
+      --text: #1c1c1e;
+      --text-muted: #8e8e93;
+      --border: #e5e5ea;
+      --bg: #f2f2f7;
+      --card: #ffffff;
+      --radius: 10px;
+      --shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      padding-bottom: 60px;
+    }
+
+    /* ── Header ── */
+    .page-header {
+      padding: 20px 28px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .page-header-left {}
+    .btn-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .btn-back:hover { opacity: 0.75; }
+    .page-header h1 { margin: 0; font-size: 22px; font-weight: 700; }
+
+    /* ── Form card ── */
+    .form-card {
+      margin: 0 28px;
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 24px 28px;
+    }
+
+    /* ── Template name — prominent block at top ── */
+    .tpl-name-block {
+      background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+      border-radius: 10px;
+      padding: 18px 20px;
+      margin-bottom: 24px;
+    }
+    .tpl-name-block label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: rgba(255,255,255,0.65);
+      margin-bottom: 8px;
+    }
+    .tpl-name-block input {
+      width: 100%;
+      background: rgba(255,255,255,0.12);
+      border: 1.5px solid rgba(255,255,255,0.25);
+      border-radius: 8px;
+      padding: 11px 14px;
+      font-size: 17px;
+      font-weight: 700;
+      color: #fff;
+      outline: none;
+      font-family: inherit;
+    }
+    .tpl-name-block input::placeholder { color: rgba(255,255,255,0.4); }
+    .tpl-name-block input:focus { border-color: rgba(255,255,255,0.6); }
+
+    /* ── Sections ── */
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+      margin: 22px 0 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-label:first-child { margin-top: 0; }
+
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px; }
+    .form-grid .full { grid-column: 1 / -1; }
+    .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px 20px; }
+    .two-col   { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px; }
+
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .field input, .field select, .field textarea {
+      padding: 9px 11px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      font-size: 14px;
+      outline: none;
+      background: #fff;
+      color: var(--text);
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--primary); }
+
+    /* ── Route mode toggle ── */
+    .route-mode-toggle { display: flex; gap: 6px; margin-bottom: 12px; }
+    .mode-btn {
+      padding: 6px 16px;
+      border-radius: 20px;
+      border: 1.5px solid var(--border);
+      background: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--text-muted);
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+    .mode-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+    /* ── Mic ── */
+    .mic-row { display: flex; gap: 8px; align-items: flex-start; }
+    .mic-row textarea { flex: 1; resize: vertical; min-height: 80px; }
+    .mic-btns { display: flex; flex-direction: column; gap: 6px; padding-top: 1px; }
+    .btn-mic { padding: 7px 12px; border-radius: 7px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; white-space: nowrap; }
+    .btn-mic-start { background: #e8f0fe; color: #1967d2; }
+    .btn-mic-stop  { background: #fdecea; color: #c62828; }
+    .btn-mic:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Map Builder ── */
+    .no-key-notice {
+      background: #fff8e1; border: 1px solid #f9a825;
+      border-radius: 8px; padding: 14px 16px; font-size: 13px; color: #5d3f00;
+    }
+    .waypoint-row {
+      display: flex; align-items: center; gap: 6px;
+      margin-bottom: 7px; padding: 4px 0;
+      border-top: 2px solid transparent; transition: border-color 0.1s;
+    }
+    .waypoint-row.drag-over { border-top-color: var(--primary); }
+    .waypoint-row.dragging  { opacity: 0.35; }
+    .drag-handle {
+      cursor: grab; color: var(--text-muted); font-size: 18px;
+      padding: 2px 4px; flex-shrink: 0; user-select: none;
+    }
+    .drag-handle:active { cursor: grabbing; }
+    .wp-icon { font-size: 16px; flex-shrink: 0; width: 22px; text-align: center; }
+    .waypoint-input {
+      flex: 1; padding: 8px 11px; border: 1px solid var(--border);
+      border-radius: 7px; font-size: 14px; outline: none;
+      font-family: inherit; background: #fff;
+    }
+    .waypoint-input:focus { border-color: var(--primary); }
+    .btn-remove-wp {
+      background: none; border: none; color: var(--text-muted);
+      cursor: pointer; font-size: 15px; padding: 4px 8px;
+      border-radius: 5px; flex-shrink: 0;
+    }
+    .btn-remove-wp:hover { background: #fdecea; color: #c62828; }
+    .builder-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+    .btn-add-stop {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 7px 14px; border: 1.5px dashed var(--border);
+      border-radius: 7px; background: none; font-size: 13px;
+      font-weight: 600; color: var(--primary); cursor: pointer;
+    }
+    .btn-add-stop:hover { border-color: var(--primary); background: #f0f6ff; }
+    .btn-add-loop  { color: #7c3aed; }
+    .btn-add-loop:hover  { border-color: #7c3aed; background: #f7f1ff; }
+    .btn-mirror    { color: #166534; }
+    .btn-mirror:hover    { border-color: #166534; background: #f0fdf4; }
+
+    /* Loop block */
+    .loop-row {
+      flex-direction: column; align-items: stretch; gap: 8px;
+      padding: 10px 12px; background: #faf5ff;
+      border: 1px solid #e9d5ff; border-radius: 8px;
+      margin-bottom: 7px; border-top: 2px solid transparent;
+    }
+    .loop-row.drag-over { border-top-color: #7c3aed; }
+    .loop-row.dragging  { opacity: 0.35; }
+    .loop-row .loop-header { display: flex; align-items: center; gap: 8px; }
+    .loop-row .loop-header .drag-handle { color: #7c3aed; }
+    .loop-row .loop-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: #7c3aed; color: #fff;
+      font-size: 11px; font-weight: 700; padding: 3px 9px;
+      border-radius: 999px; text-transform: uppercase; letter-spacing: 0.4px; flex-shrink: 0;
+    }
+    .loop-row .loop-inputs { display: grid; grid-template-columns: 1fr auto 1fr auto auto; gap: 6px; align-items: center; }
+    .loop-row .loop-inputs .swap-icon { color: #7c3aed; font-weight: 700; font-size: 16px; }
+    .loop-row .loop-inputs .loop-count {
+      width: 64px; padding: 8px; border: 1px solid var(--border);
+      border-radius: 7px; font-size: 13px; text-align: center; outline: none; font-family: inherit;
+    }
+    .loop-row .loop-inputs .loop-count:focus { border-color: #7c3aed; }
+    .loop-row .loop-inputs .loop-times { font-size: 12px; color: var(--text-muted); font-weight: 600; white-space: nowrap; }
+    .loop-row .loop-preview { font-size: 12px; color: #5b21b6; font-weight: 500; padding-left: 4px; font-style: italic; }
+
+    .waypoint-row.origin { background: #f0f6ff; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; }
+    .waypoint-row.origin .wp-icon { color: #007aff; }
+
+    .return-label {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; color: var(--text-muted); margin-bottom: 14px;
+      cursor: pointer; font-weight: 500;
+    }
+    .return-label input { accent-color: var(--primary); width: 15px; height: 15px; }
+
+    #mapPreview {
+      width: 100%; height: 260px; border-radius: 8px;
+      border: 1px solid var(--border); background: #f2f2f7;
+      margin-bottom: 12px; overflow: hidden; position: relative;
+    }
+    #mapPlaceholder {
+      position: absolute; inset: 0; display: flex; align-items: center;
+      justify-content: center; color: var(--text-muted); font-size: 13px; pointer-events: none;
+    }
+    .map-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .distance-display { font-size: 14px; font-weight: 600; color: var(--text-muted); }
+    .distance-display.ready { color: #166534; }
+    .btn-apply-route {
+      background: #166534; color: #fff; border: none;
+      padding: 9px 20px; border-radius: 8px; font-size: 14px;
+      font-weight: 700; cursor: pointer; transition: background 0.15s;
+    }
+    .btn-apply-route:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn-apply-route:not(:disabled):hover { background: #14532d; }
+
+    /* Autocomplete dropdown */
+    .pac-container {
+      z-index: 999999 !important; border-radius: 10px !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18) !important; margin-top: 4px !important;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif !important;
+      border: 1px solid #e5e5ea !important; overflow: hidden !important; background: #fff !important;
+    }
+    .pac-item { padding: 10px 14px !important; font-size: 13px !important; cursor: pointer !important; border-top: 1px solid #f2f2f7 !important; }
+    .pac-item:first-child { border-top: none !important; }
+    .pac-item:hover { background: #f2f2f7 !important; }
+    .pac-item-query { font-weight: 600 !important; color: #1c1c1e !important; }
+    .pac-matched { font-weight: 700 !important; color: #007aff !important; }
+    .pac-icon { display: none !important; }
+
+    /* ── Footer ── */
+    .form-footer { margin-top: 28px; display: flex; gap: 12px; align-items: center; }
+    .btn-submit {
+      background: var(--purple); color: #fff; border: none;
+      padding: 12px 28px; border-radius: 8px; font-size: 15px; font-weight: 700;
+      cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+      transition: background 0.15s;
+    }
+    .btn-submit:hover { background: var(--purple-hover); }
+    .btn-cancel { color: var(--text-muted); text-decoration: none; font-size: 14px; font-weight: 500; }
+    .btn-cancel:hover { color: var(--text); }
+
+    @media (max-width: 640px) {
+      .form-grid, .three-col, .two-col { grid-template-columns: 1fr; }
+      .form-card { margin: 0 12px; padding: 18px 16px; }
+    }
+  </style>
+</head>
+<body>
+  {% include 'navbar.html' %}
+
+  <div class="page-header">
+    <div class="page-header-left">
+      <a href="/templates" class="btn-back">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Templates
+      </a>
+      <h1>New Template</h1>
+    </div>
+  </div>
+
+  <div class="form-card">
+    <form action="/templates/save" method="post" id="tplForm">
+
+      <!-- ── Template name ── -->
+      <div class="tpl-name-block">
+        <label for="template_name">Template Name *</label>
+        <input type="text" id="template_name" name="template_name"
+               placeholder="e.g. Acme Daily Run, Airport Transfer…"
+               value="{{ prefill.get('template_name','') }}" required autocomplete="off">
+      </div>
+
+      <!-- ── Party ── -->
+      <div class="section-label">Customer</div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="customer_name">Customer Name</label>
+          <input type="text" id="customer_name" name="customer_name"
+                 list="customerOptions" autocomplete="off"
+                 value="{{ prefill.get('customer_name','') }}"
+                 placeholder="Select or type…">
+          <datalist id="customerOptions">
+            {% for c in customer_list %}<option value="{{ c }}">{% endfor %}
+          </datalist>
+        </div>
+        <div class="field">
+          <label for="company_name">Company Name</label>
+          <input type="text" id="company_name" name="company_name"
+                 value="{{ prefill.get('company_name','') }}"
+                 placeholder="Auto-filled from customer">
+        </div>
+      </div>
+
+      <!-- ── Driver ── -->
+      <div class="section-label">Driver</div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="driver_name">Driver Name</label>
+          <select id="driver_name" name="driver_name">
+            <option value="">— Select Driver —</option>
+            {% for d in driver_list %}
+              <option value="{{ d }}" {% if prefill.get('driver_name') == d %}selected{% endif %}>{{ d }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <!-- ── Vehicle ── -->
+      <div class="section-label">Vehicle</div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="vehicle_type">Type of Vehicle</label>
+          <input type="text" id="vehicle_type" name="vehicle_type"
+                 list="vehicleOptions" autocomplete="off"
+                 value="{{ prefill.get('vehicle_type','') }}"
+                 placeholder="Select or type…">
+          <datalist id="vehicleOptions">
+            {% for v in vehicle_list %}<option value="{{ v }}">{% endfor %}
+          </datalist>
+        </div>
+        <div class="field">
+          <label for="vehicle_no">Vehicle No</label>
+          <input type="text" id="vehicle_no" name="vehicle_no"
+                 value="{{ prefill.get('vehicle_no','') }}"
+                 placeholder="Auto-filled from vehicle">
+        </div>
+      </div>
+
+      <!-- ── KM + Time ── -->
+      <div class="section-label">Odometer &amp; Timing</div>
+      <div class="three-col">
+        <div class="field">
+          <label for="starting_km">Starting KM</label>
+          <input type="text" id="starting_km" name="starting_km"
+                 value="{{ prefill.get('starting_km','') }}"
+                 inputmode="numeric" placeholder="e.g. 12500">
+        </div>
+        <div class="field">
+          <label for="starting_time">Starting Time</label>
+          <input type="time" id="starting_time" name="starting_time"
+                 value="{{ prefill.get('starting_time','') }}">
+        </div>
+        <div class="field">
+          <label for="closing_time">Closing Time</label>
+          <input type="time" id="closing_time" name="closing_time"
+                 value="{{ prefill.get('closing_time','') }}">
+        </div>
+      </div>
+
+      <!-- ── Additional ── -->
+      <div class="section-label">Additional Details</div>
+      <div class="two-col">
+        <div class="field">
+          <label for="project_code">Project Code</label>
+          <input type="text" id="project_code" name="project_code"
+                 value="{{ prefill.get('project_code','') }}"
+                 placeholder="e.g. PRJ-2026-014">
+        </div>
+        <div class="field">
+          <label for="mail_approval_date">Mail Approval Date</label>
+          <input type="date" id="mail_approval_date" name="mail_approval_date"
+                 value="{{ prefill.get('mail_approval_date','') }}">
+        </div>
+      </div>
+
+      <!-- ── Route ── -->
+      <div class="section-label">Route Covered</div>
+
+      <div class="route-mode-toggle">
+        <button type="button" class="mode-btn active" id="btnManual" onclick="setRouteMode('manual')">
+          <svg class="icon" width="13" height="13"><use href="#icon-document"/></svg> Manual
+        </button>
+        <button type="button" class="mode-btn" id="btnMap" onclick="setRouteMode('map')">
+          <svg class="icon" width="13" height="13"><use href="#icon-map-pin"/></svg> Map Builder
+        </button>
+      </div>
+
+      <!-- Manual -->
+      <div id="manualSection">
+        <div class="mic-row">
+          <textarea id="route_covered" name="route_covered" rows="4"
+                    placeholder="Enter route — one stop per line, or separated by →">{{ prefill.get('route_covered','') }}</textarea>
+          <div class="mic-btns">
+            <button type="button" class="btn-mic btn-mic-start" id="micStart">🎤 Start</button>
+            <button type="button" class="btn-mic btn-mic-stop"  id="micStop" disabled>⏹ Stop</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Map Builder -->
+      <div id="mapSection" style="display:none;">
+        <div id="noKeyNotice" class="no-key-notice" style="display:none;">
+          Google Maps API key is not configured. Contact the administrator.
+        </div>
+        <div id="mapsLoading" style="display:none;padding:12px 0;color:var(--text-muted);font-size:13px;">
+          Loading map…
+        </div>
+        <div id="mapBuilder" style="display:none;">
+          <div class="waypoint-row origin" id="originRow">
+            <span class="wp-icon" title="Starting point"><svg width="16" height="16"><use href="#icon-map-pin"/></svg></span>
+            <input type="text" id="originInput" class="waypoint-input" placeholder="Starting point…" autocomplete="off">
+          </div>
+          <div id="waypointsList"></div>
+          <div class="builder-actions">
+            <button type="button" class="btn-add-stop" onclick="addWaypoint()">
+              <svg class="icon" width="13" height="13"><use href="#icon-plus"/></svg> Add Stop
+            </button>
+            <button type="button" class="btn-add-stop btn-add-loop" onclick="addLoopBlock()">
+              <svg class="icon" width="13" height="13"><use href="#icon-refresh"/></svg> Add Loop (A ↔ B × N)
+            </button>
+            <button type="button" class="btn-add-stop btn-mirror" onclick="mirrorStops()">
+              <svg class="icon" width="13" height="13"><use href="#icon-copy"/></svg> Mirror Stops (Pick &amp; Drop)
+            </button>
+          </div>
+          <label class="return-label">
+            <input type="checkbox" id="returnToOrigin" checked onchange="debouncedCalc()">
+            Return to origin
+          </label>
+          <div id="mapPreview">
+            <div id="mapPlaceholder">Map will appear here after adding stops</div>
+          </div>
+          <div class="map-footer">
+            <span class="distance-display" id="distanceDisplay">Add stops to calculate distance</span>
+            <button type="button" class="btn-apply-route" id="btnApply"
+                    onclick="applyRoute()" disabled>↓ Apply to Template</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Total KM (auto-filled by Map Builder) -->
+      <div class="form-grid" style="margin-top:14px;">
+        <div class="field">
+          <label for="total_km">Total KM <span style="font-weight:400;text-transform:none;">(auto-filled by Map Builder, or enter manually)</span></label>
+          <input type="text" id="total_km" name="total_km"
+                 value="{{ prefill.get('total_km','') }}"
+                 inputmode="numeric" placeholder="e.g. 45">
+        </div>
+      </div>
+      <!-- Hidden: stores Map Builder stop structure for generator restore -->
+      <input type="hidden" id="route_stops_json" name="route_stops_json" value="{{ prefill.get('route_stops_json','') }}">
+
+      <!-- ── Footer ── -->
+      <div class="form-footer">
+        <button type="submit" class="btn-submit">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13 2H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4l-2-2z"/>
+            <path d="M10 2v4H6V2"/><path d="M6 10h4"/><path d="M8 10v3"/>
+          </svg>
+          Save Template
+        </button>
+        <a href="/templates" class="btn-cancel">Cancel</a>
+      </div>
+
+    </form>
+  </div>
+
+  <script>
+    // ── Auto-fill maps ──
+    const vehicleMap  = {{ vehicle_map  | tojson }};
+    const customerMap = {{ customer_map | tojson }};
+    document.getElementById('vehicle_type').addEventListener('input', function () {
+      const no = vehicleMap[this.value];
+      if (no !== undefined) document.getElementById('vehicle_no').value = no;
+    });
+    document.getElementById('customer_name').addEventListener('input', function () {
+      const co = customerMap[this.value];
+      if (co !== undefined) document.getElementById('company_name').value = co;
+    });
+
+    // ── Speech recognition (manual textarea) ──
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SR) {
+      const rec = new SR();
+      rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = false;
+      const micStart = document.getElementById('micStart');
+      const micStop  = document.getElementById('micStop');
+      const routeEl  = document.getElementById('route_covered');
+      micStart.addEventListener('click', () => { rec.start(); micStart.disabled = true; micStop.disabled = false; });
+      micStop.addEventListener('click',  () => { rec.stop();  micStart.disabled = false; micStop.disabled = true; });
+      rec.addEventListener('result', e => { routeEl.value += e.results[e.results.length - 1][0].transcript + ' '; });
+    } else {
+      document.getElementById('micStart').style.display = 'none';
+      document.getElementById('micStop').style.display  = 'none';
+    }
+
+    // =====================================================================
+    // ROUTE MODE TOGGLE
+    // =====================================================================
+    let mapsKey = '', mapsLoaded = false, mapsScriptInjected = false;
+    let mapInstance = null, dirService = null, dirRenderer = null;
+    let currentRoute = null, wpCounter = 0, dragSrcRow = null;
+
+    fetch('/config/maps_key')
+      .then(r => r.json())
+      .then(d => {
+        mapsKey = d.key || '';
+        if (mapsKey && !mapsScriptInjected) {
+          mapsScriptInjected = true;
+          const s = document.createElement('script');
+          s.src = 'https://maps.googleapis.com/maps/api/js?key=' + mapsKey + '&libraries=places&callback=_onMapsReady';
+          s.async = true;
+          document.head.appendChild(s);
+        } else if (!mapsKey) {
+          document.getElementById('noKeyNotice').style.display = '';
+        }
+      });
+
+    function setRouteMode(mode) {
+      document.getElementById('btnManual').classList.toggle('active', mode === 'manual');
+      document.getElementById('btnMap').classList.toggle('active', mode === 'map');
+      document.getElementById('manualSection').style.display = mode === 'manual' ? '' : 'none';
+      document.getElementById('mapSection').style.display    = mode === 'map'    ? '' : 'none';
+      if (mode === 'map') {
+        if (!mapsKey) {
+          document.getElementById('noKeyNotice').style.display = '';
+        } else if (!mapsLoaded) {
+          document.getElementById('mapsLoading').style.display = '';
+        } else {
+          setTimeout(() => google.maps.event.trigger(mapInstance, 'resize'), 50);
+        }
+      }
+    }
+
+    // =====================================================================
+    // GOOGLE MAPS CALLBACK
+    // =====================================================================
+    window._onMapsReady = function () {
+      mapsLoaded = true;
+      document.getElementById('mapsLoading').style.display = 'none';
+      document.getElementById('mapBuilder').style.display  = '';
+      mapInstance = new google.maps.Map(document.getElementById('mapPreview'), {
+        center: { lat: 28.4595, lng: 77.0266 }, zoom: 11,
+        disableDefaultUI: true, zoomControl: true,
+      });
+      dirService  = new google.maps.DirectionsService();
+      dirRenderer = new google.maps.DirectionsRenderer({ map: mapInstance, suppressMarkers: false });
+      document.getElementById('mapPlaceholder').style.display = 'none';
+      const originInput = document.getElementById('originInput');
+      attachAutocomplete(originInput);
+      originInput.addEventListener('blur', debouncedCalc);
+      if (document.getElementById('mapSection').style.display !== 'none') {
+        setTimeout(() => google.maps.event.trigger(mapInstance, 'resize'), 50);
+      }
+    };
+
+    function attachAutocomplete(input) {
+      if (!window.google || !google.maps.places) return;
+      const ac = new google.maps.places.Autocomplete(input, {
+        componentRestrictions: { country: 'in' },
+        fields: ['name', 'formatted_address', 'address_components'],
+      });
+      ac.addListener('place_changed', () => {
+        const place = ac.getPlace();
+        if (place && place.name) {
+          let shortName = place.name;
+          if (place.address_components) {
+            const subloc = place.address_components.find(c => c.types.includes('sublocality_level_1'));
+            const loc    = place.address_components.find(c => c.types.includes('locality'));
+            const area   = subloc || loc;
+            if (area && area.short_name !== place.name) shortName = place.name + ', ' + area.short_name;
+          }
+          input.dataset.shortName = shortName;
+        }
+        debouncedCalc();
+      });
+      input.addEventListener('input', () => { delete input.dataset.shortName; });
+    }
+
+    // =====================================================================
+    // WAYPOINTS
+    // =====================================================================
+    function addWaypoint(prefillValue, prefillShort) {
+      wpCounter++;
+      const row = document.createElement('div');
+      row.className = 'waypoint-row';
+      row.draggable = true;
+      row.dataset.wpId = 'wp_' + wpCounter;
+      row.dataset.type = 'stop';
+      row.innerHTML =
+        '<span class="drag-handle" title="Drag to reorder">⠿</span>' +
+        '<span class="wp-icon"><svg width="14" height="14"><use href="#icon-map-pin"/></svg></span>' +
+        '<input type="text" class="waypoint-input" placeholder="Stop ' + wpCounter + '…" autocomplete="off">' +
+        '<button type="button" class="btn-remove-wp" onclick="removeWaypoint(this)" title="Remove"><svg class="icon" width="13" height="13"><use href="#icon-x"/></svg></button>';
+      document.getElementById('waypointsList').appendChild(row);
+      const input = row.querySelector('.waypoint-input');
+      if (prefillValue) input.value = prefillValue;
+      if (prefillShort) input.dataset.shortName = prefillShort;
+      attachAutocomplete(input);
+      input.addEventListener('blur', debouncedCalc);
+      bindDrag(row);
+      return row;
+    }
+
+    function removeWaypoint(btn) {
+      btn.closest('.waypoint-row').remove();
+      debouncedCalc();
+    }
+
+    function mirrorStops() {
+      const rows = [...document.querySelectorAll('#waypointsList .waypoint-row[data-type="stop"]')];
+      if (!rows.length) { alert('Add at least one stop before mirroring.'); return; }
+      rows.map(r => ({ value: r.querySelector('.waypoint-input').value.trim(), short: r.querySelector('.waypoint-input').dataset.shortName || '' }))
+          .forEach(it => { if (it.value) addWaypoint(it.value, it.short); });
+      debouncedCalc();
+    }
+
+    function addLoopBlock() {
+      wpCounter++;
+      const row = document.createElement('div');
+      row.className = 'waypoint-row loop-row';
+      row.draggable = true;
+      row.dataset.wpId = 'loop_' + wpCounter;
+      row.dataset.type = 'loop';
+      row.innerHTML =
+        '<div class="loop-header">' +
+          '<span class="drag-handle" title="Drag to reorder">⠿</span>' +
+          '<span class="loop-badge"><svg width="11" height="11"><use href="#icon-refresh"/></svg> Loop</span>' +
+          '<button type="button" class="btn-remove-wp" style="margin-left:auto;" onclick="removeWaypoint(this)"><svg class="icon" width="13" height="13"><use href="#icon-x"/></svg></button>' +
+        '</div>' +
+        '<div class="loop-inputs">' +
+          '<input type="text" class="waypoint-input loop-from" placeholder="From location…" autocomplete="off">' +
+          '<span class="swap-icon">↔</span>' +
+          '<input type="text" class="waypoint-input loop-to" placeholder="To location…" autocomplete="off">' +
+          '<input type="number" class="loop-count" min="1" max="20" value="2">' +
+          '<span class="loop-times">trips</span>' +
+        '</div>' +
+        '<div class="loop-preview"></div>';
+      document.getElementById('waypointsList').appendChild(row);
+      const fromIn = row.querySelector('.loop-from');
+      const toIn   = row.querySelector('.loop-to');
+      const cntIn  = row.querySelector('.loop-count');
+      attachAutocomplete(fromIn); attachAutocomplete(toIn);
+      [fromIn, toIn, cntIn].forEach(el => {
+        el.addEventListener('blur',  () => { updateLoopPreview(row); debouncedCalc(); });
+        el.addEventListener('input', () => updateLoopPreview(row));
+      });
+      bindDrag(row);
+      updateLoopPreview(row);
+    }
+
+    function updateLoopPreview(row) {
+      const from  = row.querySelector('.loop-from').dataset.shortName || row.querySelector('.loop-from').value.trim() || '?';
+      const to    = row.querySelector('.loop-to').dataset.shortName   || row.querySelector('.loop-to').value.trim()   || '?';
+      const count = Math.max(1, parseInt(row.querySelector('.loop-count').value, 10) || 1);
+      const seq = [from];
+      let cur = from;
+      for (let i = 0; i < count; i++) { cur = (cur === from) ? to : from; seq.push(cur); }
+      row.querySelector('.loop-preview').textContent = '↻ ' + seq.join(' → ');
+    }
+
+    function expandStops() {
+      const result = [];
+      let prev = null;
+      const push = (value, short) => {
+        if (!value) return;
+        if (prev && prev.value === value) return;
+        const item = { value, short: short || value };
+        result.push(item); prev = item;
+      };
+      for (const row of document.querySelectorAll('#waypointsList > .waypoint-row')) {
+        if (row.dataset.type === 'loop') {
+          const fromIn = row.querySelector('.loop-from'), toIn = row.querySelector('.loop-to');
+          const fromV = fromIn.value.trim(), toV = toIn.value.trim();
+          if (!fromV || !toV) continue;
+          const fromS = fromIn.dataset.shortName || fromV, toS = toIn.dataset.shortName || toV;
+          const count = Math.max(1, parseInt(row.querySelector('.loop-count').value, 10) || 1);
+          let curV = fromV, curS = fromS;
+          push(curV, curS);
+          for (let i = 0; i < count; i++) {
+            const nv = curV === fromV ? toV : fromV, ns = curV === fromV ? toS : fromS;
+            push(nv, ns); curV = nv; curS = ns;
+          }
+        } else {
+          const i = row.querySelector('.waypoint-input');
+          push(i.value.trim(), i.dataset.shortName || '');
+        }
+      }
+      return result;
+    }
+
+    // =====================================================================
+    // DRAG TO REORDER
+    // =====================================================================
+    function bindDrag(row) {
+      row.addEventListener('dragstart', e => { dragSrcRow = row; row.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+      row.addEventListener('dragend', () => { row.classList.remove('dragging'); document.querySelectorAll('.waypoint-row').forEach(r => r.classList.remove('drag-over')); });
+      row.addEventListener('dragover', e => {
+        e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+        document.querySelectorAll('#waypointsList .waypoint-row').forEach(r => r.classList.remove('drag-over'));
+        if (row !== dragSrcRow) row.classList.add('drag-over');
+      });
+      row.addEventListener('drop', e => {
+        e.preventDefault();
+        if (dragSrcRow && dragSrcRow !== row) {
+          const list = document.getElementById('waypointsList');
+          const rows = [...list.querySelectorAll(':scope > .waypoint-row')];
+          const si = rows.indexOf(dragSrcRow), ti = rows.indexOf(row);
+          if (si > ti) row.before(dragSrcRow); else row.after(dragSrcRow);
+          debouncedCalc();
+        }
+        row.classList.remove('drag-over');
+      });
+    }
+
+    // =====================================================================
+    // ROUTE CALCULATION
+    // =====================================================================
+    let calcTimer = null;
+    function debouncedCalc() { clearTimeout(calcTimer); calcTimer = setTimeout(calculateRoute, 700); }
+
+    function calculateRoute() {
+      if (!dirService) return;
+      const originEl = document.getElementById('originInput');
+      const origin = originEl.value.trim();
+      if (!origin) { document.getElementById('distanceDisplay').textContent = 'Fill in the starting point first'; return; }
+      const expanded   = expandStops();
+      const stopValues = expanded.map(s => s.value);
+      const returnChecked = document.getElementById('returnToOrigin').checked;
+      const destination   = returnChecked ? origin : (stopValues[stopValues.length - 1] || origin);
+      const waypointsForAPI = returnChecked
+        ? stopValues.map(loc => ({ location: loc, stopover: true }))
+        : stopValues.slice(0, -1).map(loc => ({ location: loc, stopover: true }));
+      if (!stopValues.length && !returnChecked) {
+        if (dirRenderer) dirRenderer.set('directions', null);
+        document.getElementById('distanceDisplay').textContent = 'Add stops to calculate distance';
+        document.getElementById('distanceDisplay').className   = 'distance-display';
+        document.getElementById('btnApply').disabled = true;
+        currentRoute = null; return;
+      }
+      dirService.route({
+        origin, destination, waypoints: waypointsForAPI,
+        travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false,
+      }, (result, status) => {
+        const distEl = document.getElementById('distanceDisplay');
+        const applyEl = document.getElementById('btnApply');
+        if (status === 'OK') {
+          dirRenderer.setDirections(result);
+          const totalKm = (result.routes[0].legs.reduce((s, l) => s + l.distance.value, 0) / 1000).toFixed(1);
+          const originShort = originEl.dataset.shortName || originEl.value.trim();
+          const stopShorts  = expanded.map(s => s.short || s.value);
+          const stops = [originShort, ...stopShorts];
+          if (returnChecked) stops.push(originShort);
+          currentRoute = { distance_km: totalKm, stops };
+          distEl.textContent = 'Total distance: ' + totalKm + ' km';
+          distEl.className   = 'distance-display ready';
+          applyEl.disabled   = false;
+        } else {
+          distEl.textContent = 'Could not calculate (' + status + ')';
+          distEl.className   = 'distance-display';
+          applyEl.disabled   = true; currentRoute = null;
+        }
+      });
+    }
+
+    // =====================================================================
+    // APPLY ROUTE TO TEMPLATE
+    // =====================================================================
+    function serializeStops() {
+      const originEl = document.getElementById('originInput');
+      const stopsData = [];
+      for (const row of document.querySelectorAll('#waypointsList > .waypoint-row')) {
+        if (row.dataset.type === 'loop') {
+          const fromIn = row.querySelector('.loop-from'), toIn = row.querySelector('.loop-to');
+          stopsData.push({
+            type: 'loop',
+            from_value: fromIn.value.trim(), from_short: fromIn.dataset.shortName || '',
+            to_value:   toIn.value.trim(),   to_short:   toIn.dataset.shortName   || '',
+            count: parseInt(row.querySelector('.loop-count').value, 10) || 2,
+          });
+        } else {
+          const inp = row.querySelector('.waypoint-input');
+          stopsData.push({ type: 'stop', value: inp.value.trim(), short: inp.dataset.shortName || '' });
+        }
+      }
+      return {
+        origin: { value: originEl.value.trim(), short: originEl.dataset.shortName || '' },
+        stops: stopsData,
+        return_to_origin: document.getElementById('returnToOrigin').checked,
+      };
+    }
+
+    function applyRoute() {
+      if (!currentRoute) return;
+      document.getElementById('route_covered').value    = currentRoute.stops.join(' → ');
+      document.getElementById('total_km').value         = currentRoute.distance_km;
+      document.getElementById('route_stops_json').value = JSON.stringify(serializeStops());
+      setRouteMode('manual');   // switch to manual so user sees the filled text
+    }
+  </script>
+</body>
+</html>

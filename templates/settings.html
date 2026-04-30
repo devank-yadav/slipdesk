@@ -2,109 +2,786 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Settings</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <title>Settings — Osprey Travels</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    :root {
+      --primary: #007aff;
+      --primary-hover: #0062cc;
+      --primary-light: #e8f0fe;
+      --danger: #ff3b30;
+      --danger-light: #fdecea;
+      --amber: #b45309;
+      --amber-light: #fef3c7;
+      --green: #166534;
+      --green-light: #f0fdf4;
+      --text: #1c1c1e;
+      --text-muted: #8e8e93;
+      --border: #e5e5ea;
+      --bg: #f2f2f7;
+      --card: #ffffff;
+      --radius: 12px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      padding-bottom: 56px;
+    }
+
+    /* ---- PAGE HEADER ---- */
+    .page-header {
+      padding: 24px 32px 8px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .page-header h1 {
+      margin: 0 0 3px;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+    .page-header .subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    /* ---- LAYOUT ---- */
+    .content {
+      padding: 16px 32px;
+      max-width: 1280px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Section heading */
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+      margin: 0 0 10px;
+    }
+
+    /* ---- STAT ROW ---- */
+    .stat-row {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 14px;
+    }
+    .stat-block {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      box-shadow: var(--shadow);
+    }
+    .stat-block .label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .stat-block .value {
+      font-size: 32px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -1px;
+    }
+    .stat-block .sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    .stat-block.blue   .value { color: #1967d2; }
+    .stat-block.amber  .value { color: var(--amber); }
+    .stat-block.green  .value { color: var(--green); }
+    .stat-block.purple .value { color: var(--primary); }
+    .stat-block.gray   .value { color: var(--text); }
+
+    /* ---- CARD BASE ---- */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      box-shadow: var(--shadow);
+    }
+    .card h2 {
+      margin: 0 0 16px;
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card h2 .count-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 20px;
+      background: var(--bg);
+      color: var(--text-muted);
+    }
+
+    /* ---- REPORTS CARD ---- */
+    .reports-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .reports-header h2 { margin: 0; }
+    .month-form {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .month-form input[type="month"] {
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      outline: none;
+      font-family: inherit;
+      background: var(--bg);
+    }
+    .month-form input[type="month"]:focus { border-color: var(--primary); }
+    .btn-go {
+      padding: 6px 16px;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-go:hover { background: var(--primary-hover); }
+    .btn-clear {
+      font-size: 13px;
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .km-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .km-table th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--text-muted);
+      padding: 8px 12px;
+      border-bottom: 2px solid var(--border);
+      white-space: nowrap;
+    }
+    .km-table th:not(:first-child) { text-align: right; }
+    .km-table td {
+      padding: 10px 12px;
+      font-size: 13px;
+      border-bottom: 1px solid var(--border);
+    }
+    .km-table td:not(:first-child) { text-align: right; }
+    .km-table tr:last-child td { border-bottom: none; }
+    .km-table tbody tr:hover td { background: #f9f9fb; }
+    .km-val { font-weight: 700; color: #1967d2; font-variant-numeric: tabular-nums; }
+
+    /* Status pills in report table */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 9px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .pill-amber  { background: var(--amber-light); color: var(--amber); }
+    .pill-blue   { background: var(--primary-light); color: #1967d2; }
+    .pill-green  { background: var(--green-light); color: var(--green); }
+    .pill-gray   { background: var(--bg); color: var(--text-muted); }
+
+    /* Month label */
+    .month-label {
+      font-weight: 700;
+      color: var(--text);
+    }
+    .month-year {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    /* ---- MANAGEMENT GRID ---- */
+    .mgmt-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    /* Add row */
+    .add-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .add-row input[type="text"] {
+      flex: 1;
+      min-width: 100px;
+      padding: 8px 11px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      background: var(--bg);
+    }
+    .add-row input[type="text"]:focus { border-color: var(--primary); background: #fff; }
+    .btn-add {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-add:hover { background: var(--primary-hover); }
+
+    /* List */
+    .item-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      max-height: 320px;
+      overflow-y: auto;
+    }
+    .item-list li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 4px;
+      border-bottom: 1px solid var(--border);
+      gap: 8px;
+    }
+    .item-list li:last-child { border-bottom: none; }
+    .item-name {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+    }
+    .avatar {
+      flex-shrink: 0;
+      width: 30px; height: 30px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .avatar-blue   { background: #e8f0fe; color: #1967d2; }
+    .avatar-amber  { background: var(--amber-light); color: #92400e; }
+    .avatar-green  { background: var(--green-light); color: var(--green); }
+    .item-text {
+      min-width: 0;
+      overflow: hidden;
+    }
+    .item-text strong { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .item-text span   { font-size: 11px; color: var(--text-muted); }
+    .btn-del {
+      flex-shrink: 0;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      width: 28px; height: 28px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.1s, color 0.1s;
+    }
+    .btn-del:hover { background: var(--danger-light); color: var(--danger); }
+    .empty-msg {
+      color: var(--text-muted);
+      font-size: 13px;
+      text-align: center;
+      padding: 20px 0;
+    }
+
+    /* ---- INTEGRATIONS / API KEY ---- */
+    .api-key-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      max-width: 540px;
+    }
+    .api-key-row input {
+      flex: 1;
+      padding: 9px 11px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: 'SF Mono', 'Menlo', monospace;
+      outline: none;
+      background: var(--bg);
+    }
+    .api-key-row input:focus { border-color: var(--primary); background: #fff; }
+    .btn-save-key {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 9px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-save-key:hover { background: var(--primary-hover); }
+    .btn-toggle-key {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 12px;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 13px;
+      background: var(--bg);
+    }
+    .btn-toggle-key:hover { background: #ebebf0; }
+    .key-hint { margin: 8px 0 0; font-size: 12px; color: var(--text-muted); }
+    .key-hint a { color: var(--primary); }
+    .key-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+    .key-status.set   { color: var(--green); }
+    .key-status.unset { color: var(--amber); }
+
+    /* ---- VEHICLE KM TABLE ---- */
+    .vkm-vehicle { font-weight: 600; }
+    .vkm-no { font-size: 11px; color: var(--text-muted); }
+
+    /* ---- TOAST ---- */
+    .toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 22px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      z-index: 999;
+      animation: slideUp 0.25s ease;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .toast.success { background: var(--green); }
+    .toast.error   { background: var(--danger); }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+      to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+
+    /* ---- RESPONSIVE ---- */
+    @media (max-width: 900px) {
+      .stat-row { grid-template-columns: repeat(3, 1fr); }
+      .mgmt-grid { grid-template-columns: 1fr 1fr; }
+      .content { padding: 16px 18px; }
+      .page-header { padding: 20px 18px 8px; }
+    }
+    @media (max-width: 600px) {
+      .stat-row { grid-template-columns: 1fr 1fr; }
+      .mgmt-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Icon helper */
+    .icon { display: inline-block; vertical-align: middle; }
+    svg { overflow: hidden; }
+  </style>
 </head>
-<body class="app-shell">
-    {% include 'navbar.html' %}
+<body>
+  {% include 'navbar.html' %}
 
+  <!-- SVG sprite (inline trash icon) -->
+  <svg width="0" height="0" style="display:none">
+    <symbol id="icon-trash" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="2 4 14 4"/><path d="M6 4V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1"/><path d="M5 4l.75 9h4.5L11 4"/>
+    </symbol>
+  </svg>
 
-  <main class="page-content">
-    <section class="card">
-      <header>
-        <h1 class="page-title">Control Center</h1>
-        <p class="page-subtitle">Keep an eye on your performance metrics and maintain the driver roster.</p>
-      </header>
+  <div class="page-header">
+    <div>
+      <h1>Settings</h1>
+      <div class="subtitle">Manage drivers, vehicles, customers, and view reports.</div>
+    </div>
+  </div>
 
-      <div class="stats-grid mt-lg">
-        <div class="stat-card">
-          <span class="hint">Total Invoices</span>
-          <strong>{{ total_invoices }}</strong>
+  <div class="content">
+
+    <!-- ── OVERVIEW STATS ── -->
+    <div>
+      <div class="section-label">Overview</div>
+      <div class="stat-row">
+        <div class="stat-block purple">
+          <div class="label">Total Invoices</div>
+          <div class="value">{{ total_invoices }}</div>
+          <div class="sub">all time</div>
         </div>
-        <div class="stat-card">
-          <span class="hint">This Month</span>
-          <strong>{{ invoices_this_month }}</strong>
+        <div class="stat-block gray">
+          <div class="label">This Month</div>
+          <div class="value">{{ invoices_this_month }}</div>
+          <div class="sub">duty slips</div>
         </div>
-        <div class="stat-card">
-          <span class="hint">Registered Drivers</span>
-          <strong>{{ total_drivers }}</strong>
+        <div class="stat-block blue">
+          <div class="label">Not Submitted</div>
+          <div class="value">{{ not_submitted }}</div>
+          <div class="sub">pending</div>
+        </div>
+        <div class="stat-block amber">
+          <div class="label">Bill Submitted</div>
+          <div class="value">{{ bill_submitted }}</div>
+          <div class="sub">awaiting payment</div>
+        </div>
+        <div class="stat-block green">
+          <div class="label">Payment Received</div>
+          <div class="value">{{ payment_received }}</div>
+          <div class="sub">completed</div>
         </div>
       </div>
-    </section>
+    </div>
 
-    <section class="card">
-      <header>
-        <h2 class="section-title">Add a New Driver</h2>
-        <p class="page-subtitle mt-sm">Create quick shortcuts for frequent assignments.</p>
-      </header>
-      <form class="form-grid mt-md" action="/settings" method="post">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="field-group">
-          <label for="new_driver">Driver Name</label>
-          <input type="text" id="new_driver" name="new_driver" placeholder="e.g. Aman Verma">
-        </div>
-        <input class="btn btn-primary" type="submit" value="Add Driver">
-      </form>
-      {% if message %}
-        <p class="message {% if message_type == 'error' %}error{% endif %}">{{ message }}</p>
-      {% endif %}
-
-      {% if driver_list %}
-      <div class="mt-md">
-        <h3 class="section-title" style="font-size:14px;margin-bottom:10px;">Registered Drivers</h3>
-        <ul class="invoice-list">
-          {% for driver in driver_list %}
-          <li class="invoice-item">
-            <div class="info"><strong>{{ driver.name }}</strong></div>
-            <div class="actions">
-              <form method="post" action="/delete_driver/{{ driver.id }}" onsubmit="return confirm('Remove {{ driver.name }}?')">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn-danger" type="submit">Remove</button>
-              </form>
+    <!-- ── MONTHLY REPORTS ── -->
+    <div>
+      <div class="section-label">Monthly Reports</div>
+      <div class="card">
+        <div class="reports-header">
+          <h2>Slip Summary <span class="count-badge">{{ monthly_report_rows|length }} months</span></h2>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <div style="position:relative;">
+              <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--text-muted);pointer-events:none;" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><line x1="11" y1="11" x2="14" y2="14"/></svg>
+              <input id="summarySearch" type="text" placeholder="Search months…"
+                     oninput="filterSummary(this.value)"
+                     style="padding:6px 10px 6px 28px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:160px;background:var(--bg);font-family:inherit;">
             </div>
-          </li>
-          {% endfor %}
-        </ul>
+            <a id="exportAllBtn" href="/export/monthly_report"
+               style="padding:6px 14px;background:#166534;color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap;">
+              ↓ Export All
+            </a>
+            <button id="exportSelBtn" onclick="exportSelected()" disabled
+               style="padding:6px 14px;background:#7c3aed;color:#fff;border-radius:8px;font-size:13px;font-weight:600;border:none;cursor:pointer;white-space:nowrap;opacity:0.4;">
+              ↓ Export Selected (0)
+            </button>
+          </div>
+        </div>
+        {% if monthly_report_rows %}
+        <table class="km-table" id="summaryTable">
+          <thead>
+            <tr>
+              <th style="width:36px;text-align:center;">
+                <input type="checkbox" id="selectAllMonths" onchange="toggleAllMonths(this)"
+                       style="width:15px;height:15px;cursor:pointer;accent-color:var(--primary);">
+              </th>
+              <th>Month</th>
+              <th>Total Slips</th>
+              <th>Not Submitted</th>
+              <th>Bill Submitted</th>
+              <th>Payment Received</th>
+              <th>Total KM</th>
+            </tr>
+          </thead>
+          <tbody id="summaryBody">
+            {% for r in monthly_report_rows %}
+            {% set month_parts = r[0].split('-') %}
+            {% set months = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
+            <tr data-month="{{ r[0] }}" data-search="{{ months[month_parts[1]|int] if month_parts|length > 1 else r[0] }} {{ month_parts[0] if month_parts|length > 1 else '' }}">
+              <td style="text-align:center;">
+                <input type="checkbox" class="month-chk" value="{{ r[0] }}"
+                       onchange="updateSelection()"
+                       style="width:15px;height:15px;cursor:pointer;accent-color:var(--primary);">
+              </td>
+              <td>
+                <span class="month-label">{{ months[month_parts[1]|int] if month_parts|length > 1 else r[0] }}</span>
+                <span class="month-year"> {{ month_parts[0] if month_parts|length > 1 else '' }}</span>
+              </td>
+              <td><span class="km-val">{{ r[1] or 0 }}</span></td>
+              <td>{% if r[2] %}<span class="pill pill-blue">{{ r[2] }}</span>{% else %}<span style="color:var(--text-muted)">—</span>{% endif %}</td>
+              <td>{% if r[3] %}<span class="pill pill-amber">{{ r[3] }}</span>{% else %}<span style="color:var(--text-muted)">—</span>{% endif %}</td>
+              <td>{% if r[4] %}<span class="pill pill-green">{{ r[4] }}</span>{% else %}<span style="color:var(--text-muted)">—</span>{% endif %}</td>
+              <td><span class="km-val">{{ r[5] or 0 }} km</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p id="summaryNoResults" style="display:none;color:var(--text-muted);text-align:center;padding:16px 0;margin:0;font-size:13px;">No months match your search.</p>
+        {% else %}
+        <p class="empty-msg" style="padding:24px 0;">No slip data for this period.</p>
+        {% endif %}
       </div>
-      {% endif %}
-    </section>
+    </div>
 
-    <section class="card">
-      <header>
-        <h2 class="section-title">Monthly Export & Report</h2>
-        <p class="page-subtitle mt-sm">Pick a month to download all slips as Excel or as a summary PDF report.</p>
-      </header>
-      <form class="form-grid mt-md" id="monthForm" onsubmit="return false;">
-        <div class="field-group">
-          <label for="report_month">Month</label>
-          <input type="month" id="report_month" value="{{ current_month }}">
+    <!-- ── VEHICLE KM ── -->
+    <div>
+      <div class="section-label">Vehicle KM Usage</div>
+      <div class="card">
+        <div class="reports-header">
+          <h2>KM per Vehicle <span class="count-badge">{{ vehicle_km_rows|length }} records</span></h2>
+          <div style="position:relative;">
+            <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--text-muted);pointer-events:none;" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><line x1="11" y1="11" x2="14" y2="14"/></svg>
+            <input id="kmSearch" type="text" placeholder="Search vehicle or month…"
+                   oninput="filterKm(this.value)"
+                   style="padding:6px 10px 6px 28px;border:1px solid var(--border);border-radius:8px;font-size:13px;outline:none;width:200px;background:var(--bg);font-family:inherit;">
+          </div>
         </div>
-        <div class="filter-actions">
-          <a class="btn btn-primary" id="excelMonthBtn" href="#">Export Month to Excel</a>
-          <a class="btn btn-soft" id="reportMonthBtn" href="#">View Monthly Report</a>
-          <a class="btn btn-outline" id="reportMonthPdfBtn" href="#">Download Report PDF</a>
-        </div>
-      </form>
-      <script>
-        const monthInput = document.getElementById('report_month');
-        function updateLinks() {
-          const m = monthInput.value;
-          document.getElementById('excelMonthBtn').href = '/export/excel/month/' + m;
-          document.getElementById('reportMonthBtn').href = '/report/month/' + m;
-          document.getElementById('reportMonthPdfBtn').href = '/report/month/' + m + '?format=pdf';
-        }
-        monthInput.addEventListener('change', updateLinks);
-        updateLinks();
-      </script>
-    </section>
+        {% if vehicle_km_rows %}
+        <table class="km-table">
+          <thead>
+            <tr>
+              <th>Vehicle</th>
+              <th>Month</th>
+              <th>Total KM</th>
+            </tr>
+          </thead>
+          <tbody id="kmBody">
+            {% for row in vehicle_km_rows %}
+            {% set mp = row[1].split('-') %}
+            {% set months = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
+            {% set month_label = (months[mp[1]|int] ~ ' ' ~ mp[0]) if mp|length > 1 else row[1] %}
+            <tr data-search="{{ row[0]|lower }} {{ month_label|lower }} {{ row[1] }}">
+              <td class="vkm-vehicle">{{ row[0] }}</td>
+              <td>{{ month_label }}</td>
+              <td><span class="km-val">{{ row[2] or 0 }} km</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p id="kmNoResults" style="display:none;color:var(--text-muted);text-align:center;padding:16px 0;margin:0;font-size:13px;">No records match your search.</p>
+        {% else %}
+        <p class="empty-msg" style="padding:24px 0;">No KM data available.</p>
+        {% endif %}
+      </div>
+    </div>
 
-    <section class="card">
-      <header>
-        <h2 class="section-title">Slip Templates</h2>
-        <p class="page-subtitle mt-sm">Manage saved templates for trips you run repeatedly.</p>
-      </header>
-      <a class="btn btn-soft mt-md" href="/templates">Manage Templates</a>
-    </section>
-  </main>
+    <!-- ── MANAGEMENT CARDS ── -->
+    <div>
+      <div class="section-label">Manage</div>
+      <div class="mgmt-grid">
+
+        <!-- Drivers -->
+        <div class="card">
+          <h2>Drivers <span class="count-badge">{{ drivers|length }}</span></h2>
+          <form method="post" action="/settings" class="add-row">
+            <input type="hidden" name="action" value="add_driver">
+            <input type="text" name="new_driver" placeholder="Driver name…" autocomplete="off">
+            <button type="submit" class="btn-add">+ Add</button>
+          </form>
+          {% if drivers %}
+            <ul class="item-list">
+              {% for driver in drivers %}
+              <li>
+                <div class="item-name">
+                  <div class="avatar avatar-blue">{{ driver[1][0]|upper }}</div>
+                  <div class="item-text">
+                    <strong>{{ driver[1] }}</strong>
+                  </div>
+                </div>
+                <form method="post" action="/settings" style="display:inline;"
+                      onsubmit="return confirm('Remove {{ driver[1] }}?')">
+                  <input type="hidden" name="action"    value="delete_driver">
+                  <input type="hidden" name="driver_id" value="{{ driver[0] }}">
+                  <button type="submit" class="btn-del" title="Remove">
+                    <svg class="icon" width="14" height="14"><use href="#icon-trash"/></svg>
+                  </button>
+                </form>
+              </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="empty-msg">No drivers added yet.</p>
+          {% endif %}
+        </div>
+
+        <!-- Vehicles -->
+        <div class="card">
+          <h2>Vehicles <span class="count-badge">{{ vehicles|length }}</span></h2>
+          <form method="post" action="/settings" class="add-row">
+            <input type="hidden" name="action" value="add_vehicle">
+            <input type="text" name="new_vehicle"    placeholder="Vehicle name…"   autocomplete="off">
+            <input type="text" name="new_vehicle_no" placeholder="No. (e.g. HR26AB1234)" autocomplete="off">
+            <button type="submit" class="btn-add">+ Add</button>
+          </form>
+          {% if vehicles %}
+            <ul class="item-list">
+              {% for v in vehicles %}
+              <li>
+                <div class="item-name">
+                  <div class="avatar avatar-amber">{{ v[1][0]|upper }}</div>
+                  <div class="item-text">
+                    <strong>{{ v[1] }}</strong>
+                    {% if v[2] %}<span>{{ v[2] }}</span>{% endif %}
+                  </div>
+                </div>
+                <form method="post" action="/settings" style="display:inline;"
+                      onsubmit="return confirm('Remove {{ v[1] }}?')">
+                  <input type="hidden" name="action"     value="delete_vehicle">
+                  <input type="hidden" name="vehicle_id" value="{{ v[0] }}">
+                  <button type="submit" class="btn-del" title="Remove">
+                    <svg class="icon" width="14" height="14"><use href="#icon-trash"/></svg>
+                  </button>
+                </form>
+              </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="empty-msg">No vehicles added yet.</p>
+          {% endif %}
+        </div>
+
+        <!-- Customers -->
+        <div class="card">
+          <h2>Customers <span class="count-badge">{{ customers|length }}</span></h2>
+          <form method="post" action="/settings" class="add-row">
+            <input type="hidden" name="action" value="add_customer">
+            <input type="text" name="new_customer" placeholder="Customer name…"  autocomplete="off">
+            <input type="text" name="new_company"  placeholder="Company…"        autocomplete="off">
+            <button type="submit" class="btn-add">+ Add</button>
+          </form>
+          {% if customers %}
+            <ul class="item-list">
+              {% for c in customers %}
+              <li>
+                <div class="item-name">
+                  <div class="avatar avatar-green">{{ c[1][0]|upper }}</div>
+                  <div class="item-text">
+                    <strong>{{ c[1] }}</strong>
+                    {% if c[2] %}<span>{{ c[2] }}</span>{% endif %}
+                  </div>
+                </div>
+                <form method="post" action="/settings" style="display:inline;"
+                      onsubmit="return confirm('Remove {{ c[1] }}?')">
+                  <input type="hidden" name="action"      value="delete_customer">
+                  <input type="hidden" name="customer_id" value="{{ c[0] }}">
+                  <button type="submit" class="btn-del" title="Remove">
+                    <svg class="icon" width="14" height="14"><use href="#icon-trash"/></svg>
+                  </button>
+                </form>
+              </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="empty-msg">No customers added yet.</p>
+          {% endif %}
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- end .content -->
+
+  {% if message %}
+  <div class="toast {{ message_type }}" id="toast">{{ message }}</div>
+  <script>
+    setTimeout(() => {
+      const t = document.getElementById('toast');
+      if (t) { t.style.transition = 'opacity 0.3s'; t.style.opacity = '0'; }
+    }, 3000);
+  </script>
+  {% endif %}
+
+  <script>
+    // ── Slip Summary: search + multi-select export ──
+    function filterKm(q) {
+      q = q.toLowerCase().trim();
+      let visible = 0;
+      document.querySelectorAll('#kmBody tr').forEach(tr => {
+        const match = !q || (tr.dataset.search || '').includes(q);
+        tr.style.display = match ? '' : 'none';
+        if (match) visible++;
+      });
+      const noRes = document.getElementById('kmNoResults');
+      if (noRes) noRes.style.display = (q && visible === 0) ? 'block' : 'none';
+    }
+
+    function filterSummary(q) {
+      q = q.toLowerCase().trim();
+      let visible = 0;
+      document.querySelectorAll('#summaryBody tr').forEach(tr => {
+        const match = !q || (tr.dataset.search || '').toLowerCase().includes(q);
+        tr.style.display = match ? '' : 'none';
+        if (match) visible++;
+      });
+      const noRes = document.getElementById('summaryNoResults');
+      if (noRes) noRes.style.display = (q && visible === 0) ? 'block' : 'none';
+      // sync selectAll state
+      syncSelectAll();
+    }
+
+    function updateSelection() {
+      const all   = document.querySelectorAll('.month-chk');
+      const checked = document.querySelectorAll('.month-chk:checked');
+      const btn   = document.getElementById('exportSelBtn');
+      if (!btn) return;
+      const n = checked.length;
+      btn.textContent = `↓ Export Selected (${n})`;
+      btn.disabled = n === 0;
+      btn.style.opacity = n === 0 ? '0.4' : '1';
+      syncSelectAll();
+    }
+
+    function syncSelectAll() {
+      const allCb  = document.getElementById('selectAllMonths');
+      if (!allCb) return;
+      const visible = [...document.querySelectorAll('.month-chk')].filter(c => c.closest('tr').style.display !== 'none');
+      const checkedVisible = visible.filter(c => c.checked);
+      allCb.indeterminate = checkedVisible.length > 0 && checkedVisible.length < visible.length;
+      allCb.checked = visible.length > 0 && checkedVisible.length === visible.length;
+    }
+
+    function toggleAllMonths(cb) {
+      document.querySelectorAll('.month-chk').forEach(c => {
+        // only toggle visible rows
+        if (c.closest('tr').style.display !== 'none') c.checked = cb.checked;
+      });
+      updateSelection();
+    }
+
+    function exportSelected() {
+      const months = [...document.querySelectorAll('.month-chk:checked')].map(c => c.value);
+      if (!months.length) return;
+      window.location.href = '/export/monthly_report?months=' + months.join(',');
+    }
+  </script>
 </body>
 </html>

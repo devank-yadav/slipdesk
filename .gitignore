@@ -1,1 +1,15 @@
 .vercel
+.env
+.env.local
+*.db
+invoices/
+generated_invoices/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.venv/
+venv/
+*.egg-info/
+dist/
+build/

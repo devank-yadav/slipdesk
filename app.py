@@ -1,481 +1,470 @@
 import os
 import io
-import secrets
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Optional, Mapping, Any
 import zipfile
+import sqlite3
+import secrets
+import hashlib
+from urllib.parse import urlencode
+from datetime import datetime, date, timedelta
 
-from flask import Flask, render_template, request, send_file, redirect, url_for, session, jsonify, abort, flash
-from werkzeug.security import generate_password_hash, check_password_hash
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.utils import ImageReader
-from reportlab.pdfbase import pdfmetrics
-from sqlalchemy import create_engine, text, MetaData, Table, Column, Integer, String, Text
-from sqlalchemy.engine import Engine
-from sqlalchemy.exc import IntegrityError
+from flask import Flask, render_template, request, send_file, redirect, url_for, session, jsonify
+from functools import lru_cache
 
-# Optional security middleware — degrade gracefully if not installed (local dev)
+stringWidth = None
 try:
-    from flask_wtf.csrf import CSRFProtect, generate_csrf
-    _HAS_CSRF = True
-except ImportError:
-    _HAS_CSRF = False
+    import libsql_experimental as libsql
+except Exception:
+    libsql = None
 
-try:
-    from flask_limiter import Limiter
-    from flask_limiter.util import get_remote_address
-    _HAS_LIMITER = True
-except ImportError:
-    _HAS_LIMITER = False
+GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
 
-try:
-    from flask_compress import Compress
-    _HAS_COMPRESS = True
-except ImportError:
-    _HAS_COMPRESS = False
+# ---------- PDF DESIGN CONSTANTS ----------
+COLOR_DARK   = (0.13, 0.13, 0.15)
+COLOR_TEXT   = (0.05, 0.05, 0.07)
+COLOR_MUTED  = (0.42, 0.42, 0.46)
+COLOR_LINE   = (0.55, 0.55, 0.58)
+COLOR_HEADER = (0.10, 0.10, 0.12)
+
+
+@lru_cache(maxsize=1)
+def _pdf_libs():
+    # Lazy-load heavy PDF deps to reduce cold-start time.
+    from reportlab.pdfgen import canvas as _canvas
+    from reportlab.lib.pagesizes import A4 as _A4, landscape as _landscape
+    from reportlab.pdfbase.pdfmetrics import stringWidth as _stringWidth
+    from pypdf import PdfWriter as _PdfWriter, PdfReader as _PdfReader
+    return {
+        'canvas': _canvas,
+        'A4': _A4,
+        'landscape': _landscape,
+        'stringWidth': _stringWidth,
+        'PdfWriter': _PdfWriter,
+        'PdfReader': _PdfReader,
+    }
+
+
+def _string_width(text, font_name, font_size):
+    global stringWidth
+    if stringWidth is None:
+        stringWidth = _pdf_libs()['stringWidth']
+    return stringWidth(text, font_name, font_size)
+
+
+def _wrap_text(text, font_name, font_size, max_width):
+    if not text:
+        return []
+    words = text.split()
+    lines, current = [], ''
+    for w in words:
+        test = (current + ' ' + w).strip()
+        if _string_width(test, font_name, font_size) <= max_width:
+            current = test
+        else:
+            if current:
+                lines.append(current)
+            current = w
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _format_date(d):
+    try:
+        return datetime.strptime(d, '%Y-%m-%d').strftime('%d / %m / %Y')
+    except Exception:
+        return d or ''
+
+
+def _route_positions(n_lines):
+    """Return dynamic y-coordinates for route lines, driver label, and signature."""
+    route_y = 248
+    n = max(n_lines, 1)
+    line_h = 22 if n <= 5 else 16
+    line_ys = [route_y - i * line_h for i in range(n)]
+    last_y = line_ys[-1]
+    driver_y = max(last_y - 36, 95)
+    return {'line_ys': line_ys, 'line_h': line_h, 'driver_y': driver_y}
+
+
+def _draw_tracked_right(c, x_right, y, text, font_name, font_size, tracking):
+    """Right-aligned text with extra letter-spacing (tracking)."""
+    total_w = sum(_string_width(ch, font_name, font_size) for ch in text) + tracking * (len(text) - 1)
+    x = x_right - total_w
+    for ch in text:
+        c.drawString(x, y, ch)
+        x += _string_width(ch, font_name, font_size) + tracking
+
+
+def _draw_tracked_center(c, x_center, y, text, font_name, font_size, tracking):
+    total_w = sum(_string_width(ch, font_name, font_size) for ch in text) + tracking * (len(text) - 1)
+    x = x_center - total_w / 2
+    for ch in text:
+        c.drawString(x, y, ch)
+        x += _string_width(ch, font_name, font_size) + tracking
+
+
+def draw_slip_template(c, width, height, n_route_lines=1):
+    """Draw the static chrome of the duty slip (header, labels, lines)."""
+
+    # ---- HEADER: contact info (top-left) ----
+    c.setFont('Helvetica', 9)
+    c.setFillColorRGB(*COLOR_MUTED)
+    c.drawString(40, 568, 'Contact No:')
+    c.drawString(40, 553, 'Address:')
+    c.setFillColorRGB(*COLOR_DARK)
+    c.drawString(108, 568, '9718305627, 9718305628')
+    c.drawString(108, 553, 'B213, Saraswati Enclave, Gurgaon')
+
+    # ---- HEADER: brand (top-right, two lines, wide tracking) ----
+    c.setFillColorRGB(*COLOR_HEADER)
+    c.setFont('Helvetica-Bold', 28)
+    _draw_tracked_right(c, width - 40, 568, 'OSPREY',  'Helvetica-Bold', 28, 6)
+    _draw_tracked_right(c, width - 40, 538, 'TRAVELS', 'Helvetica-Bold', 28, 6)
+
+    # ---- Divider ----
+    c.setStrokeColorRGB(*COLOR_DARK)
+    c.setLineWidth(1.2)
+    c.line(40, 525, width - 40, 525)
+
+    # ---- DUTY SLIP NO + DATE block (under header, left side) ----
+    c.setFillColorRGB(*COLOR_DARK)
+    c.setFont('Helvetica-Bold', 10.5)
+    c.drawString(40, 498, 'DUTY SLIP NO:')
+    c.drawString(40, 472, 'DATE:')
+
+    c.setStrokeColorRGB(*COLOR_LINE)
+    c.setLineWidth(0.5)
+    c.setDash(1, 2)
+    c.line(135, 494, 320, 494)
+    c.line(135, 468, 320, 468)
+    c.setDash()
+
+    # ---- TWO-COLUMN BODY ROWS ----
+    rows = [
+        ('COMPANY NAME:',    'CUSTOMER NAME:'),
+        ('TYPE OF VEHICLE:', 'VEHICLE NO:'),
+        ('STARTING KM:',     'STARTING TIME:'),
+        ('CLOSING KM:',      'CLOSING TIME:'),
+        ('TOTAL KM:',        'TOTAL TIME:'),
+        ('PROJECT CODE:',    'MAIL APPROVAL DATE:'),
+    ]
+    base_y, row_h = 432, 28
+    label_x_L, line_start_L, line_end_L = 40, 175, 410
+    label_x_R, line_start_R, line_end_R = 445, 580, 802
+
+    for i, (left_label, right_label) in enumerate(rows):
+        y = base_y - i * row_h
+        c.setFont('Helvetica-Bold', 10.5)
+        c.setFillColorRGB(*COLOR_DARK)
+        c.drawString(label_x_L, y, left_label)
+        c.drawString(label_x_R, y, right_label)
+
+        c.setStrokeColorRGB(*COLOR_LINE)
+        c.setLineWidth(0.5)
+        c.setDash(1, 2)
+        c.line(line_start_L, y - 4, line_end_L, y - 4)
+        c.line(line_start_R, y - 4, line_end_R, y - 4)
+        c.setDash()
+
+    # ---- ROUTE COVERED (dynamic multi-line, full width) ----
+    route_y = base_y - 6 * row_h - 16  # = 248
+    c.setFont('Helvetica-Bold', 10.5)
+    c.setFillColorRGB(*COLOR_DARK)
+    c.drawString(40, route_y, 'ROUTE COVERED:')
+
+    pos = _route_positions(n_route_lines)
+    c.setStrokeColorRGB(*COLOR_LINE)
+    c.setLineWidth(0.5)
+    c.setDash(1, 2)
+    for ly in pos['line_ys']:
+        c.line(155, ly - 4, line_end_R, ly - 4)
+    c.setDash()
+
+    # ---- DRIVER NAME (left, below route — dynamic position) ----
+    driver_y = pos['driver_y']
+    c.setFont('Helvetica-Bold', 10.5)
+    c.setFillColorRGB(*COLOR_DARK)
+    c.drawString(40, driver_y, 'DRIVER NAME:')
+    c.setStrokeColorRGB(*COLOR_LINE)
+    c.setLineWidth(0.5)
+    c.setDash(1, 2)
+    c.line(135, driver_y - 4, line_end_L, driver_y - 4)
+    c.setDash()
+
+    # ---- USER SIGNATURE (bottom right, always fixed) ----
+    c.setStrokeColorRGB(*COLOR_LINE)
+    c.setLineWidth(0.7)
+    c.setDash(1, 2)
+    c.line(575, 78, 802, 78)
+    c.setDash()
+    c.setFont('Helvetica-Bold', 9)
+    c.setFillColorRGB(*COLOR_MUTED)
+    _draw_tracked_center(c, 688, 62, 'USER SIGNATURE', 'Helvetica-Bold', 9, 1.2)
+
+
+def fill_slip_data(c, data):
+    """Place dynamic values into the template at the correct coordinates."""
+    c.setFillColorRGB(*COLOR_TEXT)
+    c.setFont('Helvetica', 11)
+
+    # Duty slip no + Date
+    c.drawString(140, 498, data.get('duty_slip_no', '') or '')
+    c.drawString(140, 472, _format_date(data.get('date', '')))
+
+    # Two-column rows
+    base_y, row_h = 432, 28
+    val_x_L, val_x_R = 180, 585
+
+    left_values = [
+        data.get('company_name', ''),
+        data.get('vehicle_type', ''),
+        data.get('starting_km', ''),
+        data.get('closing_km', ''),
+        data.get('total_km', ''),
+        data.get('project_code', ''),
+    ]
+    right_values = [
+        data.get('customer_name', ''),
+        data.get('vehicle_no', ''),
+        data.get('starting_time', ''),
+        data.get('closing_time', ''),
+        data.get('total_time', ''),
+        _format_date(data.get('mail_approval_date', '')),
+    ]
+    for i, (lv, rv) in enumerate(zip(left_values, right_values)):
+        y = base_y - i * row_h
+        c.drawString(val_x_L, y, str(lv or ''))
+        c.drawString(val_x_R, y, str(rv or ''))
+
+    # Route covered: all wrapped lines, positions computed dynamically
+    route_lines = _wrap_text(data.get('route_covered', '') or '', 'Helvetica', 11, 632)
+    pos = _route_positions(len(route_lines))
+    for i, line in enumerate(route_lines):
+        c.drawString(160, pos['line_ys'][i], line)
+
+    # Driver name at dynamic position
+    c.drawString(140, pos['driver_y'], data.get('driver_name', '') or '')
+
+
+def _build_pdf(data: dict) -> io.BytesIO:
+    route_lines = _wrap_text(data.get('route_covered', '') or '', 'Helvetica', 11, 632)
+    n = max(len(route_lines), 1)
+    pdf = _pdf_libs()
+    buf = io.BytesIO()
+    c = pdf['canvas'].Canvas(buf, pagesize=pdf['landscape'](pdf['A4']))
+    w, h = pdf['landscape'](pdf['A4'])
+    draw_slip_template(c, w, h, n_route_lines=n)
+    fill_slip_data(c, data)
+    c.save()
+    buf.seek(0)
+    return buf
+
 
 app = Flask(__name__)
-
-# Gzip responses
-if _HAS_COMPRESS:
-    Compress(app)
-
-# Secret key from env. In production (Vercel) this MUST be set; otherwise sessions reset on every cold start.
-_secret = os.environ.get("SECRET_KEY")
-if not _secret:
-    if os.environ.get("VERCEL") or os.environ.get("PRODUCTION"):
-        raise RuntimeError("SECRET_KEY environment variable is required in production.")
-    _secret = secrets.token_hex(32)
-app.secret_key = _secret
-
-# Hardened session cookies
-app.config.update(
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE='Lax',
-    SESSION_COOKIE_SECURE=bool(os.environ.get("VERCEL") or os.environ.get("PRODUCTION")),
-    PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
-)
-
-# CSRF protection
-if _HAS_CSRF:
-    csrf = CSRFProtect(app)
-    @app.context_processor
-    def _inject_csrf():
-        return {"csrf_token": generate_csrf}
-else:
-    @app.context_processor
-    def _inject_csrf():
-        return {"csrf_token": lambda: ""}
-
-# Rate limiter — applied selectively to login below
-if _HAS_LIMITER:
-    limiter = Limiter(get_remote_address, app=app, default_limits=[])
-else:
-    limiter = None
-
-BASE_DIR = Path(__file__).resolve().parent
-TMP_ROOT = Path(os.environ.get("TMPDIR", "/tmp")) / "billgenerator"
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.secret_key = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
 
 
-def ensure_writable_dir(preferred: Path, fallback: Path) -> Path:
-    """
-    Return a directory path that can be written to. Tries the preferred path first
-    and falls back to an alternate path (usually /tmp on serverless platforms).
-    """
-    for path in (preferred, fallback):
-        try:
-            path.mkdir(parents=True, exist_ok=True)
-            test_file = path / ".write_test"
-            with open(test_file, "w") as handle:
-                handle.write("ok")
-            test_file.unlink(missing_ok=True)
-            return path
-        except OSError:
-            continue
-    raise RuntimeError("Unable to create a writable directory for generated invoices.")
+def _hash_pw(pw: str) -> str:
+    return hashlib.sha256(pw.encode('utf-8')).hexdigest()
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SOURCE_DATABASE = os.path.join(BASE_DIR, 'invoices.db')
+TURSO_DATABASE_URL = os.getenv('TURSO_DATABASE_URL') or os.getenv('STORAGE_URL')
+TURSO_AUTH_TOKEN = os.getenv('TURSO_AUTH_TOKEN') or os.getenv('STORAGE_AUTH_TOKEN')
+USE_TURSO = bool(TURSO_DATABASE_URL and TURSO_AUTH_TOKEN and libsql)
+
+_sqlite_connect = sqlite3.connect
+_turso_shared_conn = None
 
 
-def ensure_writable_file(preferred: Path, fallback: Path) -> Path:
-    """
-    Return a file path that can be opened for writing. Falls back to an alternate
-    location if the preferred path is read-only.
-    """
-    for path in (preferred, fallback):
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, "a"):
-                pass
-            return path
-        except OSError:
-            continue
-    raise RuntimeError("Unable to create a writable SQLite database file.")
+class _ConnectionProxy:
+    def __init__(self, conn):
+        self._conn = conn
 
+    def __enter__(self):
+        return self._conn
 
-INVOICE_DIR_PATH = ensure_writable_dir(
-    BASE_DIR / "generated_invoices",
-    TMP_ROOT / "generated_invoices"
-)
-INVOICE_DIR = str(INVOICE_DIR_PATH)
-
-DATABASE_URL = os.environ.get("DATABASE_URL")
-DATABASE_PATH = None
-
-# Turso integration (Vercel) provides TURSO_DATABASE_URL + TURSO_AUTH_TOKEN.
-# Build a libsql SQLAlchemy URL from them when DATABASE_URL isn't set directly.
-if not DATABASE_URL:
-    _turso_url = os.environ.get("TURSO_DATABASE_URL")  # e.g. libsql://name.turso.io
-    _turso_token = os.environ.get("TURSO_AUTH_TOKEN", "")
-    if _turso_url:
-        # Convert libsql:// → libsql+https:// for the SQLAlchemy dialect
-        _turso_http = _turso_url.replace("libsql://", "libsql+https://", 1)
-        DATABASE_URL = f"{_turso_http}?authToken={_turso_token}"
-
-if not DATABASE_URL:
-    DATABASE_PATH = ensure_writable_file(
-        BASE_DIR / "invoices.db",
-        TMP_ROOT / "invoices.db"
-    )
-    DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
-
-connect_args = {}
-if DATABASE_URL.startswith("sqlite"):
-    connect_args["check_same_thread"] = False
-
-engine: Engine = create_engine(
-    DATABASE_URL,
-    future=True,
-    pool_pre_ping=True,
-    pool_recycle=300,
-    connect_args=connect_args,
-)
-
-metadata = MetaData()
-
-invoices_table = Table(
-    "invoices",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("customer_name", Text),
-    Column("company_name", Text),
-    Column("date", String(32)),
-    Column("duty_slip_no", String(64)),
-    Column("vehicle_type", String(64)),
-    Column("vehicle_no", String(64)),
-    Column("starting_km", String(32)),
-    Column("closing_km", String(32)),
-    Column("total_km", String(32)),
-    Column("starting_time", String(32)),
-    Column("closing_time", String(32)),
-    Column("total_time", String(32)),
-    Column("dn", Text),
-    Column("remarks", Text),
-    Column("route_covered", Text),
-    Column("driver_name", String(128)),
-    Column("admin_username", String(128), nullable=False),
-    Column("created_at", String(32)),
-    Column("file_path", Text),
-)
-
-users_table = Table(
-    "users",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("username", String(150), unique=True, nullable=False),
-    Column("password", String(150), nullable=False),
-)
-
-drivers_table = Table(
-    "drivers",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("name", String(150), unique=True, nullable=False),
-)
-
-slip_templates_table = Table(
-    "slip_templates",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("admin_username", String(128), nullable=False),
-    Column("template_name", String(200), nullable=False),
-    Column("customer_name", Text),
-    Column("company_name", Text),
-    Column("vehicle_type", String(64)),
-    Column("vehicle_no", String(64)),
-    Column("route_covered", Text),
-    Column("dn", Text),
-    Column("remarks", Text),
-    Column("driver_name", String(128)),
-    Column("starting_km", String(32)),
-    Column("total_km", String(32)),
-    Column("created_at", String(32)),
-)
-
-
-def ensure_invoice_columns():
-    """Backfill missing invoice columns when running against legacy SQLite files."""
-    additions = [
-        ("created_at", "TEXT"),
-        ("driver_name", "TEXT"),
-        ("company_name", "TEXT"),
-        ("duty_slip_no", "TEXT"),
-        ("vehicle_type", "TEXT"),
-        ("vehicle_no", "TEXT"),
-        ("starting_km", "TEXT"),
-        ("closing_km", "TEXT"),
-        ("total_km", "TEXT"),
-        ("starting_time", "TEXT"),
-        ("closing_time", "TEXT"),
-        ("total_time", "TEXT"),
-        ("dn", "TEXT"),
-        ("remarks", "TEXT"),
-        ("route_covered", "TEXT"),
-    ]
-
-    dialect = engine.dialect.name
-    with engine.begin() as conn:
-        if dialect == "sqlite":
-            existing = {row[1] for row in conn.execute(text("PRAGMA table_info(invoices)"))}
-            for column, ddl in additions:
-                if column not in existing:
-                    conn.execute(text(f"ALTER TABLE invoices ADD COLUMN {column} {ddl}"))
-        else:
-            for column, ddl in additions:
-                conn.execute(text(f"ALTER TABLE invoices ADD COLUMN IF NOT EXISTS {column} {ddl}"))
-
-
-def ensure_indexes():
-    """Create performance indexes used by the admin portal listing/filtering."""
-    statements = [
-        'CREATE INDEX IF NOT EXISTS idx_invoices_admin_date   ON invoices(admin_username, "date" DESC)',
-        'CREATE INDEX IF NOT EXISTS idx_invoices_admin_cust   ON invoices(admin_username, customer_name)',
-        'CREATE INDEX IF NOT EXISTS idx_invoices_admin_driver ON invoices(admin_username, driver_name)',
-        'CREATE INDEX IF NOT EXISTS idx_invoices_created_at   ON invoices(created_at)',
-    ]
-    with engine.begin() as conn:
-        for stmt in statements:
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type is None:
             try:
-                conn.execute(text(stmt))
+                self._conn.commit()
             except Exception:
-                # Some old SQLAlchemy/SQLite versions choke on quoted reserved word in index DDL — non-fatal
                 pass
+        if not USE_TURSO:
+            self._conn.close()
+        return False
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
+def _db_connect(database, *args, **kwargs):
+    if USE_TURSO:
+        global _turso_shared_conn
+        if _turso_shared_conn is None:
+            _turso_shared_conn = libsql.connect(TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
+        # Do not close shared connection on exit; just commit when needed.
+        return _ConnectionProxy(_turso_shared_conn)
+    return _sqlite_connect(database, *args, **kwargs)
+
+
+# Keep existing sqlite3.connect(...) call sites working with Turso.
+sqlite3.connect = _db_connect
+
+if USE_TURSO:
+    DATABASE = TURSO_DATABASE_URL
+elif os.getenv('VERCEL'):
+    DATABASE = '/tmp/invoices.db'
+else:
+    DATABASE = SOURCE_DATABASE
 
 
 def init_db():
-    metadata.create_all(engine)
-    ensure_invoice_columns()
-    ensure_indexes()
-
-    initial_admin_password = os.environ.get("ADMIN_INITIAL_PASSWORD", "admin")
-    hashed = generate_password_hash(initial_admin_password, method="pbkdf2:sha256")
-    with engine.begin() as conn:
-        user_exists = conn.execute(
-            text("SELECT 1 FROM users WHERE username = :username"),
-            {"username": "admin"},
-        ).first()
-        if not user_exists:
-            conn.execute(
-                text("INSERT INTO users (username, password) VALUES (:username, :password)"),
-                {"username": "admin", "password": hashed},
+    with sqlite3.connect(DATABASE) as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS invoices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customer_name TEXT,
+                date TEXT,
+                file_path TEXT,
+                admin_username TEXT
             )
+        ''')
+        columns = [col[1] for col in conn.execute("PRAGMA table_info(invoices)").fetchall()]
+        required_columns = [
+            ('created_at', 'TEXT'),
+            ('driver_name', 'TEXT'),
+            ('company_name', 'TEXT'),
+            ('duty_slip_no', 'TEXT'),
+            ('vehicle_type', 'TEXT'),
+            ('vehicle_no', 'TEXT'),
+            ('starting_km', 'TEXT'),
+            ('closing_km', 'TEXT'),
+            ('total_km', 'TEXT'),
+            ('starting_time', 'TEXT'),
+            ('closing_time', 'TEXT'),
+            ('total_time', 'TEXT'),
+            ('dn', 'TEXT'),
+            ('remarks', 'TEXT'),
+            ('route_covered', 'TEXT'),
+            ('bill_status', 'TEXT'),
+            ('payment_date', 'TEXT'),
+            ('project_code', 'TEXT'),
+            ('mail_approval_date', 'TEXT'),
+        ]
+        for col_name, col_type in required_columns:
+            if col_name not in columns:
+                conn.execute(f"ALTER TABLE invoices ADD COLUMN {col_name} {col_type}")
+        # Backfill status for existing rows
+        conn.execute("UPDATE invoices SET bill_status = 'Bill Generated' WHERE bill_status IS NULL")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(date)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_created_at ON invoices(created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_bill_status ON invoices(bill_status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_driver_name ON invoices(driver_name)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_vehicle_type ON invoices(vehicle_type)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_customer_name ON invoices(customer_name)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_duty_slip_no ON invoices(duty_slip_no)")
+
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE,
+                password TEXT
+            )
+        ''')
+        existing = conn.execute("SELECT id, password FROM users WHERE username = ?", ("admin",)).fetchone()
+        if not existing:
+            conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", ("admin", _hash_pw("admin")))
+        elif existing[1] and len(existing[1]) != 64:
+            # Migrate plaintext password to sha256 hash
+            conn.execute("UPDATE users SET password = ? WHERE id = ?", (_hash_pw(existing[1]), existing[0]))
+
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS drivers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS config (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS vehicles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                vehicle_no TEXT
+            )
+        ''')
+        # Migrate vehicles table — add vehicle_no if missing
+        veh_cols = [col[1] for col in conn.execute("PRAGMA table_info(vehicles)").fetchall()]
+        if 'vehicle_no' not in veh_cols:
+            conn.execute("ALTER TABLE vehicles ADD COLUMN vehicle_no TEXT")
+
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS customers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                company TEXT
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS slip_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                admin_username TEXT NOT NULL,
+                template_name TEXT NOT NULL,
+                customer_name TEXT, company_name TEXT,
+                vehicle_type TEXT, vehicle_no TEXT,
+                route_covered TEXT, dn TEXT, remarks TEXT,
+                driver_name TEXT, starting_km TEXT, total_km TEXT,
+                created_at TEXT,
+                use_count INTEGER DEFAULT 0,
+                last_used TEXT
+            )
+        ''')
+        # Migrate existing slip_templates — add new columns if missing
+        tpl_cols = [col[1] for col in conn.execute("PRAGMA table_info(slip_templates)").fetchall()]
+        if 'use_count' not in tpl_cols:
+            conn.execute("ALTER TABLE slip_templates ADD COLUMN use_count INTEGER DEFAULT 0")
+        if 'last_used' not in tpl_cols:
+            conn.execute("ALTER TABLE slip_templates ADD COLUMN last_used TEXT")
+        if 'project_code' not in tpl_cols:
+            conn.execute("ALTER TABLE slip_templates ADD COLUMN project_code TEXT")
+        if 'mail_approval_date' not in tpl_cols:
+            conn.execute("ALTER TABLE slip_templates ADD COLUMN mail_approval_date TEXT")
+        if 'starting_time' not in tpl_cols:
+            conn.execute("ALTER TABLE slip_templates ADD COLUMN starting_time TEXT")
+        if 'closing_time' not in tpl_cols:
+            conn.execute("ALTER TABLE slip_templates ADD COLUMN closing_time TEXT")
+        if 'route_stops_json' not in tpl_cols:
+            conn.execute("ALTER TABLE slip_templates ADD COLUMN route_stops_json TEXT")
+
 
 init_db()
 
 
-def execute_query(statement: str, params: Optional[Mapping[str, Any]] = None):
-    with engine.begin() as conn:
-        conn.execute(text(statement), params or {})
+def delete_invoice_file(invoice_id):
+    with sqlite3.connect(DATABASE) as conn:
+        conn.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
 
 
-def fetch_one(statement: str, params: Optional[Mapping[str, Any]] = None):
-    with engine.connect() as conn:
-        return conn.execute(text(statement), params or {}).first()
+def get_next_duty_slip_no():
+    with sqlite3.connect(DATABASE) as conn:
+        rows = conn.execute(
+            "SELECT duty_slip_no FROM invoices WHERE duty_slip_no IS NOT NULL AND duty_slip_no != '' ORDER BY id DESC LIMIT 200",
+        ).fetchall()
+    max_num = 0
+    for (s,) in rows:
+        digits = ''.join(c for c in s if c.isdigit())
+        if digits:
+            n = int(digits)
+            if n > max_num:
+                max_num = n
+    return str(max_num + 1) if max_num > 0 else ''
 
-
-def fetch_all(statement: str, params: Optional[Mapping[str, Any]] = None):
-    with engine.connect() as conn:
-        return conn.execute(text(statement), params or {}).fetchall()
-
-
-def wrap_text_for_pdf(value: str, max_width: float, font_name: str = "Helvetica", font_size: int = 12, max_lines: Optional[int] = None):
-    if not value:
-        return []
-
-    words = str(value).split()
-    lines = []
-    current = ""
-    for word in words:
-        candidate = word if not current else f"{current} {word}"
-        if pdfmetrics.stringWidth(candidate, font_name, font_size) <= max_width:
-            current = candidate
-        else:
-            if current:
-                lines.append(current)
-            current = word
-
-    if current:
-        lines.append(current)
-
-    if max_lines and len(lines) > max_lines:
-        lines = lines[:max_lines]
-        last = lines[-1]
-        ellipsis = "..."
-        while pdfmetrics.stringWidth(last + ellipsis, font_name, font_size) > max_width and " " in last:
-            last = " ".join(last.split(" ")[:-1])
-        if pdfmetrics.stringWidth(last + ellipsis, font_name, font_size) > max_width:
-            while last and pdfmetrics.stringWidth(last + ellipsis, font_name, font_size) > max_width:
-                last = last[:-1]
-        lines[-1] = last.rstrip() + ellipsis if last else ellipsis
-
-    return lines
-
-
-def _invoice_payload_from_row(invoice_row):
-    if not invoice_row:
-        return None
-    return {
-        "customer_name": invoice_row.customer_name or "",
-        "company_name": invoice_row.company_name or "",
-        "date": invoice_row.date or "",
-        "duty_slip_no": invoice_row.duty_slip_no or "",
-        "vehicle_type": invoice_row.vehicle_type or "",
-        "vehicle_no": invoice_row.vehicle_no or "",
-        "starting_km": invoice_row.starting_km or "",
-        "closing_km": invoice_row.closing_km or "",
-        "total_km": invoice_row.total_km or "",
-        "starting_time": invoice_row.starting_time or "",
-        "closing_time": invoice_row.closing_time or "",
-        "total_time": invoice_row.total_time or "",
-        "dn": invoice_row.dn or "",
-        "remarks": invoice_row.remarks or "",
-        "route_covered": invoice_row.route_covered or "",
-        "driver_name": invoice_row.driver_name or "",
-    }
-
-
-def build_invoice_pdf(invoice_data: Mapping[str, str], output_path: Path):
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    c = canvas.Canvas(str(output_path), pagesize=landscape(A4))
-    width, height = landscape(A4)
-
-    template_path = BASE_DIR / "invoice_template.png"
-    if template_path.exists():
-        c.drawImage(ImageReader(str(template_path)), 0, 0, width=width, height=height)
-
-    c.setFont("Helvetica", 12)
-    left_x = 150
-    right_x = 530
-    coords = {
-        "duty_slip_no": (left_x, 493),
-        "date": (left_x, 466),
-        "company_name": (left_x, 397),
-        "vehicle_type": (left_x, 354),
-        "starting_km": (left_x, 309),
-        "closing_km": (left_x, 266),
-        "total_km": (left_x, 221),
-        "remarks": (left_x, 186),
-        "customer_name": (right_x, 398),
-        "vehicle_no": (right_x, 354),
-        "starting_time": (right_x, 310),
-        "closing_time": (right_x, 264),
-        "total_time": (right_x, 220),
-        "dn": (right_x, 181),
-        "driver_name": (right_x, 130),
-    }
-    route_line_y = [143, 106, 66, 30]
-    left_max_width = 220
-    right_max_width = 220
-    top_max_width = 220
-
-    def draw_single_line(field_name, coord, max_width):
-        line_parts = wrap_text_for_pdf(invoice_data.get(field_name, ""), max_width, max_lines=1)
-        if line_parts:
-            c.drawString(coord[0], coord[1], line_parts[0])
-
-    draw_single_line("duty_slip_no", coords["duty_slip_no"], top_max_width)
-    draw_single_line("date", coords["date"], top_max_width)
-    draw_single_line("company_name", coords["company_name"], left_max_width)
-    draw_single_line("vehicle_type", coords["vehicle_type"], left_max_width)
-    draw_single_line("starting_km", coords["starting_km"], left_max_width)
-    draw_single_line("closing_km", coords["closing_km"], left_max_width)
-    draw_single_line("total_km", coords["total_km"], left_max_width)
-    draw_single_line("customer_name", coords["customer_name"], right_max_width)
-    draw_single_line("vehicle_no", coords["vehicle_no"], right_max_width)
-    draw_single_line("starting_time", coords["starting_time"], right_max_width)
-    draw_single_line("closing_time", coords["closing_time"], right_max_width)
-    draw_single_line("total_time", coords["total_time"], right_max_width)
-    draw_single_line("dn", coords["dn"], right_max_width)
-    draw_single_line("driver_name", coords["driver_name"], right_max_width)
-    draw_single_line("remarks", coords["remarks"], left_max_width)
-
-    route_lines = wrap_text_for_pdf(invoice_data.get("route_covered", ""), left_max_width, max_lines=len(route_line_y))
-    for text_line, y in zip(route_lines, route_line_y):
-        c.drawString(left_x, y, text_line)
-
-    c.save()
-
-
-def _is_safe_invoice_path(path_str: str) -> bool:
-    """Reject paths that escape the invoices directory (path traversal protection)."""
-    if not path_str:
-        return False
-    try:
-        resolved = Path(path_str).resolve()
-        invoice_root = INVOICE_DIR_PATH.resolve()
-        return str(resolved).startswith(str(invoice_root))
-    except Exception:
-        return False
-
-
-def ensure_invoice_pdf_path(invoice_row):
-    file_path = (invoice_row.file_path or "").strip()
-    if file_path and os.path.exists(file_path):
-        return file_path
-
-    safe_customer = (invoice_row.customer_name or "invoice").replace(" ", "_")
-    regenerated_name = f"{safe_customer}_{invoice_row.id}_regenerated.pdf"
-    regenerated_path = INVOICE_DIR_PATH / regenerated_name
-    invoice_data = _invoice_payload_from_row(invoice_row)
-    build_invoice_pdf(invoice_data, regenerated_path)
-
-    execute_query(
-        """
-        UPDATE invoices
-        SET file_path = :file_path
-        WHERE id = :invoice_id
-        """,
-        {"file_path": str(regenerated_path), "invoice_id": invoice_row.id},
-    )
-    return str(regenerated_path)
-
-
-def delete_invoice_file(invoice_id, admin_username):
-    """Remove invoice record + PDF file if exists."""
-    file_path = None
-    with engine.begin() as conn:
-        row = conn.execute(
-            text(
-                """
-                SELECT file_path FROM invoices
-                WHERE id = :invoice_id AND admin_username = :admin
-                """
-            ),
-            {"invoice_id": invoice_id, "admin": admin_username},
-        ).first()
-        if row:
-            file_path = row[0]
-            conn.execute(
-                text(
-                    """
-                    DELETE FROM invoices
-                    WHERE id = :invoice_id AND admin_username = :admin
-                    """
-                ),
-                {"invoice_id": invoice_id, "admin": admin_username},
-            )
-    if file_path and os.path.exists(file_path):
-        os.remove(file_path)
 
 @app.route('/')
 def home():
@@ -483,54 +472,32 @@ def home():
         return redirect(url_for('admin_portal'))
     return redirect(url_for('login_page'))
 
+
 @app.route('/login')
 def login_page():
     return render_template('admin_login.html')
 
-def _verify_login(username: str, password: str) -> bool:
-    """Verify username/password. Auto-migrates legacy plain-text passwords to hashes on success."""
-    if not username or not password:
-        return False
-    row = fetch_one(
-        "SELECT id, password FROM users WHERE username = :username",
-        {"username": username},
-    )
-    if not row:
-        return False
-    stored = row[1] or ""
-    # Hashed values produced by werkzeug start with "pbkdf2:" or "scrypt:" or similar
-    if stored.startswith(("pbkdf2:", "scrypt:", "argon2:")):
-        return check_password_hash(stored, password)
-    # Legacy plain-text — accept once, then migrate to hash
-    if stored == password:
-        new_hash = generate_password_hash(password, method="pbkdf2:sha256")
-        execute_query(
-            "UPDATE users SET password = :p WHERE username = :u",
-            {"p": new_hash, "u": username},
-        )
-        return True
-    return False
-
 
 @app.route('/admin_login', methods=['POST'])
 def admin_login():
-    username = (request.form.get('username') or '').strip()
-    password = request.form.get('password') or ''
-    if _verify_login(username, password):
+    username = request.form['username']
+    password = request.form['password']
+    with sqlite3.connect(DATABASE) as conn:
+        user = conn.execute(
+            "SELECT * FROM users WHERE username = ? AND password = ?",
+            (username, _hash_pw(password))
+        ).fetchone()
+    if user:
         session['admin'] = username
-        session.permanent = True
         return redirect(url_for('admin_portal'))
-    return render_template('admin_login.html', error="Invalid credentials"), 401
+    return render_template('admin_login.html', error="Invalid credentials")
 
-
-# Apply rate limit if Flask-Limiter is available
-if limiter is not None:
-    admin_login = limiter.limit("5 per minute; 30 per hour")(admin_login)
 
 @app.route('/logout')
 def logout():
     session.pop('admin', None)
     return redirect(url_for('home'))
+
 
 # --------------------------
 # ADMIN PORTAL
@@ -540,76 +507,198 @@ def admin_portal():
     if 'admin' not in session:
         return redirect(url_for('home'))
 
-    admin_username = session['admin']
-    # gather filters
-    customer_name = request.args.get('customer_name', '').strip()
-    driver_filter = request.args.get('driver', '').strip()
-    month_filter = request.args.get('month', '')
-    date_from = request.args.get('date_from', '')
-    date_to = request.args.get('date_to', '')
+    search_q       = request.args.get('q', '').strip()
+    customer_name  = request.args.get('customer_name', '').strip()
+    driver_filter  = request.args.get('driver', '').strip()
+    vehicle_filter = request.args.get('vehicle', '').strip()
+    month_filter   = request.args.get('month', '')
+    date_from      = request.args.get('date_from', '')
+    date_to        = request.args.get('date_to', '')
+    status_filter  = request.args.get('status', '')
+    date_quick     = request.args.get('date_quick', '')    # today | week | month | last_month | last7
+    status_quick   = request.args.get('status_quick', '')  # pending_bill | pending_pay | paid
 
-    conditions = ["admin_username = :admin"]
-    params = {"admin": admin_username}
+    page = max(int(request.args.get('page', 1) or 1), 1)
+    page_size = int(request.args.get('page_size', 50) or 50)
+    page_size = min(max(page_size, 20), 200)
+    offset = (page - 1) * page_size
+    base_args = request.args.to_dict(flat=True)
+    base_args.pop('page', None)
+    base_args.pop('page_size', None)
+    base_query = urlencode({k: v for k, v in base_args.items() if v not in (None, '')})
 
+    where_clause = "WHERE 1=1"
+    params = []
+
+    # Date quick filter
+    today = date.today()
+    if date_quick == 'today':
+        where_clause += " AND date = ?"
+        params.append(today.strftime('%Y-%m-%d'))
+    elif date_quick == 'week':
+        monday = today - timedelta(days=today.weekday())
+        where_clause += " AND date >= ?"
+        params.append(monday.strftime('%Y-%m-%d'))
+    elif date_quick == 'month':
+        where_clause += " AND strftime('%Y-%m', date) = ?"
+        params.append(today.strftime('%Y-%m'))
+    elif date_quick == 'last_month':
+        first_this = today.replace(day=1)
+        last_prev  = first_this - timedelta(days=1)
+        where_clause += " AND strftime('%Y-%m', date) = ?"
+        params.append(last_prev.strftime('%Y-%m'))
+    elif date_quick == 'last7':
+        seven_ago = today - timedelta(days=7)
+        where_clause += " AND date >= ?"
+        params.append(seven_ago.strftime('%Y-%m-%d'))
+
+    # Status quick filter (independent — can combine with date_quick)
+    if status_quick == 'pending_bill':
+        where_clause += " AND COALESCE(bill_status,'Bill Generated') = 'Bill Generated'"
+    elif status_quick == 'pending_pay':
+        where_clause += " AND bill_status = 'Bill Submitted'"
+    elif status_quick == 'paid':
+        where_clause += " AND bill_status = 'Payment Received'"
+
+    if search_q:
+        where_clause += " AND (customer_name LIKE ? OR company_name LIKE ? OR vehicle_no LIKE ? OR vehicle_type LIKE ? OR driver_name LIKE ? OR duty_slip_no LIKE ?)"
+        like = f"%{search_q}%"
+        params.extend([like, like, like, like, like, like])
     if customer_name:
-        conditions.append("LOWER(customer_name) LIKE :customer_name")
-        params["customer_name"] = f"%{customer_name.lower()}%"
+        where_clause += " AND customer_name LIKE ?"
+        params.append(f"%{customer_name}%")
     if driver_filter:
-        conditions.append("driver_name = :driver_name")
-        params["driver_name"] = driver_filter
+        where_clause += " AND driver_name = ?"
+        params.append(driver_filter)
+    if vehicle_filter:
+        where_clause += " AND vehicle_type = ?"
+        params.append(vehicle_filter)
     if month_filter:
-        conditions.append('SUBSTR("date", 1, 7) = :month_filter')
-        params["month_filter"] = month_filter
+        where_clause += " AND strftime('%Y-%m', created_at) = ?"
+        params.append(month_filter)
     if date_from:
-        conditions.append('"date" >= :date_from')
-        params["date_from"] = date_from
+        where_clause += " AND date >= ?"
+        params.append(date_from)
     if date_to:
-        conditions.append('"date" <= :date_to')
-        params["date_to"] = date_to
+        where_clause += " AND date <= ?"
+        params.append(date_to)
+    if status_filter:
+        where_clause += " AND bill_status = ?"
+        params.append(status_filter)
 
-    where_clause = " AND ".join(conditions)
-    invoices = fetch_all(
-        f"""
-        SELECT id, customer_name, "date", file_path, created_at, driver_name
-        FROM invoices
-        WHERE {where_clause}
+    query = f"""
+        SELECT id, customer_name, company_name, date, duty_slip_no,
+               file_path, created_at, driver_name,
+               COALESCE(bill_status, 'Bill Generated') as bill_status,
+               payment_date,
+               vehicle_type, vehicle_no, starting_km, closing_km, total_km,
+               starting_time, closing_time, total_time, dn, remarks, route_covered,
+               project_code, mail_approval_date
+        FROM invoices {where_clause}
         ORDER BY id DESC
-        """,
-        params,
-    )
+        LIMIT ? OFFSET ?
+    """
 
-    driver_rows = fetch_all(
-        """
-        SELECT DISTINCT driver_name
-        FROM invoices
-        WHERE admin_username = :admin
-          AND driver_name IS NOT NULL
-          AND driver_name <> ''
-        ORDER BY driver_name ASC
-        """,
-        {"admin": admin_username},
-    )
-    driver_names = [row[0] for row in driver_rows if row[0]]
+    with sqlite3.connect(DATABASE) as conn:
+        count_row = conn.execute(f"SELECT COUNT(*) FROM invoices {where_clause}", tuple(params)).fetchone()
+        total_results = count_row[0] if count_row else 0
+        invoices = conn.execute(query, tuple(params + [page_size, offset])).fetchall()
+        driver_names = [
+            row[0] for row in conn.execute(
+                "SELECT DISTINCT driver_name FROM invoices WHERE driver_name IS NOT NULL AND driver_name != '' ORDER BY driver_name ASC"
+            ).fetchall() if row[0]
+        ]
+        vehicle_names = [
+            row[0] for row in conn.execute(
+                "SELECT DISTINCT vehicle_type FROM invoices WHERE vehicle_type IS NOT NULL AND vehicle_type != '' ORDER BY vehicle_type ASC"
+            ).fetchall() if row[0]
+        ]
+        # Dashboard hero stats — compute in one round-trip
+        stats = conn.execute("""
+            SELECT
+              COUNT(*) AS total,
+              SUM(CASE WHEN strftime('%Y-%m', date) = ? THEN 1 ELSE 0 END) AS this_month,
+              SUM(CASE WHEN COALESCE(bill_status,'Bill Generated') = 'Bill Generated' THEN 1 ELSE 0 END) AS pending_bill,
+              SUM(CASE WHEN bill_status = 'Bill Submitted' THEN 1 ELSE 0 END) AS pending_pay,
+              SUM(CASE WHEN bill_status = 'Payment Received' AND strftime('%Y-%m', payment_date) = ? THEN 1 ELSE 0 END) AS paid_month
+            FROM invoices
+        """, (today.strftime('%Y-%m'), today.strftime('%Y-%m'))).fetchone()
+
+        stats_total = stats[0] if stats else 0
+        stats_this_month = stats[1] if stats else 0
+        stats_pending_bill = stats[2] if stats else 0
+        stats_pending_pay = stats[3] if stats else 0
+        stats_paid_month = stats[4] if stats else 0
 
     return render_template('admin_portal.html',
                            invoices=invoices,
                            driver_names=driver_names,
+                           vehicle_names=vehicle_names,
+                           search_q=search_q,
                            customer_name=customer_name,
                            driver_filter=driver_filter,
+                           vehicle_filter=vehicle_filter,
                            month_filter=month_filter,
                            date_from=date_from,
-                           date_to=date_to)
+                           date_to=date_to,
+                           status_filter=status_filter,
+                           date_quick=date_quick,
+                           status_quick=status_quick,
+                           stats_total=stats_total,
+                           stats_this_month=stats_this_month,
+                           stats_pending_bill=stats_pending_bill,
+                           stats_pending_pay=stats_pending_pay,
+                           stats_paid_month=stats_paid_month,
+                           today_str=today.strftime('%A, %d %B %Y'),
+                           page=page,
+                           page_size=page_size,
+                           total_results=total_results,
+                           base_query=base_query)
 
-# Single Delete
+
+@app.route('/update_status/<int:invoice_id>', methods=['POST'])
+def update_status(invoice_id):
+    if 'admin' not in session:
+        return jsonify({'ok': False}), 401
+    new_status = request.form.get('status', 'Bill Generated')
+    payment_date = request.form.get('payment_date', '') or None
+    if new_status != 'Payment Received':
+        payment_date = None
+    with sqlite3.connect(DATABASE) as conn:
+        conn.execute(
+            "UPDATE invoices SET bill_status = ?, payment_date = ? WHERE id = ?",
+            (new_status, payment_date, invoice_id)
+        )
+    return jsonify({'ok': True})
+
+
+@app.route('/bulk_update_status', methods=['POST'])
+def bulk_update_status():
+    if 'admin' not in session:
+        return jsonify({'ok': False}), 401
+    selected_ids = request.form.getlist('selected_invoices')
+    status = request.form.get('status', 'Bill Generated')
+    payment_date = request.form.get('payment_date', '') or None
+    if status != 'Payment Received':
+        payment_date = None
+    if not selected_ids:
+        return jsonify({'ok': False, 'error': 'No invoices selected'})
+    with sqlite3.connect(DATABASE) as conn:
+        placeholders = ','.join('?' * len(selected_ids))
+        conn.execute(
+            f"UPDATE invoices SET bill_status = ?, payment_date = ? WHERE id IN ({placeholders})",
+            [status, payment_date] + selected_ids
+        )
+    return jsonify({'ok': True, 'updated': len(selected_ids), 'status': status, 'payment_date': payment_date or ''})
+
+
 @app.route('/delete_invoice/<int:invoice_id>', methods=['POST'])
 def delete_invoice(invoice_id):
     if 'admin' not in session:
         return redirect(url_for('home'))
-    admin_username = session['admin']
-    delete_invoice_file(invoice_id, admin_username)
+    delete_invoice_file(invoice_id)
     return redirect(url_for('admin_portal'))
 
-# Bulk Action: delete / download
 
 @app.route('/bulk_action', methods=['POST'])
 def bulk_action():
@@ -621,450 +710,203 @@ def bulk_action():
     if not selected_ids:
         return redirect(url_for('admin_portal'))
 
-    try:
-        id_values = [int(id_val) for id_val in selected_ids]
-    except ValueError:
-        return redirect(url_for('admin_portal'))
-
-    admin_username = session['admin']
-    param_map = {f"id_{idx}": value for idx, value in enumerate(id_values)}
-    param_map["admin"] = admin_username
-    placeholder_list = ", ".join(f":id_{idx}" for idx in range(len(id_values)))
-    select_stmt = text(f"SELECT id, file_path FROM invoices WHERE id IN ({placeholder_list}) AND admin_username = :admin")
-
-    with engine.begin() as conn:
-        selected = conn.execute(select_stmt, param_map).fetchall()
-        if not selected:
-            return redirect(url_for('admin_portal'))
+    with sqlite3.connect(DATABASE) as conn:
+        placeholders = ','.join('?' for _ in selected_ids)
 
         if action == 'delete':
-            conn.execute(
-                text(f"DELETE FROM invoices WHERE id IN ({placeholder_list}) AND admin_username = :admin"),
-                param_map,
-            )
+            conn.execute(f"DELETE FROM invoices WHERE id IN ({placeholders})", selected_ids)
+            return redirect(url_for('admin_portal'))
 
-    if action == 'delete':
-        for _, path in selected:
-            if path and os.path.exists(path):
-                os.remove(path)
-        return redirect(url_for('admin_portal'))
+        elif action == 'download':
+            rows = conn.execute(
+                f"""SELECT id, duty_slip_no, customer_name, company_name, date,
+                           vehicle_type, vehicle_no, starting_km, closing_km, total_km,
+                           starting_time, closing_time, total_time,
+                           project_code, mail_approval_date, route_covered, driver_name
+                    FROM invoices WHERE id IN ({placeholders})""",
+                selected_ids
+            ).fetchall()
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w') as zipf:
+                for r in rows:
+                    data = {
+                        'duty_slip_no': r[1], 'customer_name': r[2], 'company_name': r[3],
+                        'date': r[4], 'vehicle_type': r[5], 'vehicle_no': r[6],
+                        'starting_km': r[7], 'closing_km': r[8], 'total_km': r[9],
+                        'starting_time': r[10], 'closing_time': r[11], 'total_time': r[12],
+                        'project_code': r[13], 'mail_approval_date': r[14],
+                        'route_covered': r[15], 'driver_name': r[16],
+                    }
+                    pdf_buf = _build_pdf(data)
+                    fname = f"slip_{r[1] or r[2].replace(' ', '_')}.pdf"
+                    zipf.writestr(fname, pdf_buf.read())
+            zip_buffer.seek(0)
+            return send_file(zip_buffer, as_attachment=True, download_name='invoices.zip', mimetype='application/zip')
 
-    if action == 'download':
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, 'w') as zipf:
-            for invoice_id, _ in selected:
-                invoice_row = fetch_one(
-                    """
-                    SELECT id, customer_name, company_name, "date", duty_slip_no, vehicle_type,
-                           vehicle_no, starting_km, closing_km, total_km, starting_time,
-                           closing_time, total_time, dn, remarks, route_covered, driver_name, file_path
-                    FROM invoices
-                    WHERE id = :invoice_id
-                    """,
-                    {"invoice_id": invoice_id},
-                )
-                if not invoice_row:
-                    continue
-                resolved_path = ensure_invoice_pdf_path(invoice_row)
-                if resolved_path and _is_safe_invoice_path(resolved_path) and os.path.exists(resolved_path):
-                    zipf.write(resolved_path, arcname=os.path.basename(resolved_path))
-        zip_buffer.seek(0)
-        return send_file(
-            zip_buffer,
-            as_attachment=True,
-            download_name='invoices.zip',
-            mimetype='application/zip'
-        )
+        elif action == 'excel':
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment
+            rows = conn.execute(
+                f"""SELECT id, duty_slip_no, date, customer_name, company_name,
+                           driver_name, vehicle_type, vehicle_no,
+                           starting_km, closing_km, total_km,
+                           starting_time, closing_time, total_time,
+                           route_covered, dn, remarks, project_code,
+                           mail_approval_date, bill_status, payment_date,
+                           created_at
+                    FROM invoices WHERE id IN ({placeholders})
+                    ORDER BY date DESC, id DESC""",
+                selected_ids,
+            ).fetchall()
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Duty Slips"
+            headers = ["ID", "Slip #", "Date", "Customer", "Company",
+                       "Driver", "Vehicle Type", "Vehicle No",
+                       "Start KM", "Close KM", "Total KM",
+                       "Start Time", "Close Time", "Total Time",
+                       "Route", "DN", "Remarks", "Project Code",
+                       "Mail Approval Date", "Status", "Payment Date",
+                       "Created At"]
+            ws.append(headers)
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill("solid", fgColor="007AFF")
+            for cell in ws[1]:
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            for row in rows:
+                ws.append(["" if v is None else v for v in row])
+            for col_idx, h in enumerate(headers, 1):
+                ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = max(12, len(h) + 2)
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            return send_file(buf, as_attachment=True,
+                             download_name=f'duty_slips_{stamp}.xlsx',
+                             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+        elif action == 'print':
+            rows = conn.execute(
+                f"""SELECT id, duty_slip_no, customer_name, company_name, date,
+                           vehicle_type, vehicle_no, starting_km, closing_km, total_km,
+                           starting_time, closing_time, total_time,
+                           project_code, mail_approval_date, route_covered, driver_name
+                    FROM invoices WHERE id IN ({placeholders})""",
+                selected_ids
+            ).fetchall()
+            pdf = _pdf_libs()
+            writer = pdf['PdfWriter']()
+            for r in rows:
+                data = {
+                    'duty_slip_no': r[1], 'customer_name': r[2], 'company_name': r[3],
+                    'date': r[4], 'vehicle_type': r[5], 'vehicle_no': r[6],
+                    'starting_km': r[7], 'closing_km': r[8], 'total_km': r[9],
+                    'starting_time': r[10], 'closing_time': r[11], 'total_time': r[12],
+                    'project_code': r[13], 'mail_approval_date': r[14],
+                    'route_covered': r[15], 'driver_name': r[16],
+                }
+                reader = pdf['PdfReader'](io.BytesIO(_build_pdf(data).read()))
+                for page in reader.pages:
+                    writer.add_page(page)
+            merged_buffer = io.BytesIO()
+            writer.write(merged_buffer)
+            merged_buffer.seek(0)
+            return send_file(merged_buffer, mimetype='application/pdf', download_name='print_batch.pdf', as_attachment=False)
 
     return redirect(url_for('admin_portal'))
 
-# --------------------------
-# GENERATE INVOICE
-# --------------------------
-def _next_duty_slip_no(admin_username: str) -> str:
-    """Suggest the next duty slip number = max numeric prefix + 1, fallback '1'."""
-    try:
-        rows = fetch_all(
-            "SELECT duty_slip_no FROM invoices WHERE admin_username = :a AND duty_slip_no IS NOT NULL AND duty_slip_no <> ''",
-            {"a": admin_username},
-        )
-        max_n = 0
-        for r in rows:
-            digits = ''.join(ch for ch in (r[0] or '') if ch.isdigit())
-            if digits:
-                try:
-                    n = int(digits)
-                    if n > max_n: max_n = n
-                except ValueError:
-                    pass
-        return str(max_n + 1) if max_n else "1"
-    except Exception:
-        return ""
 
-
+# --------------------------
+# GENERATOR
+# --------------------------
 @app.route('/generator')
 def generator_form():
     if 'admin' not in session:
         return redirect(url_for('home'))
-
-    admin_username = session['admin']
-
-    driver_rows = fetch_all("SELECT name FROM drivers ORDER BY name ASC")
-    driver_list = [row[0] for row in driver_rows]
-
-    template_rows = fetch_all(
-        "SELECT id, template_name FROM slip_templates WHERE admin_username = :a ORDER BY template_name ASC",
-        {"a": admin_username},
-    )
-    template_list = [{"id": r[0], "template_name": r[1]} for r in template_rows]
-
     prefill = {}
-    template_id = request.args.get('from_template', type=int)
-    if template_id:
-        t = fetch_one(
-            """
-            SELECT customer_name, company_name, vehicle_type, vehicle_no, route_covered,
-                   dn, remarks, driver_name, starting_km, total_km
-            FROM slip_templates WHERE id = :id AND admin_username = :a
-            """,
-            {"id": template_id, "a": admin_username},
-        )
-        if t:
-            prefill = {
-                "customer_name": t[0] or "",
-                "company_name": t[1] or "",
-                "vehicle_type": t[2] or "",
-                "vehicle_no": t[3] or "",
-                "route_covered": t[4] or "",
-                "dn": t[5] or "",
-                "remarks": t[6] or "",
-                "driver_name": t[7] or "",
-                "starting_km": t[8] or "",
-                "total_km": t[9] or "",
-            }
-    # Default date to today
-    prefill.setdefault("date", datetime.now().strftime('%Y-%m-%d'))
+    template_id = request.args.get('template_id', type=int)
+    with sqlite3.connect(DATABASE) as conn:
+        driver_list   = [row[0] for row in conn.execute("SELECT name FROM drivers ORDER BY name ASC").fetchall()]
+        vehicle_rows  = conn.execute("SELECT name, COALESCE(vehicle_no,'') FROM vehicles ORDER BY name ASC").fetchall()
+        customer_rows = conn.execute("SELECT name, COALESCE(company,'') FROM customers ORDER BY name ASC").fetchall()
+        quick_templates = conn.execute(
+            "SELECT id, template_name FROM slip_templates WHERE admin_username = ? ORDER BY use_count DESC, created_at DESC",
+            (session['admin'],)
+        ).fetchall()
+        if template_id:
+            t = conn.execute(
+                """SELECT customer_name, company_name, vehicle_type, vehicle_no,
+                          route_covered, dn, remarks, driver_name,
+                          starting_km, total_km,
+                          COALESCE(project_code,''), COALESCE(mail_approval_date,''),
+                          COALESCE(starting_time,''), COALESCE(closing_time,''),
+                          COALESCE(route_stops_json,'')
+                   FROM slip_templates
+                   WHERE id = ? AND admin_username = ?""",
+                (template_id, session['admin']),
+            ).fetchone()
+            if t:
+                prefill = {
+                    'customer_name': t[0] or '', 'company_name': t[1] or '',
+                    'vehicle_type':  t[2] or '', 'vehicle_no':   t[3] or '',
+                    'route_covered': t[4] or '', 'dn':           t[5] or '',
+                    'remarks':       t[6] or '', 'driver_name':  t[7] or '',
+                    'starting_km':   t[8] or '', 'total_km':     t[9] or '',
+                    'project_code':  t[10] or '', 'mail_approval_date': t[11] or '',
+                    'starting_time': t[12] or '', 'closing_time': t[13] or '',
+                    'route_stops_json': t[14] or '',
+                }
+    vehicle_list  = [r[0] for r in vehicle_rows]
+    vehicle_map   = {r[0]: r[1] for r in vehicle_rows}
+    customer_list = [r[0] for r in customer_rows]
+    customer_map  = {r[0]: r[1] for r in customer_rows}
+    next_slip_no = get_next_duty_slip_no()
+    today = date.today().strftime('%Y-%m-%d')
+    return render_template('generator.html',
+                           driver_list=driver_list, vehicle_list=vehicle_list, vehicle_map=vehicle_map,
+                           customer_list=customer_list, customer_map=customer_map,
+                           quick_templates=quick_templates,
+                           prefill=prefill, next_slip_no=next_slip_no, today=today)
 
-    return render_template(
-        'generator.html',
-        driver_list=driver_list,
-        template_list=template_list,
-        prefill=prefill,
-        next_duty_slip_no=_next_duty_slip_no(admin_username),
-    )
 
-
-# --------------------------
-# CONFIG: Google Maps API key (from env, never UI)
-# --------------------------
-@app.route('/config/maps_key')
-def get_maps_key():
-    if 'admin' not in session:
-        return jsonify({'key': ''}), 401
-    return jsonify({'key': os.environ.get('GOOGLE_MAPS_API_KEY', '')})
-
-
-# --------------------------
-# SLIP TEMPLATES
-# --------------------------
-@app.route('/templates')
-def templates_list():
+@app.route('/clone/<int:invoice_id>')
+def clone_invoice(invoice_id):
     if 'admin' not in session:
         return redirect(url_for('home'))
-    rows = fetch_all(
-        """
-        SELECT id, template_name, customer_name, route_covered, driver_name, created_at
-        FROM slip_templates WHERE admin_username = :a
-        ORDER BY template_name ASC
-        """,
-        {"a": session['admin']},
-    )
-    templates = [
-        {"id": r[0], "template_name": r[1], "customer_name": r[2] or '',
-         "route_covered": r[3] or '', "driver_name": r[4] or '', "created_at": r[5] or ''}
-        for r in rows
-    ]
-    return render_template('templates_list.html', templates=templates)
-
-
-@app.route('/templates/create', methods=['POST'])
-def templates_create():
-    if 'admin' not in session:
-        return jsonify({"ok": False, "error": "not logged in"}), 401
-    name = (request.form.get('template_name') or '').strip()
-    if not name:
-        return jsonify({"ok": False, "error": "template_name required"}), 400
-    payload = {
-        "a": session['admin'],
-        "name": name,
-        "customer_name": request.form.get('customer_name') or '',
-        "company_name": request.form.get('company_name') or '',
-        "vehicle_type": request.form.get('vehicle_type') or '',
-        "vehicle_no": request.form.get('vehicle_no') or '',
-        "route_covered": request.form.get('route_covered') or '',
-        "dn": request.form.get('dn') or '',
-        "remarks": request.form.get('remarks') or '',
-        "driver_name": request.form.get('driver_name') or '',
-        "starting_km": request.form.get('starting_km') or '',
-        "total_km": request.form.get('total_km') or '',
-        "created_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+    with sqlite3.connect(DATABASE) as conn:
+        row = conn.execute(
+            "SELECT customer_name, company_name, vehicle_type, vehicle_no, driver_name, project_code, mail_approval_date, route_covered FROM invoices WHERE id = ?",
+            (invoice_id,)
+        ).fetchone()
+        driver_list   = [r[0] for r in conn.execute("SELECT name FROM drivers ORDER BY name ASC").fetchall()]
+        vehicle_rows  = conn.execute("SELECT name, COALESCE(vehicle_no,'') FROM vehicles ORDER BY name ASC").fetchall()
+        customer_rows = conn.execute("SELECT name, COALESCE(company,'') FROM customers ORDER BY name ASC").fetchall()
+    if not row:
+        return redirect(url_for('generator_form'))
+    vehicle_list  = [r[0] for r in vehicle_rows]
+    vehicle_map   = {r[0]: r[1] for r in vehicle_rows}
+    customer_list = [r[0] for r in customer_rows]
+    customer_map  = {r[0]: r[1] for r in customer_rows}
+    prefill = {
+        'customer_name': row[0] or '',
+        'company_name': row[1] or '',
+        'vehicle_type': row[2] or '',
+        'vehicle_no': row[3] or '',
+        'driver_name': row[4] or '',
+        'project_code': row[5] or '',
+        'mail_approval_date': row[6] or '',
+        'route_covered': row[7] or '',
     }
-    try:
-        execute_query(
-            """
-            INSERT INTO slip_templates(
-                admin_username, template_name, customer_name, company_name,
-                vehicle_type, vehicle_no, route_covered, dn, remarks,
-                driver_name, starting_km, total_km, created_at
-            ) VALUES (
-                :a, :name, :customer_name, :company_name,
-                :vehicle_type, :vehicle_no, :route_covered, :dn, :remarks,
-                :driver_name, :starting_km, :total_km, :created_at
-            )
-            """,
-            payload,
-        )
-    except IntegrityError as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
-    return jsonify({"ok": True})
+    next_slip_no = get_next_duty_slip_no()
+    today = date.today().strftime('%Y-%m-%d')
+    return render_template('generator.html',
+                           driver_list=driver_list, vehicle_list=vehicle_list, vehicle_map=vehicle_map,
+                           customer_list=customer_list, customer_map=customer_map,
+                           quick_templates=[],
+                           prefill=prefill, next_slip_no=next_slip_no, today=today)
 
-
-@app.route('/templates/<int:template_id>/delete', methods=['POST'])
-def templates_delete(template_id):
-    if 'admin' not in session:
-        return redirect(url_for('home'))
-    execute_query(
-        "DELETE FROM slip_templates WHERE id = :id AND admin_username = :a",
-        {"id": template_id, "a": session['admin']},
-    )
-    return redirect(url_for('templates_list'))
-
-
-# --------------------------
-# EXCEL EXPORT
-# --------------------------
-def _excel_response_for_invoices(rows, filename: str):
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Duty Slips"
-
-    headers = [
-        "ID", "Date", "Duty Slip No", "Customer", "Company",
-        "Vehicle Type", "Vehicle No", "Driver",
-        "Start KM", "Close KM", "Total KM",
-        "Start Time", "Close Time", "Total Time",
-        "DN", "Remarks", "Route Covered", "Created At",
-    ]
-    ws.append(headers)
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill("solid", fgColor="2563EB")
-    for col_idx, _ in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col_idx)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal='left', vertical='center')
-
-    for r in rows:
-        ws.append([
-            r[0], r[1] or '', r[2] or '', r[3] or '', r[4] or '',
-            r[5] or '', r[6] or '', r[7] or '',
-            r[8] or '', r[9] or '', r[10] or '',
-            r[11] or '', r[12] or '', r[13] or '',
-            r[14] or '', r[15] or '', r[16] or '', r[17] or '',
-        ])
-
-    # Auto-size columns (approximate)
-    for col in ws.columns:
-        max_len = max((len(str(cell.value)) if cell.value else 0) for cell in col)
-        ws.column_dimensions[col[0].column_letter].width = min(max(12, max_len + 2), 50)
-
-    ws.freeze_panes = "A2"
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return send_file(
-        buf,
-        as_attachment=True,
-        download_name=filename,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    )
-
-
-def _fetch_invoices_for_excel(where_clause: str, params: Mapping[str, Any]):
-    return fetch_all(
-        f"""
-        SELECT id, "date", duty_slip_no, customer_name, company_name,
-               vehicle_type, vehicle_no, driver_name,
-               starting_km, closing_km, total_km,
-               starting_time, closing_time, total_time,
-               dn, remarks, route_covered, created_at
-        FROM invoices
-        WHERE {where_clause}
-        ORDER BY "date" DESC, id DESC
-        """,
-        params,
-    )
-
-
-@app.route('/export/excel', methods=['POST'])
-def export_excel():
-    """Export selected invoices (from bulk action checkboxes) to Excel."""
-    if 'admin' not in session:
-        return redirect(url_for('home'))
-    selected_ids = request.form.getlist('selected_invoices')
-    if not selected_ids:
-        return redirect(url_for('admin_portal'))
-    try:
-        id_values = [int(x) for x in selected_ids]
-    except ValueError:
-        return redirect(url_for('admin_portal'))
-
-    param_map = {f"id_{i}": v for i, v in enumerate(id_values)}
-    param_map["a"] = session['admin']
-    placeholders = ", ".join(f":id_{i}" for i in range(len(id_values)))
-    where = f"id IN ({placeholders}) AND admin_username = :a"
-    rows = _fetch_invoices_for_excel(where, param_map)
-    return _excel_response_for_invoices(rows, "duty_slips_selected.xlsx")
-
-
-@app.route('/export/excel/month/<month>')
-def export_excel_month(month):
-    """Export all invoices for the given YYYY-MM month for the current admin."""
-    if 'admin' not in session:
-        return redirect(url_for('home'))
-    if not (len(month) == 7 and month[4] == '-'):
-        return redirect(url_for('admin_portal'))
-    rows = _fetch_invoices_for_excel(
-        'admin_username = :a AND SUBSTR("date", 1, 7) = :m',
-        {"a": session['admin'], "m": month},
-    )
-    return _excel_response_for_invoices(rows, f"duty_slips_{month}.xlsx")
-
-
-# --------------------------
-# MONTHLY REPORT
-# --------------------------
-def _build_monthly_report_data(admin_username: str, month: str):
-    headline = fetch_one(
-        """
-        SELECT COUNT(*),
-               COALESCE(SUM(CAST(NULLIF(total_km,'') AS REAL)), 0)
-        FROM invoices
-        WHERE admin_username = :a AND SUBSTR("date", 1, 7) = :m
-        """,
-        {"a": admin_username, "m": month},
-    )
-    total_slips = headline[0] if headline else 0
-    total_km = round(float(headline[1] or 0), 1) if headline else 0
-
-    per_driver = fetch_all(
-        """
-        SELECT COALESCE(NULLIF(driver_name,''), 'Unassigned') AS d,
-               COUNT(*) AS slips,
-               COALESCE(SUM(CAST(NULLIF(total_km,'') AS REAL)), 0) AS km
-        FROM invoices
-        WHERE admin_username = :a AND SUBSTR("date", 1, 7) = :m
-        GROUP BY d ORDER BY slips DESC
-        """,
-        {"a": admin_username, "m": month},
-    )
-    per_customer = fetch_all(
-        """
-        SELECT COALESCE(NULLIF(customer_name,''), 'Unknown') AS c,
-               COUNT(*) AS slips,
-               COALESCE(SUM(CAST(NULLIF(total_km,'') AS REAL)), 0) AS km
-        FROM invoices
-        WHERE admin_username = :a AND SUBSTR("date", 1, 7) = :m
-        GROUP BY c ORDER BY slips DESC
-        """,
-        {"a": admin_username, "m": month},
-    )
-    per_day = fetch_all(
-        """
-        SELECT "date", COUNT(*)
-        FROM invoices
-        WHERE admin_username = :a AND SUBSTR("date", 1, 7) = :m
-        GROUP BY "date" ORDER BY "date" ASC
-        """,
-        {"a": admin_username, "m": month},
-    )
-    return {
-        "month": month,
-        "admin": admin_username,
-        "generated_at": datetime.now().strftime('%Y-%m-%d %H:%M'),
-        "total_slips": total_slips,
-        "total_km": total_km,
-        "per_driver": [{"driver": r[0], "slips": r[1], "km": round(float(r[2] or 0), 1)} for r in per_driver],
-        "per_customer": [{"customer": r[0], "slips": r[1], "km": round(float(r[2] or 0), 1)} for r in per_customer],
-        "per_day": [{"date": r[0], "slips": r[1]} for r in per_day],
-    }
-
-
-def _build_monthly_report_pdf(report: dict) -> io.BytesIO:
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.units import mm
-    from reportlab.pdfgen.canvas import Canvas
-
-    buf = io.BytesIO()
-    c = Canvas(buf, pagesize=A4)
-    width, height = A4
-    y = height - 20 * mm
-
-    def line(text, size=12, bold=False, indent=0):
-        nonlocal y
-        c.setFont("Helvetica-Bold" if bold else "Helvetica", size)
-        c.drawString(20 * mm + indent, y, text)
-        y -= (size + 4)
-
-    line(f"Monthly Duty Slip Report — {report['month']}", size=16, bold=True)
-    line(f"Account: {report['admin']}    Generated: {report['generated_at']}", size=10)
-    y -= 6
-    line(f"Total slips: {report['total_slips']}     Total KM: {report['total_km']}", size=12, bold=True)
-    y -= 6
-
-    line("Per-Driver Breakdown", size=12, bold=True)
-    line(f"{'Driver':<30} {'Slips':>8} {'Total KM':>12}", size=10)
-    for d in report['per_driver']:
-        line(f"{d['driver'][:30]:<30} {d['slips']:>8} {d['km']:>12}", size=10)
-    y -= 6
-
-    line("Per-Customer Breakdown", size=12, bold=True)
-    line(f"{'Customer':<35} {'Slips':>8} {'Total KM':>12}", size=10)
-    for d in report['per_customer']:
-        if y < 25 * mm:
-            c.showPage(); y = height - 20 * mm
-        line(f"{d['customer'][:35]:<35} {d['slips']:>8} {d['km']:>12}", size=10)
-    y -= 6
-
-    line("Daily Activity", size=12, bold=True)
-    for d in report['per_day']:
-        if y < 25 * mm:
-            c.showPage(); y = height - 20 * mm
-        line(f"{d['date']}  →  {d['slips']} slip(s)", size=10)
-
-    c.save()
-    buf.seek(0)
-    return buf
-
-
-@app.route('/report/month/<month>')
-def monthly_report(month):
-    if 'admin' not in session:
-        return redirect(url_for('home'))
-    if not (len(month) == 7 and month[4] == '-'):
-        return redirect(url_for('settings_page'))
-
-    report = _build_monthly_report_data(session['admin'], month)
-
-    if request.args.get('format') == 'pdf':
-        buf = _build_monthly_report_pdf(report)
-        return send_file(buf, as_attachment=True, download_name=f"report_{month}.pdf", mimetype='application/pdf')
-
-    return render_template('monthly_report.html', report=report)
 
 @app.route('/generate', methods=['POST'])
 def generate_invoice():
@@ -1072,8 +914,6 @@ def generate_invoice():
         return redirect(url_for('home'))
 
     admin_username = session['admin']
-
-    # Gather duty slip fields
     customer_name = request.form['customer_name']
     company_name = request.form['company_name']
     date_value = request.form['date']
@@ -1086,80 +926,135 @@ def generate_invoice():
     starting_time = request.form['starting_time']
     closing_time = request.form['closing_time']
     total_time = request.form['total_time']
-    dn = request.form['dn']
-    remarks = request.form['remarks']
+    project_code = request.form.get('project_code', '')
+    mail_approval_date = request.form.get('mail_approval_date', '')
     route_covered = request.form['route_covered']
     driver_name = request.form['driver_name']
 
-    filename = f"{customer_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf"
-    filepath = str(INVOICE_DIR_PATH / filename)
-    invoice_payload = {
-        "customer_name": customer_name,
-        "company_name": company_name,
-        "date": date_value,
-        "duty_slip_no": duty_slip_no,
-        "vehicle_type": vehicle_type,
-        "vehicle_no": vehicle_no,
-        "starting_km": starting_km,
-        "closing_km": closing_km,
-        "total_km": total_km,
-        "starting_time": starting_time,
-        "closing_time": closing_time,
-        "total_time": total_time,
-        "dn": dn,
-        "remarks": remarks,
-        "route_covered": route_covered,
-        "driver_name": driver_name,
+    slip_data = {
+        'customer_name': customer_name,
+        'company_name': company_name,
+        'date': date_value,
+        'duty_slip_no': duty_slip_no,
+        'vehicle_type': vehicle_type,
+        'vehicle_no': vehicle_no,
+        'starting_km': starting_km,
+        'closing_km': closing_km,
+        'total_km': total_km,
+        'starting_time': starting_time,
+        'closing_time': closing_time,
+        'total_time': total_time,
+        'project_code': project_code,
+        'mail_approval_date': mail_approval_date,
+        'route_covered': route_covered,
+        'driver_name': driver_name,
     }
-    build_invoice_pdf(invoice_payload, Path(filepath))
+    buf = _build_pdf(slip_data)
 
     created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-    execute_query(
-        """
-        INSERT INTO invoices(
-            customer_name, company_name, "date",
+    with sqlite3.connect(DATABASE) as conn:
+        conn.execute("""
+            INSERT INTO invoices(
+                customer_name, company_name, date,
+                duty_slip_no, vehicle_type, vehicle_no,
+                starting_km, closing_km, total_km,
+                starting_time, closing_time, total_time,
+                project_code, mail_approval_date, route_covered, driver_name,
+                admin_username, created_at, bill_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Bill Generated')
+        """, (
+            customer_name, company_name, date_value,
             duty_slip_no, vehicle_type, vehicle_no,
             starting_km, closing_km, total_km,
             starting_time, closing_time, total_time,
-            dn, remarks, route_covered, driver_name,
-            admin_username, created_at, file_path
-        )
-        VALUES (
-            :customer_name, :company_name, :date_value,
-            :duty_slip_no, :vehicle_type, :vehicle_no,
-            :starting_km, :closing_km, :total_km,
-            :starting_time, :closing_time, :total_time,
-            :dn, :remarks, :route_covered, :driver_name,
-            :admin_username, :created_at, :file_path
-        )
-        """,
-        {
-            "customer_name": customer_name,
-            "company_name": company_name,
-            "date_value": date_value,
-            "duty_slip_no": duty_slip_no,
-            "vehicle_type": vehicle_type,
-            "vehicle_no": vehicle_no,
-            "starting_km": starting_km,
-            "closing_km": closing_km,
-            "total_km": total_km,
-            "starting_time": starting_time,
-            "closing_time": closing_time,
-            "total_time": total_time,
-            "dn": dn,
-            "remarks": remarks,
-            "route_covered": route_covered,
-            "driver_name": driver_name,
-            "admin_username": admin_username,
-            "created_at": created_at,
-            "file_path": filepath,
-        },
-    )
+            project_code, mail_approval_date, route_covered, driver_name,
+            admin_username, created_at
+        ))
+        # Auto-create customer if not already in the list
+        if customer_name:
+            exists = conn.execute(
+                "SELECT 1 FROM customers WHERE LOWER(name) = LOWER(?)", (customer_name,)
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    "INSERT INTO customers (name, company) VALUES (?, ?)",
+                    (customer_name, company_name or '')
+                )
+        # Auto-create vehicle if not already in the list
+        if vehicle_type:
+            exists = conn.execute(
+                "SELECT 1 FROM vehicles WHERE LOWER(name) = LOWER(?)", (vehicle_type,)
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    "INSERT INTO vehicles (name, vehicle_no) VALUES (?, ?)",
+                    (vehicle_type, vehicle_no or '')
+                )
 
-    return send_file(filepath, as_attachment=True)
+    filename = f"slip_{duty_slip_no or customer_name.replace(' ', '_')}.pdf"
+    return send_file(buf, as_attachment=True, download_name=filename, mimetype='application/pdf')
 
-# Autocomplete
+
+@app.route('/templates/<int:template_id>/json', methods=['GET'])
+def template_json(template_id):
+    if 'admin' not in session:
+        return jsonify({}), 401
+    with sqlite3.connect(DATABASE) as conn:
+        t = conn.execute(
+            """SELECT template_name, customer_name, company_name, vehicle_type, vehicle_no,
+                      route_covered, driver_name, starting_km, total_km,
+                      COALESCE(project_code,''), COALESCE(mail_approval_date,''),
+                      COALESCE(starting_time,''), COALESCE(closing_time,''),
+                      COALESCE(route_stops_json,'')
+               FROM slip_templates WHERE id = ? AND admin_username = ?""",
+            (template_id, session['admin'])
+        ).fetchone()
+    if not t:
+        return jsonify({}), 404
+    return jsonify({
+        'template_name': t[0], 'customer_name': t[1], 'company_name': t[2],
+        'vehicle_type': t[3], 'vehicle_no': t[4], 'route_covered': t[5],
+        'driver_name': t[6], 'starting_km': t[7], 'total_km': t[8],
+        'project_code': t[9], 'mail_approval_date': t[10],
+        'starting_time': t[11], 'closing_time': t[12], 'route_stops_json': t[13],
+    })
+
+
+@app.route('/invoice/<int:invoice_id>/download')
+def download_invoice(invoice_id):
+    if 'admin' not in session:
+        return redirect(url_for('login_page'))
+    with sqlite3.connect(DATABASE) as conn:
+        row = conn.execute(
+            """SELECT customer_name, company_name, date, duty_slip_no, vehicle_type,
+                      vehicle_no, starting_km, closing_km, total_km,
+                      starting_time, closing_time, total_time,
+                      project_code, mail_approval_date, route_covered, driver_name
+               FROM invoices WHERE id = ? AND admin_username = ?""",
+            (invoice_id, session['admin'])
+        ).fetchone()
+    if not row:
+        return "Invoice not found", 404
+    data = {
+        'customer_name': row[0], 'company_name': row[1], 'date': row[2],
+        'duty_slip_no': row[3], 'vehicle_type': row[4], 'vehicle_no': row[5],
+        'starting_km': row[6], 'closing_km': row[7], 'total_km': row[8],
+        'starting_time': row[9], 'closing_time': row[10], 'total_time': row[11],
+        'project_code': row[12], 'mail_approval_date': row[13],
+        'route_covered': row[14], 'driver_name': row[15],
+    }
+    buf = _build_pdf(data)
+    filename = f"slip_{row[3] or row[0].replace(' ', '_')}.pdf"
+    return send_file(buf, as_attachment=True, download_name=filename, mimetype='application/pdf')
+
+
+@app.route('/config/maps_key', methods=['GET'])
+def get_maps_key():
+    if 'admin' not in session:
+        return jsonify({'key': ''}), 401
+    return jsonify({'key': GOOGLE_MAPS_API_KEY})
+
+
 @app.route('/customer_autocomplete')
 def customer_autocomplete():
     if 'admin' not in session:
@@ -1167,94 +1062,382 @@ def customer_autocomplete():
     query = request.args.get('query', '').strip()
     if not query:
         return jsonify([])
-    admin_username = session['admin']
-    rows = fetch_all(
-        """
-        SELECT DISTINCT customer_name
-        FROM invoices
-        WHERE admin_username = :admin
-          AND customer_name IS NOT NULL
-          AND LOWER(customer_name) LIKE :pattern
-        ORDER BY customer_name ASC
-        LIMIT 10
-        """,
-        {"admin": admin_username, "pattern": f"%{query.lower()}%"},
-    )
-    return jsonify([row[0] for row in rows if row[0]])
+    with sqlite3.connect(DATABASE) as conn:
+        results = [row[0] for row in conn.execute("""
+            SELECT DISTINCT customer_name FROM invoices
+            WHERE customer_name LIKE ?
+            ORDER BY customer_name ASC LIMIT 10
+        """, (f"%{query}%",)).fetchall()]
+    return jsonify(results)
 
+
+# --------------------------
 # SETTINGS
-@app.route('/settings', methods=['GET','POST'])
+# --------------------------
+@app.route('/settings', methods=['GET', 'POST'])
 def settings_page():
     if 'admin' not in session:
         return redirect(url_for('home'))
 
-    message = ""
-    message_type = "success"
+    message = ''
+    message_type = 'success'
+
     if request.method == 'POST':
-        new_driver = request.form.get('new_driver', '').strip()
-        if new_driver:
-            try:
-                execute_query("INSERT INTO drivers (name) VALUES (:name)", {"name": new_driver})
-                message = f"Driver '{new_driver}' added successfully!"
-            except IntegrityError:
-                message = f"Driver '{new_driver}' already exists!"
-                message_type = "error"
+        action = request.form.get('action', 'add_driver')
+        if action == 'add_driver':
+            new_driver = request.form.get('new_driver', '').strip()
+            if new_driver:
+                with sqlite3.connect(DATABASE) as conn:
+                    try:
+                        conn.execute("INSERT INTO drivers (name) VALUES (?)", (new_driver,))
+                        message = f"Driver '{new_driver}' added successfully."
+                    except sqlite3.IntegrityError:
+                        message = f"Driver '{new_driver}' already exists."
+                        message_type = 'error'
+        elif action == 'delete_driver':
+            driver_id = request.form.get('driver_id')
+            if driver_id:
+                with sqlite3.connect(DATABASE) as conn:
+                    conn.execute("DELETE FROM drivers WHERE id = ?", (driver_id,))
+                message = "Driver removed."
+        elif action == 'add_vehicle':
+            new_vehicle = request.form.get('new_vehicle', '').strip()
+            new_vehicle_no = request.form.get('new_vehicle_no', '').strip()
+            if new_vehicle:
+                with sqlite3.connect(DATABASE) as conn:
+                    try:
+                        conn.execute("INSERT INTO vehicles (name, vehicle_no) VALUES (?, ?)", (new_vehicle, new_vehicle_no or None))
+                        message = f"Vehicle '{new_vehicle}' added."
+                    except sqlite3.IntegrityError:
+                        message = f"Vehicle '{new_vehicle}' already exists."
+                        message_type = 'error'
+        elif action == 'delete_vehicle':
+            vehicle_id = request.form.get('vehicle_id')
+            if vehicle_id:
+                with sqlite3.connect(DATABASE) as conn:
+                    conn.execute("DELETE FROM vehicles WHERE id = ?", (vehicle_id,))
+                message = "Vehicle removed."
+        elif action == 'add_customer':
+            new_customer = request.form.get('new_customer', '').strip()
+            new_company  = request.form.get('new_company', '').strip()
+            if new_customer:
+                with sqlite3.connect(DATABASE) as conn:
+                    try:
+                        conn.execute("INSERT INTO customers (name, company) VALUES (?, ?)", (new_customer, new_company or None))
+                        message = f"Customer '{new_customer}' added."
+                    except sqlite3.IntegrityError:
+                        message = f"Customer '{new_customer}' already exists."
+                        message_type = 'error'
+        elif action == 'delete_customer':
+            customer_id = request.form.get('customer_id')
+            if customer_id:
+                with sqlite3.connect(DATABASE) as conn:
+                    conn.execute("DELETE FROM customers WHERE id = ?", (customer_id,))
+                message = "Customer removed."
 
-    total_invoices_row = fetch_one("SELECT COUNT(*) FROM invoices")
-    total_invoices = total_invoices_row[0] if total_invoices_row else 0
-
-    current_month = datetime.now().strftime('%Y-%m')
-    invoices_month_row = fetch_one(
-        """
-        SELECT COUNT(*)
-        FROM invoices
-        WHERE "date" IS NOT NULL
-          AND SUBSTR("date", 1, 7) = :current_month
-        """,
-        {"current_month": current_month},
-    )
-    invoices_this_month = invoices_month_row[0] if invoices_month_row else 0
-
-    driver_rows = fetch_all("SELECT id, name FROM drivers ORDER BY name ASC")
-    driver_list = [{"id": row[0], "name": row[1]} for row in driver_rows]
+    with sqlite3.connect(DATABASE) as conn:
+        total_invoices = conn.execute("SELECT COUNT(*) FROM invoices").fetchone()[0]
+        invoices_this_month = conn.execute(
+            "SELECT COUNT(*) FROM invoices WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m','now')"
+        ).fetchone()[0]
+        drivers   = conn.execute("SELECT id, name FROM drivers ORDER BY name ASC").fetchall()
+        vehicles  = conn.execute("SELECT id, name, COALESCE(vehicle_no,'') FROM vehicles ORDER BY name ASC").fetchall()
+        customers = conn.execute("SELECT id, name, COALESCE(company,'') FROM customers ORDER BY name ASC").fetchall()
+        not_submitted = conn.execute(
+            "SELECT COUNT(*) FROM invoices WHERE COALESCE(bill_status,'Bill Generated') = 'Bill Generated'"
+        ).fetchone()[0]
+        bill_submitted = conn.execute(
+            "SELECT COUNT(*) FROM invoices WHERE bill_status = 'Bill Submitted'"
+        ).fetchone()[0]
+        payment_received = conn.execute(
+            "SELECT COUNT(*) FROM invoices WHERE bill_status = 'Payment Received'"
+        ).fetchone()[0]
+        vehicle_km_rows = conn.execute("""
+            SELECT vehicle_type,
+                   strftime('%Y-%m', date) as month,
+                   ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)), 1) as km
+            FROM invoices
+            WHERE vehicle_type IS NOT NULL AND vehicle_type != ''
+              AND date IS NOT NULL AND date != ''
+            GROUP BY vehicle_type, month
+            ORDER BY month DESC, vehicle_type ASC
+        """).fetchall()
+        monthly_report_rows = conn.execute("""
+            SELECT strftime('%Y-%m', date) AS month,
+                   COUNT(*) AS slips,
+                   SUM(CASE WHEN COALESCE(bill_status,'Bill Generated')='Bill Generated' THEN 1 ELSE 0 END) AS not_submitted,
+                   SUM(CASE WHEN bill_status='Bill Submitted' THEN 1 ELSE 0 END) AS submitted,
+                   SUM(CASE WHEN bill_status='Payment Received' THEN 1 ELSE 0 END) AS paid,
+                   ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)),1) AS km
+            FROM invoices
+            WHERE date IS NOT NULL AND date != ''
+            GROUP BY month
+            ORDER BY month DESC
+        """).fetchall()
 
     return render_template('settings.html',
                            message=message,
                            message_type=message_type,
                            total_invoices=total_invoices,
                            invoices_this_month=invoices_this_month,
-                           total_drivers=len(driver_list),
-                           driver_list=driver_list,
-                           current_month=current_month)
+                           drivers=drivers,
+                           vehicles=vehicles,
+                           customers=customers,
+                           vehicle_km_rows=vehicle_km_rows,
+                           monthly_report_rows=monthly_report_rows,
+                           not_submitted=not_submitted,
+                           bill_submitted=bill_submitted,
+                           payment_received=payment_received)
 
-@app.route('/delete_driver/<int:driver_id>', methods=['POST'])
-def delete_driver(driver_id):
+
+@app.route('/export/monthly_report')
+def export_monthly_report():
     if 'admin' not in session:
-        return redirect(url_for('home'))
-    execute_query("DELETE FROM drivers WHERE id = :driver_id", {"driver_id": driver_id})
-    return redirect(url_for('settings_page'))
+        return redirect(url_for('login_page'))
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-@app.route("/invoice/<int:invoice_id>/download")
-def download_invoice(invoice_id):
+    # Accept ?months=2026-04,2026-03  OR  ?months=2026-04 (single) OR nothing (last 6)
+    months_param = request.args.get('months', '').strip()
+    month_list = [m.strip() for m in months_param.split(',') if m.strip()] if months_param else []
+
+    with sqlite3.connect(DATABASE) as conn:
+        if month_list:
+            ph = ','.join('?' * len(month_list))
+            summary_rows = conn.execute(f"""
+                SELECT strftime('%Y-%m', date) AS m,
+                       COUNT(*) AS slips,
+                       SUM(CASE WHEN COALESCE(bill_status,'Bill Generated')='Bill Generated' THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN bill_status='Bill Submitted' THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN bill_status='Payment Received' THEN 1 ELSE 0 END),
+                       ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)),1)
+                FROM invoices WHERE date IS NOT NULL AND date != ''
+                  AND strftime('%Y-%m', date) IN ({ph})
+                GROUP BY m ORDER BY m DESC
+            """, month_list).fetchall()
+            km_rows = conn.execute(f"""
+                SELECT vehicle_type, strftime('%Y-%m', date),
+                       ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)),1)
+                FROM invoices
+                WHERE vehicle_type IS NOT NULL AND vehicle_type != ''
+                  AND date IS NOT NULL AND date != ''
+                  AND strftime('%Y-%m', date) IN ({ph})
+                GROUP BY vehicle_type, strftime('%Y-%m', date)
+                ORDER BY strftime('%Y-%m', date) DESC, vehicle_type ASC
+            """, month_list).fetchall()
+        else:
+            summary_rows = conn.execute("""
+                SELECT strftime('%Y-%m', date) AS m,
+                       COUNT(*) AS slips,
+                       SUM(CASE WHEN COALESCE(bill_status,'Bill Generated')='Bill Generated' THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN bill_status='Bill Submitted' THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN bill_status='Payment Received' THEN 1 ELSE 0 END),
+                       ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)),1)
+                FROM invoices WHERE date IS NOT NULL AND date != ''
+                  AND strftime('%Y-%m', date) >= strftime('%Y-%m', date('now','-5 months'))
+                GROUP BY m ORDER BY m DESC
+            """).fetchall()
+            km_rows = conn.execute("""
+                SELECT vehicle_type, strftime('%Y-%m', date),
+                       ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)),1)
+                FROM invoices
+                WHERE vehicle_type IS NOT NULL AND vehicle_type != ''
+                  AND date IS NOT NULL AND date != ''
+                  AND strftime('%Y-%m', date) >= strftime('%Y-%m', date('now','-5 months'))
+                GROUP BY vehicle_type, strftime('%Y-%m', date)
+                ORDER BY strftime('%Y-%m', date) DESC, vehicle_type ASC
+            """).fetchall()
+
+    wb = Workbook()
+    hdr_fill = PatternFill("solid", fgColor="1967D2")
+    hdr_font = Font(color="FFFFFF", bold=True, size=11)
+    thin = Side(style='thin', color='CCCCCC')
+    cell_border = Border(left=thin, right=thin, bottom=thin)
+
+    def _style_hdr(cell, text):
+        cell.value = text
+        cell.fill = hdr_fill
+        cell.font = hdr_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    def _auto_width(ws):
+        for col in ws.columns:
+            max_len = max((len(str(c.value or '')) for c in col), default=10)
+            ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 30)
+
+    # ── Sheet 1: Slip Summary ──
+    ws1 = wb.active
+    ws1.title = "Slip Summary"
+    ws1.row_dimensions[1].height = 22
+    for col, h in enumerate(["Month", "Total Slips", "Not Submitted", "Bill Submitted", "Payment Received", "Total KM"], 1):
+        _style_hdr(ws1.cell(row=1, column=col), h)
+    for r, row in enumerate(summary_rows, 2):
+        for c, val in enumerate(row, 1):
+            cell = ws1.cell(row=r, column=c, value=val if val is not None else 0)
+            cell.border = cell_border
+            if c > 1:
+                cell.alignment = Alignment(horizontal="center")
+    _auto_width(ws1)
+
+    # ── Sheet 2: Vehicle KM ──
+    ws2 = wb.create_sheet("Vehicle KM")
+    ws2.row_dimensions[1].height = 22
+    for col, h in enumerate(["Vehicle", "Month", "Total KM (km)"], 1):
+        _style_hdr(ws2.cell(row=1, column=col), h)
+    for r, row in enumerate(km_rows, 2):
+        for c, val in enumerate(row, 1):
+            cell = ws2.cell(row=r, column=c, value=val if val is not None else 0)
+            cell.border = cell_border
+            if c > 1:
+                cell.alignment = Alignment(horizontal="center")
+    _auto_width(ws2)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    if month_list and len(month_list) == 1:
+        stamp = month_list[0]
+    elif month_list:
+        stamp = f"{month_list[-1]}_to_{month_list[0]}"
+    else:
+        stamp = datetime.now().strftime('%Y-%m')
+    return send_file(buf, download_name=f'slip_report_{stamp}.xlsx',
+                     as_attachment=True,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.route('/templates', methods=['GET'])
+def templates_list():
     if 'admin' not in session:
         return redirect(url_for('home'))
     admin_username = session['admin']
-    invoice_row = fetch_one(
-        """
-        SELECT id, customer_name, company_name, "date", duty_slip_no, vehicle_type,
-               vehicle_no, starting_km, closing_km, total_km, starting_time,
-               closing_time, total_time, dn, remarks, route_covered, driver_name, file_path
-        FROM invoices
-        WHERE id = :invoice_id AND admin_username = :admin
-        """,
-        {"invoice_id": invoice_id, "admin": admin_username},
-    )
-    if not invoice_row:
-        return redirect(url_for('admin_portal'))
-    resolved_path = ensure_invoice_pdf_path(invoice_row)
-    if not _is_safe_invoice_path(resolved_path):
-        abort(404)
-    return send_file(resolved_path, as_attachment=True)
+    # Pre-fill params from generator "Save as Template" link
+    prefill = {k: request.args.get(k, '') for k in (
+        'template_name', 'customer_name', 'company_name', 'driver_name',
+        'vehicle_type', 'vehicle_no', 'route_covered', 'dn', 'remarks',
+        'starting_km', 'total_km')}
+    with sqlite3.connect(DATABASE) as conn:
+        rows = conn.execute(
+            """SELECT id, template_name, customer_name, company_name,
+                      driver_name, vehicle_type, vehicle_no, route_covered,
+                      created_at, use_count, last_used
+               FROM slip_templates
+               WHERE admin_username = ?
+               ORDER BY use_count DESC, created_at DESC""",
+            (admin_username,),
+        ).fetchall()
+    return render_template('templates_list.html', templates=rows, prefill=prefill)
+
+
+@app.route('/templates/new')
+def templates_new():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    with sqlite3.connect(DATABASE) as conn:
+        driver_list   = [r[0] for r in conn.execute("SELECT name FROM drivers ORDER BY name ASC").fetchall()]
+        vehicle_rows  = conn.execute("SELECT name, COALESCE(vehicle_no,'') FROM vehicles ORDER BY name ASC").fetchall()
+        customer_rows = conn.execute("SELECT name, COALESCE(company,'') FROM customers ORDER BY name ASC").fetchall()
+    vehicle_list  = [r[0] for r in vehicle_rows]
+    vehicle_map   = {r[0]: r[1] for r in vehicle_rows}
+    customer_list = [r[0] for r in customer_rows]
+    customer_map  = {r[0]: r[1] for r in customer_rows}
+    # Pre-fill from generator "Save as Template" click
+    prefill = {k: request.args.get(k, '') for k in (
+        'customer_name', 'company_name', 'driver_name', 'vehicle_type',
+        'vehicle_no', 'route_covered', 'dn', 'remarks', 'starting_km',
+        'total_km', 'project_code', 'mail_approval_date')}
+    return render_template('template_new.html',
+                           driver_list=driver_list,
+                           vehicle_list=vehicle_list, vehicle_map=vehicle_map,
+                           customer_list=customer_list, customer_map=customer_map,
+                           prefill=prefill)
+
+
+@app.route('/templates/save', methods=['POST'])
+def templates_save():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    admin_username = session['admin']
+    name = (request.form.get('template_name') or '').strip()
+    if not name:
+        return redirect(url_for('templates_list'))
+    fields = {k: (request.form.get(k) or '').strip() for k in (
+        'customer_name', 'company_name', 'vehicle_type', 'vehicle_no',
+        'route_covered', 'dn', 'remarks', 'driver_name',
+        'starting_km', 'total_km', 'project_code', 'mail_approval_date',
+        'starting_time', 'closing_time', 'route_stops_json')}
+    with sqlite3.connect(DATABASE) as conn:
+        conn.execute(
+            """INSERT INTO slip_templates
+               (admin_username, template_name, customer_name, company_name,
+                vehicle_type, vehicle_no, route_covered, dn, remarks,
+                driver_name, starting_km, total_km, project_code,
+                mail_approval_date, starting_time, closing_time,
+                route_stops_json, created_at, use_count)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)""",
+            (admin_username, name,
+             fields['customer_name'], fields['company_name'],
+             fields['vehicle_type'], fields['vehicle_no'],
+             fields['route_covered'], fields['dn'], fields['remarks'],
+             fields['driver_name'], fields['starting_km'], fields['total_km'],
+             fields['project_code'], fields['mail_approval_date'],
+             fields['starting_time'], fields['closing_time'],
+             fields['route_stops_json'],
+             datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
+        )
+    return redirect(url_for('templates_list'))
+
+
+@app.route('/templates/<int:template_id>/delete', methods=['POST'])
+def templates_delete(template_id):
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    with sqlite3.connect(DATABASE) as conn:
+        conn.execute(
+            "DELETE FROM slip_templates WHERE id = ? AND admin_username = ?",
+            (template_id, session['admin']),
+        )
+    return redirect(url_for('templates_list'))
+
+
+@app.route('/templates/<int:template_id>/use', methods=['POST'])
+def templates_use(template_id):
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    with sqlite3.connect(DATABASE) as conn:
+        conn.execute(
+            """UPDATE slip_templates
+               SET use_count = COALESCE(use_count, 0) + 1,
+                   last_used = ?
+               WHERE id = ? AND admin_username = ?""",
+            (datetime.now().strftime('%Y-%m-%d %H:%M'), template_id, session['admin']),
+        )
+    return redirect(url_for('generator_form', template_id=template_id))
+
+
+@app.errorhandler(404)
+def not_found(e):
+    return ('''<!doctype html><html><head><title>404 — Osprey Travels</title>
+<style>body{font-family:-apple-system,sans-serif;background:#f2f2f7;display:flex;align-items:center;
+justify-content:center;min-height:100vh;margin:0;}
+.box{text-align:center;padding:40px;background:#fff;border-radius:16px;box-shadow:0 2px 8px rgba(0,0,0,.08);}
+h1{font-size:56px;margin:0;color:#1c1c1e;}p{color:#8e8e93;margin:8px 0 24px;}
+a{background:#007aff;color:#fff;padding:10px 22px;border-radius:8px;text-decoration:none;font-weight:600;}
+</style></head><body><div class="box"><h1>404</h1><p>This page doesn't exist.</p>
+<a href="/">Go Home</a></div></body></html>''', 404)
+
+
+@app.errorhandler(500)
+def server_error(e):
+    return ('''<!doctype html><html><head><title>500 — Osprey Travels</title>
+<style>body{font-family:-apple-system,sans-serif;background:#f2f2f7;display:flex;align-items:center;
+justify-content:center;min-height:100vh;margin:0;}
+.box{text-align:center;padding:40px;background:#fff;border-radius:16px;box-shadow:0 2px 8px rgba(0,0,0,.08);}
+h1{font-size:56px;margin:0;color:#ff3b30;}p{color:#8e8e93;margin:8px 0 24px;}
+a{background:#007aff;color:#fff;padding:10px 22px;border-radius:8px;text-decoration:none;font-weight:600;}
+</style></head><body><div class="box"><h1>500</h1><p>Something went wrong on our end.</p>
+<a href="/">Go Home</a></div></body></html>''', 500)
+
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=os.environ.get('FLASK_DEBUG', '0') == '1', port=5050)

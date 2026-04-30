@@ -2,52 +2,344 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Slip Templates</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <title>Templates — Osprey Travels</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --primary: #007aff;
+      --primary-hover: #0062cc;
+      --primary-light: #e8f0fe;
+      --danger: #ff3b30;
+      --danger-light: #fdecea;
+      --green: #166534;
+      --green-light: #f0fdf4;
+      --text: #1c1c1e;
+      --text-muted: #8e8e93;
+      --border: #e5e5ea;
+      --bg: #f2f2f7;
+      --card: #ffffff;
+      --radius: 12px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      padding-bottom: 48px;
+    }
+    .page-header {
+      padding: 24px 32px 4px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .page-header h1 {
+      margin: 0 0 4px;
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+    .page-header .subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+    .content {
+      padding: 18px 32px 40px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px 24px;
+      box-shadow: var(--shadow);
+      margin-bottom: 18px;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .card h2 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .empty {
+      color: var(--text-muted);
+      text-align: center;
+      padding: 28px 0;
+      font-size: 14px;
+    }
+    .empty strong { display: block; margin-bottom: 4px; color: var(--text); font-size: 15px; }
+
+    /* Search */
+    .search-wrap {
+      position: relative;
+    }
+    .search-wrap input {
+      padding: 7px 11px 7px 32px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      width: 220px;
+      background: var(--bg);
+    }
+    .search-wrap input:focus { border-color: var(--primary); background: #fff; }
+    .search-wrap .search-icon {
+      position: absolute;
+      left: 9px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    /* Template grid */
+    .tpl-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+    }
+    .tpl-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      background: #fafafa;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: box-shadow 0.15s;
+    }
+    .tpl-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .tpl-card.hidden { display: none; }
+    .tpl-card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .tpl-card h3 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      flex: 1;
+      min-width: 0;
+    }
+    .use-badge {
+      flex-shrink: 0;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 20px;
+      background: var(--primary-light);
+      color: #1967d2;
+      white-space: nowrap;
+    }
+    .use-badge.zero { background: var(--bg); color: var(--text-muted); }
+    .tpl-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.7;
+    }
+    .tpl-meta .label {
+      color: #6b6b70;
+      font-weight: 600;
+      margin-right: 4px;
+    }
+    .tpl-last-used {
+      font-size: 11px;
+      color: var(--text-muted);
+      opacity: 0.8;
+      margin-top: 2px;
+    }
+    .tpl-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .btn {
+      padding: 7px 14px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 600;
+      border: 1px solid transparent;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-primary { background: var(--primary); color: #fff; border: none; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-ghost { background: #fff; color: var(--text); border-color: var(--border); }
+    .btn-ghost:hover { background: #f5f5f7; }
+    .btn-danger { background: #fff; color: var(--danger); border-color: var(--danger-light); }
+    .btn-danger:hover { background: var(--danger-light); }
+
+    /* Create form */
+    .new-form {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .new-form .full { grid-column: 1 / -1; }
+    .new-form label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #6b6b70;
+      margin-bottom: 4px;
+    }
+    .new-form input, .new-form select, .new-form textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      background: var(--bg);
+    }
+    .new-form input:focus, .new-form select:focus, .new-form textarea:focus {
+      border-color: var(--primary);
+      background: #fff;
+    }
+    .new-form textarea { min-height: 60px; resize: vertical; }
+    .form-actions {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .btn-submit {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 9px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-submit:hover { background: var(--primary-hover); }
+    @media (max-width: 600px) {
+      .new-form { grid-template-columns: 1fr; }
+      .content { padding: 16px 18px; }
+    }
+  </style>
 </head>
-<body class="app-shell">
+<body>
   {% include 'navbar.html' %}
 
-  <main class="page-content">
-    <section class="card">
-      <header class="card-header">
-        <h1 class="page-title">Slip Templates</h1>
-        <a class="btn btn-primary" href="/generator">Create New Slip</a>
-      </header>
-      <p class="page-subtitle">Saved templates let you spin up a new duty slip in one click.</p>
+  <div class="page-header">
+    <div>
+      <h1>Templates</h1>
+      <div class="subtitle">Save common slip configurations and reuse them in one click.</div>
+    </div>
+    <a href="/templates/new" style="padding:10px 20px;background:#7c3aed;color:#fff;border-radius:9px;font-size:14px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:7px;box-shadow:0 2px 8px rgba(124,58,237,0.25);">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/></svg>
+      New Template
+    </a>
+  </div>
+
+  <div class="content">
+
+    <!-- ── SAVED TEMPLATES ── -->
+    <div class="card">
+      <div class="card-header">
+        <h2>Saved Templates <span style="font-size:13px;color:var(--text-muted);font-weight:500;">({{ templates|length }})</span></h2>
+        {% if templates %}
+        <div class="search-wrap">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <circle cx="7" cy="7" r="5"/><line x1="11" y1="11" x2="14" y2="14"/>
+          </svg>
+          <input type="text" id="tplSearch" placeholder="Search templates…" oninput="filterTemplates(this.value)" autocomplete="off">
+        </div>
+        {% endif %}
+      </div>
 
       {% if templates %}
-        <ul class="invoice-list mt-md">
+        <div class="tpl-grid" id="tplGrid">
           {% for t in templates %}
-          <li class="invoice-item">
-            <div class="info">
-              <strong>{{ t.template_name }}</strong>
-              <div class="meta">
-                <span>Customer: {{ t.customer_name or '—' }}</span>
-                <span>Driver: {{ t.driver_name or '—' }}</span>
-                <span>Saved: {{ t.created_at }}</span>
-              </div>
-              {% if t.route_covered %}
-              <div class="meta" style="margin-top:4px;">Route: <em>{{ t.route_covered[:120] }}{% if t.route_covered|length > 120 %}…{% endif %}</em></div>
+          <div class="tpl-card" data-search="{{ (t[1] ~ ' ' ~ (t[2] or '') ~ ' ' ~ (t[4] or '') ~ ' ' ~ (t[5] or ''))|lower }}">
+            <div class="tpl-card-top">
+              <h3>{{ t[1] }}</h3>
+              {% if t[9] and t[9] > 0 %}
+                <span class="use-badge">Used {{ t[9] }}×</span>
+              {% else %}
+                <span class="use-badge zero">Unused</span>
               {% endif %}
             </div>
-            <div class="actions">
-              <a class="btn btn-outline" href="/generator?from_template={{ t.id }}">Use</a>
-              <form method="post" action="/templates/{{ t.id }}/delete" onsubmit="return confirm('Delete template {{ t.template_name }}?')">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="tpl-meta">
+              {% if t[2] %}<div><span class="label">Customer:</span>{{ t[2] }}{% if t[3] %} <span style="color:#999">({{ t[3] }})</span>{% endif %}</div>{% endif %}
+              {% if t[4] %}<div><span class="label">Driver:</span>{{ t[4] }}</div>{% endif %}
+              {% if t[5] %}<div><span class="label">Vehicle:</span>{{ t[5] }}{% if t[6] %} — {{ t[6] }}{% endif %}</div>{% endif %}
+              {% if t[7] %}<div><span class="label">Route:</span>{{ t[7][:60] }}{% if t[7]|length > 60 %}…{% endif %}</div>{% endif %}
+            </div>
+            {% if t[10] %}
+            <div class="tpl-last-used">Last used {{ t[10] }}</div>
+            {% elif t[8] %}
+            <div class="tpl-last-used">Saved {{ t[8][:10] }}</div>
+            {% endif %}
+            <div class="tpl-actions">
+              <form method="post" action="/templates/{{ t[0] }}/use" style="display:inline;">
+                <button class="btn btn-primary" type="submit">Use Template</button>
+              </form>
+              <form method="post" action="/templates/{{ t[0] }}/delete" style="display:inline;"
+                    onsubmit="return confirm('Delete template &quot;{{ t[1] }}&quot;?');">
                 <button class="btn btn-danger" type="submit">Delete</button>
               </form>
             </div>
-          </li>
+          </div>
           {% endfor %}
-        </ul>
+        </div>
+        <p id="noResults" style="display:none;color:var(--text-muted);text-align:center;padding:20px 0;margin:0;">
+          No templates match your search.
+        </p>
       {% else %}
-        <div class="empty-state mt-md">
+        <div class="empty">
           <strong>No templates yet</strong>
-          <span>Open the generator, fill in fields, then click "Save Template" to create one.</span>
+          <span>Create one below to start reusing common slip configurations.</span>
         </div>
       {% endif %}
-    </section>
-  </main>
+    </div>
+
+  </div>
+
+  <script>
+    function filterTemplates(q) {
+      q = q.toLowerCase().trim();
+      let count = 0;
+      document.querySelectorAll('#tplGrid .tpl-card').forEach(card => {
+        const match = !q || card.dataset.search.includes(q);
+        card.classList.toggle('hidden', !match);
+        if (match) count++;
+      });
+      document.getElementById('noResults').style.display = (q && count === 0) ? 'block' : 'none';
+    }
+
+    // Auto-focus search if arriving with prefill (from generator)
+    const url = new URL(location.href);
+    if (url.searchParams.has('template_name')) {
+      document.getElementById('template_name').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById('template_name').focus();
+    }
+  </script>
 </body>
 </html>

@@ -2,373 +2,894 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Duty Slip Generator</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <title>{% if prefill %}Clone Duty Slip{% else %}New Duty Slip{% endif %} — Osprey Travels</title>
   <style>
-    /* Map Builder styles */
-    .route-mode-toggle { display:flex; gap:6px; margin-bottom:10px; }
-    .route-mode-toggle .mode-btn { padding:6px 14px; border:1px solid #d0d4dc; background:#fff; border-radius:18px; cursor:pointer; font-size:13px; font-weight:500; }
-    .route-mode-toggle .mode-btn.active { background:#2563eb; color:#fff; border-color:#2563eb; }
-    #mapSection { border:1px solid #e6e8ee; border-radius:10px; padding:14px; background:#fafbff; }
-    .waypoint-row { display:flex; align-items:center; gap:8px; margin:6px 0; padding:8px 10px; background:#fff; border:1px solid #e3e6ec; border-radius:8px; }
-    .waypoint-row .wp-icon { font-size:14px; color:#2563eb; }
-    .waypoint-row.origin { background:#eff6ff; border-color:#bfdbfe; }
-    .waypoint-row .waypoint-input { flex:1; border:none; outline:none; font-size:14px; padding:4px 6px; background:transparent; }
-    .waypoint-row .drag-handle { cursor:grab; color:#94a3b8; user-select:none; padding:0 4px; }
-    .waypoint-row .btn-remove-wp { background:transparent; border:none; cursor:pointer; color:#94a3b8; font-size:16px; padding:0 4px; }
-    .waypoint-row .btn-remove-wp:hover { color:#dc2626; }
-    .builder-actions { display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; }
-    .btn-add-stop { padding:6px 14px; background:#fff; border:1px dashed #94a3b8; border-radius:8px; cursor:pointer; font-size:13px; color:#475569; }
-    .btn-add-stop:hover { background:#f1f5f9; border-color:#475569; }
-    .return-label { display:flex; align-items:center; gap:6px; font-size:13px; color:#475569; margin:6px 0; }
-    #mapPreview { width:100%; height:280px; background:#e8edf5; border-radius:8px; margin:10px 0; display:flex; align-items:center; justify-content:center; color:#94a3b8; font-size:13px; overflow:hidden; }
-    .map-footer { display:flex; justify-content:space-between; align-items:center; margin-top:10px; flex-wrap:wrap; gap:10px; }
-    .distance-display { font-size:14px; color:#475569; }
-    .distance-display.ready { color:#059669; font-weight:600; }
-    .btn-apply-route { padding:8px 20px; background:#059669; color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:500; }
-    .btn-apply-route:disabled { background:#cbd5e1; cursor:not-allowed; }
-    .no-key-notice { padding:12px; background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; color:#92400e; font-size:13px; margin-bottom:10px; }
-    .template-bar { display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap; padding:10px 12px; background:#f1f5f9; border-radius:8px; }
-    .template-bar select, .template-bar input { padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; }
-    .autocomplete-suggestions { position:absolute; background:#fff; border:1px solid #e3e6ec; border-radius:6px; max-height:160px; overflow-y:auto; z-index:50; box-shadow:0 4px 12px rgba(0,0,0,0.08); }
-    .autocomplete-suggestions div { padding:6px 10px; cursor:pointer; font-size:13px; }
-    .autocomplete-suggestions div:hover { background:#f1f5f9; }
-    .field-group { position:relative; }
+    *, *::before, *::after { box-sizing: border-box; }
+
+    :root {
+      --primary: #007aff;
+      --primary-hover: #0062cc;
+      --text: #1c1c1e;
+      --text-muted: #8e8e93;
+      --border: #e5e5ea;
+      --bg: #f2f2f7;
+      --card: #ffffff;
+      --radius: 10px;
+      --shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      padding-bottom: 48px;
+    }
+
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 28px 12px;
+    }
+    .page-header h1 { margin: 0; font-size: 22px; font-weight: 700; }
+    .quick-tpl-bar {
+      padding: 8px 24px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .quick-tpl-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      white-space: nowrap;
+      margin-right: 2px;
+    }
+    .quick-tpl-btn {
+      padding: 4px 12px;
+      border-radius: 20px;
+      border: 1px solid #ddd6fe;
+      background: #f5f3ff;
+      color: #6d28d9;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.12s;
+      white-space: nowrap;
+    }
+    .quick-tpl-btn:hover { background: #ede9fe; border-color: #c4b5fd; }
+    .quick-tpl-btn.loading { opacity: 0.5; cursor: wait; }
+    .clone-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: #f3e8ff;
+      color: #7c3aed;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    /* ---- FORM CARD ---- */
+    .form-card {
+      margin: 0 28px;
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 24px 28px;
+    }
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+      margin: 20px 0 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .section-label:first-child { margin-top: 0; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px 20px;
+    }
+    .form-grid .full { grid-column: 1 / -1; }
+    .three-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 14px 20px;
+    }
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .field input,
+    .field select,
+    .field textarea {
+      padding: 9px 11px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      font-size: 14px;
+      outline: none;
+      background: #fff;
+      color: var(--text);
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus { border-color: var(--primary); }
+    .field input[readonly] { background: #f9f9fb; color: var(--text-muted); }
+
+    /* Mic buttons */
+    .mic-row { display: flex; gap: 8px; align-items: flex-start; }
+    .mic-row textarea { flex: 1; resize: vertical; }
+    .mic-btns { display: flex; flex-direction: column; gap: 6px; padding-top: 1px; }
+    .btn-mic {
+      padding: 7px 12px;
+      border-radius: 7px;
+      font-size: 12px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-mic-start { background: #e8f0fe; color: #1967d2; }
+    .btn-mic-stop  { background: #fdecea; color: #c62828; }
+    .btn-mic:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Submit */
+    .form-footer { margin-top: 24px; display: flex; gap: 12px; align-items: center; }
+    .btn-submit {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      padding: 12px 28px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-submit:hover { background: var(--primary-hover); }
+    .btn-cancel-link { color: var(--text-muted); text-decoration: none; font-size: 14px; }
+    .btn-cancel-link:hover { color: var(--text); }
+    .btn-save-tpl {
+      background: #7c3aed;
+      color: #fff;
+      border: none;
+      padding: 12px 22px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-left: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s;
+    }
+    .btn-save-tpl:hover { background: #6d28d9; }
+
+    /* ---- ROUTE MODE TOGGLE ---- */
+    .route-mode-toggle {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .mode-btn {
+      padding: 6px 16px;
+      border-radius: 20px;
+      border: 1.5px solid var(--border);
+      background: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--text-muted);
+      transition: all 0.15s;
+    }
+    .mode-btn.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    /* ---- MAP BUILDER ---- */
+    .no-key-notice {
+      background: #fff8e1;
+      border: 1px solid #f9a825;
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-size: 13px;
+      color: #5d3f00;
+    }
+    .no-key-notice a { color: var(--primary); font-weight: 600; }
+
+    .waypoint-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 7px;
+      padding: 4px 0;
+      border-top: 2px solid transparent;
+      transition: border-color 0.1s;
+    }
+    .waypoint-row.drag-over { border-top-color: var(--primary); }
+    .waypoint-row.dragging  { opacity: 0.35; }
+
+    .drag-handle {
+      cursor: grab;
+      color: var(--text-muted);
+      font-size: 18px;
+      padding: 2px 4px;
+      flex-shrink: 0;
+      user-select: none;
+    }
+    .drag-handle:active { cursor: grabbing; }
+
+    .wp-icon { font-size: 16px; flex-shrink: 0; width: 22px; text-align: center; }
+
+    .waypoint-input {
+      flex: 1;
+      padding: 8px 11px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      font-size: 14px;
+      outline: none;
+      font-family: inherit;
+      background: #fff;
+    }
+    .waypoint-input:focus { border-color: var(--primary); }
+
+    .btn-remove-wp {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 15px;
+      padding: 4px 8px;
+      border-radius: 5px;
+      flex-shrink: 0;
+    }
+    .btn-remove-wp:hover { background: #fdecea; color: #c62828; }
+
+    .builder-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 4px 0 14px;
+    }
+    .btn-add-stop {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 14px;
+      border: 1.5px dashed var(--border);
+      border-radius: 7px;
+      background: none;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--primary);
+      cursor: pointer;
+    }
+    .btn-add-stop:hover { border-color: var(--primary); background: #f0f6ff; }
+    .btn-add-loop  { color: #7c3aed; }
+    .btn-add-loop:hover  { border-color: #7c3aed; background: #f7f1ff; }
+    .btn-mirror    { color: #166534; }
+    .btn-mirror:hover    { border-color: #166534; background: #f0fdf4; }
+
+    /* ---- LOOP BLOCK ---- */
+    .loop-row {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+      padding: 10px 12px;
+      background: #faf5ff;
+      border: 1px solid #e9d5ff;
+      border-radius: 8px;
+      margin-bottom: 7px;
+      border-top: 2px solid transparent;
+      transition: border-color 0.1s;
+    }
+    .loop-row.drag-over { border-top-color: #7c3aed; }
+    .loop-row.dragging  { opacity: 0.35; }
+    .loop-row .loop-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .loop-row .loop-header .drag-handle { color: #7c3aed; }
+    .loop-row .loop-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #7c3aed;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      flex-shrink: 0;
+    }
+    .loop-row .loop-inputs {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr auto auto;
+      gap: 6px;
+      align-items: center;
+    }
+    .loop-row .loop-inputs .swap-icon {
+      color: #7c3aed;
+      font-weight: 700;
+      font-size: 16px;
+    }
+    .loop-row .loop-inputs .loop-count {
+      width: 64px;
+      padding: 8px 8px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      font-size: 13px;
+      text-align: center;
+      outline: none;
+      font-family: inherit;
+    }
+    .loop-row .loop-inputs .loop-count:focus { border-color: #7c3aed; }
+    .loop-row .loop-inputs .loop-times {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .loop-row .loop-preview {
+      font-size: 12px;
+      color: #5b21b6;
+      font-weight: 500;
+      padding-left: 4px;
+      font-style: italic;
+    }
+
+    /* Origin row gets a slight emphasis */
+    .waypoint-row.origin {
+      background: #f0f6ff;
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin-bottom: 10px;
+    }
+    .waypoint-row.origin .wp-icon { color: #007aff; }
+    .waypoint-row.drop-off .wp-icon { color: #d97706; }
+
+    .return-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .return-label input { accent-color: var(--primary); width: 15px; height: 15px; }
+
+    #mapPreview {
+      width: 100%;
+      height: 260px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #f2f2f7;
+      margin-bottom: 12px;
+      overflow: hidden;
+      position: relative;
+    }
+    #mapPlaceholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 13px;
+      pointer-events: none;
+    }
+
+    .map-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .distance-display {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .distance-display.ready { color: #166534; }
+
+    .btn-apply-route {
+      background: #166534;
+      color: #fff;
+      border: none;
+      padding: 9px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-apply-route:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn-apply-route:not(:disabled):hover { background: #14532d; }
+
+    /* Google Places Autocomplete dropdown — make it look native and ensure visibility */
+    .pac-container {
+      z-index: 999999 !important;
+      border-radius: 10px !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18) !important;
+      margin-top: 4px !important;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif !important;
+      border: 1px solid #e5e5ea !important;
+      overflow: hidden !important;
+      background: #fff !important;
+    }
+    .pac-item {
+      padding: 10px 14px !important;
+      font-size: 13px !important;
+      cursor: pointer !important;
+      border-top: 1px solid #f2f2f7 !important;
+      line-height: 1.4 !important;
+    }
+    .pac-item:first-child { border-top: none !important; }
+    .pac-item:hover { background: #f2f2f7 !important; }
+    .pac-item-query { font-weight: 600 !important; color: #1c1c1e !important; }
+    .pac-matched { font-weight: 700 !important; color: #007aff !important; }
+    .pac-icon { display: none !important; }
   </style>
 </head>
-<body class="app-shell">
+<body>
   {% include 'navbar.html' %}
 
-  <main class="page-content">
-    <section class="card">
-      <header>
-        <h1 class="page-title">Duty Slip Generator</h1>
-        <p class="page-subtitle">Craft a perfectly aligned duty slip that mirrors your official template.</p>
-      </header>
+  <div class="page-header">
+    <h1>{% if prefill %}Clone Duty Slip{% else %}New Duty Slip{% endif %}</h1>
+    {% if prefill %}<span class="clone-badge"><svg class="icon" width="14" height="14"><use href="#icon-copy"/></svg> Pre-filled from existing slip</span>{% endif %}
+  </div>
 
-      <!-- TEMPLATE BAR -->
-      <div class="template-bar">
-        <strong style="font-size:13px;">Template:</strong>
-        <select id="templateSelect">
-          <option value="">— Use a saved template —</option>
-          {% for t in template_list %}
-            <option value="{{ t.id }}">{{ t.template_name }}</option>
-          {% endfor %}
-        </select>
-        <button type="button" class="btn btn-soft" onclick="loadTemplate()">Load</button>
-        <span style="margin-left:auto;font-size:13px;color:#475569;">Save current form as:</span>
-        <input type="text" id="newTemplateName" placeholder="Template name">
-        <button type="button" class="btn btn-soft" onclick="saveTemplate()">Save Template</button>
-        <a class="btn btn-ghost" href="/templates">Manage</a>
+  {% if quick_templates %}
+  <div class="quick-tpl-bar">
+    <span class="quick-tpl-label">Quick fill:</span>
+    {% for tpl in quick_templates %}
+    <button type="button" class="quick-tpl-btn" onclick="applyQuickTemplate({{ tpl[0] }})">{{ tpl[1] }}</button>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="form-card">
+    <form action="/generate" method="post">
+
+      <!-- PARTY INFO -->
+      <div class="section-label">Party Information</div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="customer_name">Customer Name *</label>
+          <input type="text" id="customer_name" name="customer_name"
+                 list="customerOptions" autocomplete="off"
+                 value="{{ prefill.get('customer_name', '') }}"
+                 placeholder="Select or type customer…" required>
+          <datalist id="customerOptions">
+            {% for c in customer_list %}
+              <option value="{{ c }}">
+            {% endfor %}
+          </datalist>
+        </div>
+        <div class="field">
+          <label for="company_name">Company Name</label>
+          <input type="text" id="company_name" name="company_name"
+                 value="{{ prefill.get('company_name', '') }}">
+        </div>
       </div>
 
-      <form class="generator-form" action="/generate" method="post" id="slipForm">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <section>
-          <h3 class="section-title">Customer & Booking</h3>
-          <div class="form-grid form-grid--two">
-            <div class="field-group">
-              <label for="customer_name">Customer Name</label>
-              <input type="text" id="customer_name" name="customer_name" required value="{{ prefill.customer_name|default('') }}" autocomplete="off">
-              <div id="customerSuggestions" class="autocomplete-suggestions" style="display:none;"></div>
-            </div>
-            <div class="field-group">
-              <label for="company_name">Company Name</label>
-              <input type="text" id="company_name" name="company_name" value="{{ prefill.company_name|default('') }}">
-            </div>
-            <div class="field-group">
-              <label for="date">Date</label>
-              <input type="date" id="date" name="date" required value="{{ prefill.date|default('') }}">
-            </div>
-            <div class="field-group">
-              <label for="duty_slip_no">Duty Slip No</label>
-              <input type="text" id="duty_slip_no" name="duty_slip_no" value="{{ next_duty_slip_no|default('') }}">
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <h3 class="section-title">Vehicle Details</h3>
-          <div class="form-grid form-grid--two">
-            <div class="field-group">
-              <label for="vehicle_type">Type of Vehicle</label>
-              <input type="text" id="vehicle_type" name="vehicle_type" value="{{ prefill.vehicle_type|default('') }}">
-            </div>
-            <div class="field-group">
-              <label for="vehicle_no">Vehicle No</label>
-              <input type="text" id="vehicle_no" name="vehicle_no" value="{{ prefill.vehicle_no|default('') }}">
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <h3 class="section-title">Distance & Time</h3>
-          <div class="form-grid form-grid--three">
-            <div class="field-group">
-              <label for="starting_km">Starting KM</label>
-              <input type="text" id="starting_km" name="starting_km" value="{{ prefill.starting_km|default('') }}">
-            </div>
-            <div class="field-group">
-              <label for="closing_km">Closing KM</label>
-              <input type="text" id="closing_km" name="closing_km">
-            </div>
-            <div class="field-group">
-              <label for="total_km">Total KM</label>
-              <input type="text" id="total_km" name="total_km" value="{{ prefill.total_km|default('') }}">
-            </div>
-            <div class="field-group">
-              <label for="starting_time">Starting Time</label>
-              <input type="time" id="starting_time" name="starting_time">
-            </div>
-            <div class="field-group">
-              <label for="closing_time">Closing Time</label>
-              <input type="time" id="closing_time" name="closing_time">
-            </div>
-            <div class="field-group">
-              <label for="total_time">Total Time</label>
-              <input type="text" id="total_time" name="total_time">
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <h3 class="section-title">Trip Notes</h3>
-          <div class="form-grid form-grid--two">
-            <div class="field-group">
-              <label for="dn">DN</label>
-              <input type="text" id="dn" name="dn" value="{{ prefill.dn|default('') }}">
-            </div>
-            <div class="field-group">
-              <label for="remarks">Remarks</label>
-              <input type="text" id="remarks" name="remarks" value="{{ prefill.remarks|default('') }}">
-            </div>
-          </div>
-
-          <div class="field-group">
-            <label>Route Covered</label>
-
-            <div class="route-mode-toggle">
-              <button type="button" class="mode-btn active" id="btnManual" onclick="setRouteMode('manual')">Manual</button>
-              <button type="button" class="mode-btn" id="btnMap" onclick="setRouteMode('map')">Map Builder</button>
-            </div>
-
-            <!-- MANUAL MODE -->
-            <div id="manualSection">
-              <div class="textarea-with-actions">
-                <textarea id="route_covered" name="route_covered" rows="4">{{ prefill.route_covered|default('') }}</textarea>
-                <div class="mic-buttons">
-                  <button type="button" class="btn btn-soft" id="micStartBtn">Start Voice</button>
-                  <button type="button" class="btn btn-ghost" id="micStopBtn" disabled>Stop</button>
-                </div>
-              </div>
-              <span class="hint">Use voice input or switch to Map Builder for auto-distance.</span>
-            </div>
-
-            <!-- MAP BUILDER MODE -->
-            <div id="mapSection" style="display:none;">
-              <div id="noKeyNotice" class="no-key-notice" style="display:none;">
-                Google Maps API key is not configured. Contact the administrator.
-              </div>
-              <div id="mapsLoading" style="padding:8px 0;color:#475569;font-size:13px;display:none;">Loading map…</div>
-
-              <div id="mapBuilder" style="display:none;">
-                <div class="waypoint-row origin">
-                  <span class="wp-icon">●</span>
-                  <input type="text" id="originInput" class="waypoint-input" placeholder="Starting point…" autocomplete="off">
-                </div>
-
-                <div id="waypointsList"></div>
-
-                <div class="builder-actions">
-                  <button type="button" class="btn-add-stop" onclick="addWaypoint()">+ Add Stop</button>
-                </div>
-
-                <label class="return-label">
-                  <input type="checkbox" id="returnToOrigin" checked onchange="debouncedCalc()">
-                  Return to origin
-                </label>
-
-                <div id="mapPreview"><span>Map will appear here</span></div>
-
-                <div class="map-footer">
-                  <span class="distance-display" id="distanceDisplay">Add a starting point and stops to calculate distance</span>
-                  <button type="button" class="btn-apply-route" id="btnApply" onclick="applyRoute()" disabled>Apply to Slip</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <h3 class="section-title">Driver</h3>
-          <div class="form-grid">
-            <div class="field-group">
-              <label for="driver_name">Driver Name</label>
-              <input type="text" id="driver_name" name="driver_name" list="driver_options" placeholder="Type or select driver" autocomplete="off" value="{{ prefill.driver_name|default('') }}">
-              <datalist id="driver_options">
-                {% for d in driver_list %}
-                  <option value="{{ d }}">
-                {% endfor %}
-              </datalist>
-            </div>
-          </div>
-        </section>
-
-        <div>
-          <input class="btn btn-primary" type="submit" value="Generate Duty Slip">
+      <!-- TRIP INFO -->
+      <div class="section-label">Trip Details</div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="date">Date *</label>
+          <input type="date" id="date" name="date" value="{{ today }}" required>
         </div>
-      </form>
-    </section>
-  </main>
+        <div class="field">
+          <label for="duty_slip_no">Duty Slip No</label>
+          <input type="text" id="duty_slip_no" name="duty_slip_no"
+                 value="{{ next_slip_no }}" placeholder="Auto-suggested">
+        </div>
+      </div>
 
-  <!-- =================================================================== -->
-  <!-- SPEECH RECOGNITION -->
-  <!-- =================================================================== -->
+      <!-- VEHICLE INFO -->
+      <div class="section-label">Vehicle Information</div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="vehicle_type">Type of Vehicle</label>
+          <input type="text" id="vehicle_type" name="vehicle_type"
+                 list="vehicleOptions" autocomplete="off"
+                 value="{{ prefill.get('vehicle_type', '') }}"
+                 placeholder="Select or type vehicle…">
+          <datalist id="vehicleOptions">
+            {% for v in vehicle_list %}
+              <option value="{{ v }}">
+            {% endfor %}
+          </datalist>
+        </div>
+        <div class="field">
+          <label for="vehicle_no">Vehicle No</label>
+          <input type="text" id="vehicle_no" name="vehicle_no"
+                 value="{{ prefill.get('vehicle_no', '') }}">
+        </div>
+      </div>
+
+      <!-- KM -->
+      <div class="section-label">Odometer Readings</div>
+      <div class="three-col">
+        <div class="field">
+          <label for="starting_km">Starting KM</label>
+          <input type="text" id="starting_km" name="starting_km" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label for="closing_km">Closing KM</label>
+          <input type="text" id="closing_km" name="closing_km" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label for="total_km">Total KM</label>
+          <input type="text" id="total_km" name="total_km" placeholder="Auto-calculated">
+        </div>
+      </div>
+
+      <!-- TIME -->
+      <div class="section-label">Timing</div>
+      <div class="three-col">
+        <div class="field">
+          <label for="starting_time">Starting Time</label>
+          <input type="time" id="starting_time" name="starting_time" value="{{ prefill.get('starting_time', '') }}">
+        </div>
+        <div class="field">
+          <label for="closing_time">Closing Time</label>
+          <input type="time" id="closing_time" name="closing_time" value="{{ prefill.get('closing_time', '') }}">
+        </div>
+        <div class="field">
+          <label for="total_time">Total Time</label>
+          <input type="text" id="total_time" name="total_time" readonly placeholder="Auto-calculated">
+        </div>
+      </div>
+
+      <!-- EXTRAS -->
+      <div class="section-label">Additional Details</div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="project_code">Project Code</label>
+          <input type="text" id="project_code" name="project_code"
+                 value="{{ prefill.get('project_code', '') }}"
+                 placeholder="e.g. PRJ-2026-014">
+        </div>
+        <div class="field">
+          <label for="mail_approval_date">Mail Approval Date</label>
+          <input type="date" id="mail_approval_date" name="mail_approval_date"
+                 value="{{ prefill.get('mail_approval_date', '') }}">
+        </div>
+
+        <!-- ROUTE COVERED — with mode toggle -->
+        <div class="field full">
+          <label>Route Covered</label>
+
+          <div class="route-mode-toggle">
+            <button type="button" class="mode-btn active" id="btnManual" onclick="setRouteMode('manual')"><svg class="icon" width="13" height="13"><use href="#icon-document"/></svg> Manual</button>
+            <button type="button" class="mode-btn"        id="btnMap"    onclick="setRouteMode('map')"><svg class="icon" width="13" height="13"><use href="#icon-map-pin"/></svg> Map Builder</button>
+          </div>
+
+          <!-- MANUAL -->
+          <div id="manualSection">
+            <div class="mic-row">
+              <textarea id="route_covered" name="route_covered" rows="3"></textarea>
+              <div class="mic-btns">
+                <button type="button" class="btn-mic btn-mic-start" id="micStart">🎤 Start</button>
+                <button type="button" class="btn-mic btn-mic-stop"  id="micStop" disabled>⏹ Stop</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- MAP BUILDER -->
+          <div id="mapSection" style="display:none;">
+
+            <div id="noKeyNotice" class="no-key-notice" style="display:none;">
+              Google Maps API key is not configured. Contact the administrator.
+            </div>
+
+            <div id="mapsLoading" style="display:none;padding:12px 0;color:var(--text-muted);font-size:13px;">
+              Loading map…
+            </div>
+
+            <div id="mapBuilder" style="display:none;">
+              <!-- Origin — static, autocomplete attached in _onMapsReady -->
+              <div class="waypoint-row origin" id="originRow">
+                <span class="wp-icon" title="Starting point"><svg width="16" height="16"><use href="#icon-map-pin"/></svg></span>
+                <input type="text" id="originInput" class="waypoint-input" placeholder="Starting point…" autocomplete="off">
+              </div>
+
+              <!-- Stops + loop blocks -->
+              <div id="waypointsList"></div>
+
+              <div class="builder-actions">
+                <button type="button" class="btn-add-stop" onclick="addWaypoint()">
+                  <svg class="icon" width="13" height="13"><use href="#icon-plus"/></svg> Add Stop
+                </button>
+                <button type="button" class="btn-add-stop btn-add-loop" onclick="addLoopBlock()">
+                  <svg class="icon" width="13" height="13"><use href="#icon-refresh"/></svg> Add Loop (A ↔ B × N)
+                </button>
+                <button type="button" class="btn-add-stop btn-mirror" onclick="mirrorStops()" title="Duplicate all stops in same order as drop-offs">
+                  <svg class="icon" width="13" height="13"><use href="#icon-copy"/></svg> Mirror Stops (Pick &amp; Drop)
+                </button>
+              </div>
+
+              <label class="return-label">
+                <input type="checkbox" id="returnToOrigin" checked onchange="debouncedCalc()">
+                Return to origin
+              </label>
+
+              <!-- Map preview -->
+              <div id="mapPreview">
+                <div id="mapPlaceholder">Map will appear here after adding stops</div>
+              </div>
+
+              <!-- Footer: distance + apply -->
+              <div class="map-footer">
+                <span class="distance-display" id="distanceDisplay">Add stops to calculate distance</span>
+                <button type="button" class="btn-apply-route" id="btnApply"
+                        onclick="applyRoute()" disabled>↓ Apply to Slip</button>
+              </div>
+            </div><!-- #mapBuilder -->
+
+          </div><!-- #mapSection -->
+        </div><!-- .field.full -->
+      </div>
+
+      <!-- DRIVER -->
+      <div class="section-label">Driver</div>
+      <div class="form-grid">
+        <div class="field">
+          <label for="driver_name">Driver Name *</label>
+          <select id="driver_name" name="driver_name" required>
+            <option value="">— Select Driver —</option>
+            {% for d in driver_list %}
+              <option value="{{ d }}" {% if prefill.get('driver_name') == d %}selected{% endif %}>{{ d }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="form-footer">
+        <button type="submit" class="btn-submit">Generate Duty Slip</button>
+        <a href="/admin_portal" class="btn-cancel-link">Cancel</a>
+        <button type="button" onclick="saveAsTemplate()" class="btn-save-tpl">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4l-2-2z"/><path d="M10 2v4H6V2"/><path d="M6 10h4"/><path d="M8 10v3"/></svg>
+          Save as Template
+        </button>
+      </div>
+
+    </form>
+  </div>
+
   <script>
+    // =====================================================================
+    // SAVE AS TEMPLATE — collects form fields and opens /templates pre-filled
+    // =====================================================================
+    function saveAsTemplate() {
+      const form = document.querySelector('form[action="/generate"]');
+      const fields = ['customer_name','company_name','driver_name','vehicle_type',
+                      'vehicle_no','dn','starting_km','total_km','remarks',
+                      'project_code','mail_approval_date'];
+      const params = new URLSearchParams();
+      fields.forEach(f => {
+        const el = form.elements[f];
+        if (el && el.value.trim()) params.set(f, el.value.trim());
+      });
+      const routeEl = form.elements['route_covered'];
+      if (routeEl && routeEl.value.trim()) params.set('route_covered', routeEl.value.trim());
+      window.location.href = '/templates/new?' + params.toString();
+    }
+
+    // =====================================================================
+    // AUTO-FILL MAPS (vehicle → vehicle_no, customer → company)
+    // =====================================================================
+    const vehicleMap   = {{ vehicle_map   | tojson }};
+    const customerMap  = {{ customer_map  | tojson }};
+
     (function () {
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) {
-        document.getElementById('micStartBtn').style.display = 'none';
-        document.getElementById('micStopBtn').style.display = 'none';
-        return;
+      const vTypeEl  = document.getElementById('vehicle_type');
+      const vNoEl    = document.getElementById('vehicle_no');
+      const custEl   = document.getElementById('customer_name');
+      const compEl   = document.getElementById('company_name');
+
+      vTypeEl.addEventListener('input', function () {
+        const no = vehicleMap[this.value];
+        if (no !== undefined) vNoEl.value = no;
+      });
+
+      custEl.addEventListener('input', function () {
+        const co = customerMap[this.value];
+        if (co !== undefined) compEl.value = co;
+      });
+    })();
+
+    // =====================================================================
+    // KM + TIME AUTO-CALCULATE
+    // =====================================================================
+    const startKmEl  = document.getElementById('starting_km');
+    const closeKmEl  = document.getElementById('closing_km');
+    const totalKmEl  = document.getElementById('total_km');
+    const startTimeEl = document.getElementById('starting_time');
+    const closeTimeEl = document.getElementById('closing_time');
+    const totalTimeEl = document.getElementById('total_time');
+
+    let kmSyncLock = false;
+
+    function toCleanKm(n) {
+      if (!Number.isFinite(n)) return '';
+      return Number.isInteger(n) ? String(n) : n.toFixed(1);
+    }
+
+    function recalcTotalFromStartAndClose() {
+      const s = parseFloat(startKmEl.value);
+      const e = parseFloat(closeKmEl.value);
+      if (isNaN(s) || isNaN(e) || e < s) return;
+      totalKmEl.value = toCleanKm(e - s);
+    }
+
+    function recalcCloseFromStartAndTotal() {
+      const s = parseFloat(startKmEl.value);
+      const t = parseFloat(totalKmEl.value);
+      if (isNaN(s) || isNaN(t) || t < 0) return;
+      closeKmEl.value = toCleanKm(s + t);
+    }
+
+    startKmEl.addEventListener('input', () => {
+      if (kmSyncLock) return;
+      kmSyncLock = true;
+      if (totalKmEl.value.trim()) recalcCloseFromStartAndTotal();
+      else recalcTotalFromStartAndClose();
+      kmSyncLock = false;
+    });
+
+    closeKmEl.addEventListener('input', () => {
+      if (kmSyncLock) return;
+      kmSyncLock = true;
+      recalcTotalFromStartAndClose();
+      kmSyncLock = false;
+    });
+
+    totalKmEl.addEventListener('input', () => {
+      if (kmSyncLock) return;
+      kmSyncLock = true;
+      recalcCloseFromStartAndTotal();
+      kmSyncLock = false;
+    });
+
+    function calcTime() {
+      if (!startTimeEl.value || !closeTimeEl.value) return;
+      const s = new Date('1970-01-01T' + startTimeEl.value + ':00');
+      const e = new Date('1970-01-01T' + closeTimeEl.value + ':00');
+      let diff = e - s;
+      if (diff < 0) diff += 86400000;
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      totalTimeEl.value = h + 'h ' + m + 'm';
+    }
+    startTimeEl.addEventListener('change', calcTime);
+    closeTimeEl.addEventListener('change', calcTime);
+
+    // =====================================================================
+    // QUICK TEMPLATE APPLY
+    // =====================================================================
+    function applyQuickTemplate(id) {
+      const btn = event.currentTarget;
+      btn.classList.add('loading');
+      fetch('/templates/' + id + '/json')
+        .then(r => r.json())
+        .then(d => {
+          const set = (sel, val) => { const el = document.querySelector(sel); if (el && val) el.value = val; };
+          set('#customer_name', d.customer_name);
+          set('#company_name', d.company_name);
+          set('#vehicle_type', d.vehicle_type);
+          set('#vehicle_no', d.vehicle_no);
+          set('#driver_name', d.driver_name);
+          set('#starting_km', d.starting_km);
+          set('#starting_time', d.starting_time);
+          set('#closing_time', d.closing_time);
+          set('#project_code', d.project_code);
+          set('#mail_approval_date', d.mail_approval_date);
+          if (d.route_covered) document.getElementById('route_covered').value = d.route_covered;
+          if (d.route_stops_json) {
+            try { if (mapsLoaded) restoreFromTemplate(JSON.parse(d.route_stops_json)); } catch(e) {}
+          }
+          // bump use_count silently
+          fetch('/templates/' + id + '/use', { method: 'POST' });
+        })
+        .finally(() => btn.classList.remove('loading'));
+    }
+
+    // =====================================================================
+    // PREFILL FROM TEMPLATE / CLONE
+    // =====================================================================
+    (function () {
+      var routeVal = {{ prefill.get('route_covered', '') | tojson }};
+      if (routeVal) document.getElementById('route_covered').value = routeVal;
+    })();
+
+    // =====================================================================
+    // ROUTE TEXTAREA SHORTCUTS  (,,, → →)
+    // =====================================================================
+    document.getElementById('route_covered').addEventListener('input', function (e) {
+      var ta = this, val = ta.value, pos = ta.selectionStart;
+      var idx = val.lastIndexOf(',,,', pos);
+      if (idx !== -1 && idx === pos - 3) {
+        ta.value = val.slice(0, idx) + ' → ' + val.slice(pos);
+        var newPos = idx + 3;
+        ta.setSelectionRange(newPos, newPos);
       }
+    });
+
+    // =====================================================================
+    // SPEECH RECOGNITION
+    // =====================================================================
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SR) {
       const rec = new SR();
       rec.lang = 'en-US';
       rec.continuous = true;
       rec.interimResults = false;
-      const startBtn = document.getElementById('micStartBtn');
-      const stopBtn  = document.getElementById('micStopBtn');
-      const route    = document.getElementById('route_covered');
-      startBtn.addEventListener('click', () => { rec.start(); startBtn.disabled = true; stopBtn.disabled = false; });
-      stopBtn.addEventListener('click',  () => { rec.stop();  startBtn.disabled = false; stopBtn.disabled = true; });
-      rec.addEventListener('result', e => {
-        route.value += e.results[e.results.length - 1][0].transcript + ' ';
-      });
-    })();
-  </script>
-
-  <!-- =================================================================== -->
-  <!-- KM + TIME AUTO-CALCULATION -->
-  <!-- =================================================================== -->
-  <script>
-    const startKm = document.getElementById('starting_km');
-    const closeKm = document.getElementById('closing_km');
-    const totalKmEl = document.getElementById('total_km');
-    function updateKM() {
-      const a = parseFloat(startKm.value), b = parseFloat(closeKm.value);
-      if (!isNaN(a) && !isNaN(b)) {
-        const total = b - a;
-        totalKmEl.value = total >= 0 ? total : '';
-      } else {
-        totalKmEl.value = totalKmEl.value || '';
-      }
+      const micStart = document.getElementById('micStart');
+      const micStop  = document.getElementById('micStop');
+      const routeEl  = document.getElementById('route_covered');
+      micStart.addEventListener('click', () => { rec.start(); micStart.disabled = true; micStop.disabled = false; });
+      micStop.addEventListener('click',  () => { rec.stop();  micStart.disabled = false; micStop.disabled = true; });
+      rec.addEventListener('result', e => { routeEl.value += e.results[e.results.length - 1][0].transcript + ' '; });
+    } else {
+      document.getElementById('micStart').style.display = 'none';
+      document.getElementById('micStop').style.display  = 'none';
     }
-    startKm.addEventListener('input', updateKM);
-    closeKm.addEventListener('input', updateKM);
 
-    const startTime = document.getElementById('starting_time');
-    const closeTime = document.getElementById('closing_time');
-    const totalTime = document.getElementById('total_time');
-    function updateTime() {
-      if (!startTime.value || !closeTime.value) { totalTime.value = ''; return; }
-      const a = new Date(`1970-01-01T${startTime.value}:00`);
-      const b = new Date(`1970-01-01T${closeTime.value}:00`);
-      let diff = b - a;
-      if (diff < 0) diff += 24 * 60 * 60 * 1000;
-      const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000);
-      totalTime.value = `${h}h ${m}m`;
-    }
-    startTime.addEventListener('change', updateTime);
-    closeTime.addEventListener('change', updateTime);
-  </script>
-
-  <!-- =================================================================== -->
-  <!-- CUSTOMER AUTOCOMPLETE -->
-  <!-- =================================================================== -->
-  <script>
-    (function () {
-      const input = document.getElementById('customer_name');
-      const box   = document.getElementById('customerSuggestions');
-      let timer;
-      input.addEventListener('input', () => {
-        const q = input.value.trim();
-        clearTimeout(timer);
-        if (!q) { box.style.display = 'none'; return; }
-        timer = setTimeout(() => {
-          fetch('/customer_autocomplete?query=' + encodeURIComponent(q))
-            .then(r => r.json())
-            .then(rows => {
-              if (!rows.length) { box.style.display = 'none'; return; }
-              box.innerHTML = rows.map(n => `<div>${n}</div>`).join('');
-              box.style.display = 'block';
-              const rect = input.getBoundingClientRect();
-              box.style.width = rect.width + 'px';
-            }).catch(() => box.style.display = 'none');
-        }, 200);
-      });
-      box.addEventListener('click', e => {
-        if (e.target.tagName === 'DIV') {
-          input.value = e.target.textContent;
-          box.style.display = 'none';
-        }
-      });
-      document.addEventListener('click', e => {
-        if (e.target !== input && !box.contains(e.target)) box.style.display = 'none';
-      });
-    })();
-  </script>
-
-  <!-- =================================================================== -->
-  <!-- TEMPLATES (load + save) -->
-  <!-- =================================================================== -->
-  <script>
-    function loadTemplate() {
-      const sel = document.getElementById('templateSelect');
-      if (!sel.value) return;
-      window.location.href = '/generator?from_template=' + sel.value;
-    }
-    function saveTemplate() {
-      const name = document.getElementById('newTemplateName').value.trim();
-      if (!name) { alert('Please enter a template name.'); return; }
-      const form = document.getElementById('slipForm');
-      const fd = new FormData(form);
-      fd.append('template_name', name);
-      fetch('/templates/create', { method: 'POST', body: fd, headers: { 'X-CSRFToken': '{{ csrf_token() }}' } })
-        .then(r => r.json())
-        .then(d => {
-          if (d.ok) { alert('Template saved!'); window.location.reload(); }
-          else { alert('Save failed: ' + (d.error || 'unknown error')); }
-        });
-    }
-  </script>
-
-  <!-- =================================================================== -->
-  <!-- MAP BUILDER -->
-  <!-- =================================================================== -->
-  <script>
-    let mapsKey = '';
-    let mapsLoaded = false;
-    let mapInstance = null;
-    let dirService = null;
-    let dirRenderer = null;
+    // =====================================================================
+    // ROUTE MODE TOGGLE
+    // =====================================================================
+    let mapsKey      = '';
+    let mapsLoaded   = false;
+    let mapsScriptInjected = false;
+    let mapInstance  = null;
+    let dirService   = null;
+    let dirRenderer  = null;
     let currentRoute = null;
-    let wpCounter = 0;
+    let wpCounter    = 0;
+    let dragSrcRow   = null;
 
-    // Eager load Maps script when key arrives
+    // Fetch key then immediately inject Maps script — don't wait for user to click Map Builder
     fetch('/config/maps_key')
       .then(r => r.json())
       .then(d => {
         mapsKey = d.key || '';
-        if (!mapsKey) {
+        if (mapsKey && !mapsScriptInjected) {
+          mapsScriptInjected = true;
+          const s = document.createElement('script');
+          s.src = 'https://maps.googleapis.com/maps/api/js?key=' + mapsKey +
+                  '&libraries=places&callback=_onMapsReady';
+          s.async = true;
+          document.head.appendChild(s);
+        } else if (!mapsKey) {
           document.getElementById('noKeyNotice').style.display = '';
-          return;
         }
-        const s = document.createElement('script');
-        s.src = 'https://maps.googleapis.com/maps/api/js?key=' + mapsKey + '&libraries=places&callback=_onMapsReady';
-        s.async = true;
-        document.head.appendChild(s);
-      })
-      .catch(() => { document.getElementById('noKeyNotice').style.display = ''; });
+      });
 
     function setRouteMode(mode) {
       document.getElementById('btnManual').classList.toggle('active', mode === 'manual');
@@ -380,32 +901,46 @@
           document.getElementById('noKeyNotice').style.display = '';
         } else if (!mapsLoaded) {
           document.getElementById('mapsLoading').style.display = '';
-        } else if (mapInstance) {
+        } else {
           setTimeout(() => google.maps.event.trigger(mapInstance, 'resize'), 50);
         }
       }
     }
 
+    // =====================================================================
+    // GOOGLE MAPS CALLBACK
+    // =====================================================================
     window._onMapsReady = function () {
       mapsLoaded = true;
       document.getElementById('mapsLoading').style.display = 'none';
-      document.getElementById('mapBuilder').style.display = '';
+      document.getElementById('mapBuilder').style.display  = '';
 
       mapInstance = new google.maps.Map(document.getElementById('mapPreview'), {
-        center: { lat: 28.4595, lng: 77.0266 }, // Gurgaon default
+        center: { lat: 28.4595, lng: 77.0266 },
         zoom: 11,
         disableDefaultUI: true,
         zoomControl: true,
       });
-      dirService = new google.maps.DirectionsService();
+
+      dirService  = new google.maps.DirectionsService();
       dirRenderer = new google.maps.DirectionsRenderer({ map: mapInstance, suppressMarkers: false });
 
-      // Attach autocomplete to the static origin field
-      attachAutocomplete(document.getElementById('originInput'));
-      document.getElementById('originInput').addEventListener('blur', debouncedCalc);
+      document.getElementById('mapPlaceholder').style.display = 'none';
 
+      // Attach autocomplete to the static origin input
+      const originInput = document.getElementById('originInput');
+      attachAutocomplete(originInput);
+      originInput.addEventListener('blur', debouncedCalc);
+
+      // If map section is already visible (user clicked before script loaded), resize
       if (document.getElementById('mapSection').style.display !== 'none') {
         setTimeout(() => google.maps.event.trigger(mapInstance, 'resize'), 50);
+      }
+
+      // Restore map builder stops from template if present
+      const tplStops = {{ prefill.get('route_stops_json', '') | tojson }};
+      if (tplStops) {
+        try { restoreFromTemplate(JSON.parse(tplStops)); } catch(e) {}
       }
     };
 
@@ -413,28 +948,53 @@
       if (!window.google || !google.maps.places) return;
       const ac = new google.maps.places.Autocomplete(input, {
         componentRestrictions: { country: 'in' },
-        fields: ['name', 'formatted_address'],
+        fields: ['name', 'formatted_address', 'address_components'],
       });
       ac.addListener('place_changed', () => {
         const place = ac.getPlace();
-        if (place && place.formatted_address) input.value = place.formatted_address;
+        if (place && place.name) {
+          let shortName = place.name;
+          if (place.address_components) {
+            const subloc = place.address_components.find(c => c.types.includes('sublocality_level_1'));
+            const loc    = place.address_components.find(c => c.types.includes('locality'));
+            const area   = subloc || loc;
+            if (area && area.short_name !== place.name) {
+              shortName = place.name + ', ' + area.short_name;
+            }
+          }
+          input.dataset.shortName = shortName;
+        }
         debouncedCalc();
       });
+      // Clear cached short name if the user manually edits the field
+      input.addEventListener('input', () => { delete input.dataset.shortName; });
     }
 
-    function addWaypoint(prefillValue) {
+    // =====================================================================
+    // WAYPOINTS
+    // =====================================================================
+    function addWaypoint(prefillValue, prefillShort) {
       wpCounter++;
+      const id = 'wp_' + wpCounter;
       const row = document.createElement('div');
       row.className = 'waypoint-row';
+      row.draggable = true;
+      row.dataset.wpId  = id;
+      row.dataset.type  = 'stop';
       row.innerHTML =
-        '<span class="wp-icon">○</span>' +
+        '<span class="drag-handle" title="Drag to reorder">⠿</span>' +
+        '<span class="wp-icon"><svg width="14" height="14"><use href="#icon-map-pin"/></svg></span>' +
         '<input type="text" class="waypoint-input" placeholder="Stop ' + wpCounter + '…" autocomplete="off">' +
-        '<button type="button" class="btn-remove-wp" onclick="removeWaypoint(this)" title="Remove">×</button>';
+        '<button type="button" class="btn-remove-wp" onclick="removeWaypoint(this)" title="Remove stop"><svg class="icon" width="13" height="13"><use href="#icon-x"/></svg></button>';
+
       document.getElementById('waypointsList').appendChild(row);
       const input = row.querySelector('.waypoint-input');
       if (prefillValue) input.value = prefillValue;
+      if (prefillShort) input.dataset.shortName = prefillShort;
       attachAutocomplete(input);
       input.addEventListener('blur', debouncedCalc);
+      bindDrag(row);
+      return row;
     }
 
     function removeWaypoint(btn) {
@@ -442,65 +1002,283 @@
       debouncedCalc();
     }
 
+    // =====================================================================
+    // MIRROR — duplicate all current stops in same order (pick & drop)
+    // =====================================================================
+    function mirrorStops() {
+      const sourceRows = [...document.querySelectorAll('#waypointsList .waypoint-row[data-type="stop"]')];
+      if (sourceRows.length === 0) {
+        alert('Add at least one stop before mirroring.');
+        return;
+      }
+      const items = sourceRows.map(row => {
+        const i = row.querySelector('.waypoint-input');
+        return { value: i.value.trim(), short: i.dataset.shortName || '' };
+      });
+      for (const it of items) {
+        if (it.value) addWaypoint(it.value, it.short);
+      }
+      debouncedCalc();
+    }
+
+    // =====================================================================
+    // LOOP BLOCK — shuttle between two locations × N trips
+    // =====================================================================
+    function addLoopBlock() {
+      wpCounter++;
+      const id = 'loop_' + wpCounter;
+      const row = document.createElement('div');
+      row.className = 'waypoint-row loop-row';
+      row.draggable = true;
+      row.dataset.wpId = id;
+      row.dataset.type = 'loop';
+      row.innerHTML =
+        '<div class="loop-header">' +
+          '<span class="drag-handle" title="Drag to reorder">⠿</span>' +
+          '<span class="loop-badge"><svg width="11" height="11"><use href="#icon-refresh"/></svg> Loop</span>' +
+          '<button type="button" class="btn-remove-wp" style="margin-left:auto;" onclick="removeWaypoint(this)" title="Remove loop"><svg class="icon" width="13" height="13"><use href="#icon-x"/></svg></button>' +
+        '</div>' +
+        '<div class="loop-inputs">' +
+          '<input type="text" class="waypoint-input loop-from" placeholder="From location…" autocomplete="off">' +
+          '<span class="swap-icon">↔</span>' +
+          '<input type="text" class="waypoint-input loop-to" placeholder="To location…" autocomplete="off">' +
+          '<input type="number" class="loop-count" min="1" max="20" value="2" title="Number of trips between the two points">' +
+          '<span class="loop-times">trips</span>' +
+        '</div>' +
+        '<div class="loop-preview"></div>';
+
+      document.getElementById('waypointsList').appendChild(row);
+      const fromIn = row.querySelector('.loop-from');
+      const toIn   = row.querySelector('.loop-to');
+      const cntIn  = row.querySelector('.loop-count');
+      attachAutocomplete(fromIn);
+      attachAutocomplete(toIn);
+      [fromIn, toIn, cntIn].forEach(el => {
+        el.addEventListener('blur',  () => { updateLoopPreview(row); debouncedCalc(); });
+        el.addEventListener('input', () => updateLoopPreview(row));
+      });
+      bindDrag(row);
+      updateLoopPreview(row);
+      return row;
+    }
+
+    function updateLoopPreview(row) {
+      const from  = row.querySelector('.loop-from').dataset.shortName || row.querySelector('.loop-from').value.trim() || '?';
+      const to    = row.querySelector('.loop-to').dataset.shortName   || row.querySelector('.loop-to').value.trim()   || '?';
+      const count = Math.max(1, parseInt(row.querySelector('.loop-count').value, 10) || 1);
+      // N trips means N point-to-point segments, alternating: from → to → from → to …
+      const seq = [];
+      let cur = from;
+      seq.push(cur);
+      for (let i = 0; i < count; i++) {
+        cur = (cur === from) ? to : from;
+        seq.push(cur);
+      }
+      row.querySelector('.loop-preview').textContent = '↻ ' + seq.join(' → ');
+    }
+
+    // Expand a stops/loops list into a flat sequence of { value, short }
+    function expandStops() {
+      const result = [];
+      const items = [...document.querySelectorAll('#waypointsList > .waypoint-row')];
+      let prev = null;
+      const push = (value, short) => {
+        if (!value) return;
+        // Avoid consecutive duplicates
+        if (prev && prev.value === value) return;
+        const item = { value, short: short || value };
+        result.push(item);
+        prev = item;
+      };
+
+      for (const row of items) {
+        if (row.dataset.type === 'loop') {
+          const fromIn = row.querySelector('.loop-from');
+          const toIn   = row.querySelector('.loop-to');
+          const fromV  = fromIn.value.trim();
+          const toV    = toIn.value.trim();
+          if (!fromV || !toV) continue;
+          const fromS  = fromIn.dataset.shortName || fromV;
+          const toS    = toIn.dataset.shortName   || toV;
+          const count  = Math.max(1, parseInt(row.querySelector('.loop-count').value, 10) || 1);
+          let curV = fromV, curS = fromS;
+          push(curV, curS);
+          for (let i = 0; i < count; i++) {
+            const nextV = (curV === fromV) ? toV : fromV;
+            const nextS = (curV === fromV) ? toS : fromS;
+            push(nextV, nextS);
+            curV = nextV; curS = nextS;
+          }
+        } else {
+          const i = row.querySelector('.waypoint-input');
+          push(i.value.trim(), i.dataset.shortName || '');
+        }
+      }
+      return result;
+    }
+
+    // =====================================================================
+    // DRAG-TO-REORDER
+    // =====================================================================
+    function bindDrag(row) {
+      row.addEventListener('dragstart', e => {
+        dragSrcRow = row;
+        row.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      row.addEventListener('dragend', () => {
+        row.classList.remove('dragging');
+        document.querySelectorAll('.waypoint-row').forEach(r => r.classList.remove('drag-over'));
+      });
+      row.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        document.querySelectorAll('#waypointsList .waypoint-row').forEach(r => r.classList.remove('drag-over'));
+        if (row !== dragSrcRow) row.classList.add('drag-over');
+      });
+      row.addEventListener('drop', e => {
+        e.preventDefault();
+        if (dragSrcRow && dragSrcRow !== row) {
+          const list = document.getElementById('waypointsList');
+          const rows = [...list.querySelectorAll(':scope > .waypoint-row')];
+          const si = rows.indexOf(dragSrcRow), ti = rows.indexOf(row);
+          if (si > ti) row.before(dragSrcRow); else row.after(dragSrcRow);
+          debouncedCalc();
+        }
+        row.classList.remove('drag-over');
+      });
+    }
+
+    // =====================================================================
+    // ROUTE CALCULATION
+    // =====================================================================
     let calcTimer = null;
-    function debouncedCalc() { clearTimeout(calcTimer); calcTimer = setTimeout(calculateRoute, 500); }
+    function debouncedCalc() { clearTimeout(calcTimer); calcTimer = setTimeout(calculateRoute, 700); }
 
     function calculateRoute() {
       if (!dirService) return;
       const originEl = document.getElementById('originInput');
-      const origin = (originEl.value || '').trim();
-      const distEl = document.getElementById('distanceDisplay');
-      const applyEl = document.getElementById('btnApply');
-
+      if (!originEl) return;
+      const origin = originEl.value.trim();
       if (!origin) {
-        distEl.textContent = 'Add a starting point';
-        applyEl.disabled = true;
+        document.getElementById('distanceDisplay').textContent = 'Fill in the starting point first';
         return;
       }
 
-      const stops = [...document.querySelectorAll('#waypointsList .waypoint-input')]
-        .map(el => el.value.trim()).filter(v => v);
+      const expanded = expandStops();   // [{value, short}, ...]
+      const stopValues = expanded.map(s => s.value);
 
       const returnChecked = document.getElementById('returnToOrigin').checked;
-      if (!stops.length && !returnChecked) {
-        distEl.textContent = 'Add at least one stop';
-        applyEl.disabled = true;
+      const destination   = returnChecked ? origin : (stopValues[stopValues.length - 1] || origin);
+
+      // For Directions API: middle stops are waypoints, last stop is destination (unless returning)
+      const waypointsForAPI = returnChecked
+        ? stopValues.map(loc => ({ location: loc, stopover: true }))
+        : stopValues.slice(0, -1).map(loc => ({ location: loc, stopover: true }));
+
+      // If only origin and no stops → don't call Directions
+      if (!stopValues.length && !returnChecked) {
+        // Just origin — clear route
+        if (dirRenderer) dirRenderer.set('directions', null);
+        document.getElementById('distanceDisplay').textContent = 'Add stops to calculate distance';
+        document.getElementById('distanceDisplay').className   = 'distance-display';
+        document.getElementById('btnApply').disabled = true;
+        currentRoute = null;
         return;
       }
 
-      const destination = returnChecked ? origin : (stops[stops.length - 1] || origin);
-      const waypointsForAPI = returnChecked
-        ? stops.map(s => ({ location: s, stopover: true }))
-        : stops.slice(0, -1).map(s => ({ location: s, stopover: true }));
-
       dirService.route({
-        origin, destination, waypoints: waypointsForAPI,
-        travelMode: google.maps.TravelMode.DRIVING, optimizeWaypoints: false,
+        origin,
+        destination,
+        waypoints: waypointsForAPI,
+        travelMode: google.maps.TravelMode.DRIVING,
+        optimizeWaypoints: false,
       }, (result, status) => {
+        const distEl  = document.getElementById('distanceDisplay');
+        const applyEl = document.getElementById('btnApply');
+
         if (status === 'OK') {
           dirRenderer.setDirections(result);
-          const meters = result.routes[0].legs.reduce((sum, leg) => sum + leg.distance.value, 0);
-          const km = (meters / 1000).toFixed(1);
-          const stopList = [origin, ...stops];
-          if (returnChecked) stopList.push(origin);
-          currentRoute = { km, stops: stopList };
-          distEl.textContent = 'Total distance: ' + km + ' km';
-          distEl.className = 'distance-display ready';
-          applyEl.disabled = false;
+
+          const totalMeters = result.routes[0].legs
+            .reduce((sum, leg) => sum + leg.distance.value, 0);
+          const totalKm = (totalMeters / 1000).toFixed(1);
+
+          // Build readable stop list using short names where available
+          const originShort = originEl.dataset.shortName || originEl.value.trim();
+          const stopShorts  = expanded.map(s => s.short || s.value);
+          const stops = [originShort, ...stopShorts];
+          if (returnChecked) stops.push(originShort);
+          currentRoute = { distance_km: totalKm, stops };
+
+          distEl.textContent  = 'Total distance: ' + totalKm + ' km';
+          distEl.className    = 'distance-display ready';
+          applyEl.disabled    = false;
         } else {
-          distEl.textContent = 'Could not calculate (' + status + ')';
-          distEl.className = 'distance-display';
-          applyEl.disabled = true;
-          currentRoute = null;
+          console.error('Directions API error:', status);
+          distEl.textContent  = 'Could not calculate (' + status + ')';
+          distEl.className    = 'distance-display';
+          applyEl.disabled    = true;
+          currentRoute        = null;
         }
       });
     }
 
+    // =====================================================================
+    // RESTORE MAP BUILDER FROM TEMPLATE
+    // =====================================================================
+    function restoreFromTemplate(data) {
+      if (!data || !data.origin) return;
+
+      // Set origin
+      const originEl = document.getElementById('originInput');
+      originEl.value = data.origin.value || '';
+      if (data.origin.short) originEl.dataset.shortName = data.origin.short;
+
+      // Clear existing waypoints
+      document.getElementById('waypointsList').innerHTML = '';
+
+      // Rebuild each stop/loop
+      (data.stops || []).forEach(s => {
+        if (s.type === 'loop') {
+          const row = addLoopBlock();
+          if (row) {
+            const fromIn = row.querySelector('.loop-from');
+            const toIn   = row.querySelector('.loop-to');
+            const cntIn  = row.querySelector('.loop-count');
+            if (fromIn) { fromIn.value = s.from_value || ''; if (s.from_short) fromIn.dataset.shortName = s.from_short; attachAutocomplete(fromIn); }
+            if (toIn)   { toIn.value   = s.to_value   || ''; if (s.to_short)   toIn.dataset.shortName   = s.to_short;   attachAutocomplete(toIn); }
+            if (cntIn)  { cntIn.value  = s.count || 2; }
+            updateLoopPreview(row);
+          }
+        } else {
+          addWaypoint(s.value || '', s.short || '');
+        }
+      });
+
+      // Return to origin checkbox
+      const retEl = document.getElementById('returnToOrigin');
+      if (retEl) retEl.checked = !!data.return_to_origin;
+
+      // Switch to map mode and calculate
+      setRouteMode('map');
+      setTimeout(debouncedCalc, 300);
+    }
+
+    // =====================================================================
+    // APPLY ROUTE TO SLIP
+    // =====================================================================
     function applyRoute() {
       if (!currentRoute) return;
-      document.getElementById('route_covered').value = currentRoute.stops.join(' → ');
-      totalKmEl.value = currentRoute.km;
-      setRouteMode('manual');
+
+      const { distance_km, stops } = currentRoute;
+      document.getElementById('route_covered').value = stops.join(' → ');
+      kmSyncLock = true;
+      totalKmEl.value = distance_km;
+      recalcCloseFromStartAndTotal();
+      kmSyncLock = false;
+
+      setRouteMode('manual');   // switch back so user can see the filled textarea
     }
   </script>
 </body>
