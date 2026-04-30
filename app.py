@@ -10,11 +10,11 @@ from datetime import datetime, date, timedelta
 from flask import Flask, render_template, request, send_file, redirect, url_for, session, jsonify
 from functools import lru_cache
 
+import urllib.request
+import urllib.error
+import json as _json
+
 stringWidth = None
-try:
-    import libsql_experimental as libsql
-except Exception:
-    libsql = None
 
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
 
@@ -272,44 +272,114 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SOURCE_DATABASE = os.path.join(BASE_DIR, 'invoices.db')
 TURSO_DATABASE_URL = os.getenv('TURSO_DATABASE_URL') or os.getenv('STORAGE_URL')
 TURSO_AUTH_TOKEN = os.getenv('TURSO_AUTH_TOKEN') or os.getenv('STORAGE_AUTH_TOKEN')
-USE_TURSO = bool(TURSO_DATABASE_URL and TURSO_AUTH_TOKEN and libsql)
-
-_sqlite_connect = sqlite3.connect
-_turso_shared_conn = None
+USE_TURSO = bool(TURSO_DATABASE_URL and TURSO_AUTH_TOKEN)
 
 
-class _ConnectionProxy:
-    def __init__(self, conn):
-        self._conn = conn
+def _turso_http_url():
+    url = TURSO_DATABASE_URL
+    if url.startswith('libsql://'):
+        url = 'https://' + url[len('libsql://'):]
+    return url.rstrip('/') + '/v2/pipeline'
+
+
+def _encode_arg(val):
+    if val is None:
+        return {"type": "null", "value": None}
+    if isinstance(val, bool):
+        return {"type": "integer", "value": str(int(val))}
+    if isinstance(val, int):
+        return {"type": "integer", "value": str(val)}
+    if isinstance(val, float):
+        return {"type": "float", "value": str(val)}
+    return {"type": "text", "value": str(val)}
+
+
+def _turso_pipeline(stmts):
+    """Execute a list of (sql, args) tuples against Turso HTTP API."""
+    requests_body = [
+        {"type": "execute", "stmt": {"sql": sql, "args": [_encode_arg(a) for a in (args or [])]}}
+        for sql, args in stmts
+    ] + [{"type": "close"}]
+    payload = _json.dumps({"requests": requests_body}).encode()
+    req = urllib.request.Request(
+        _turso_http_url(),
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {TURSO_AUTH_TOKEN}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return _json.loads(resp.read())["results"]
+
+
+class _TursoCursor:
+    def __init__(self, result):
+        r = result.get("response", {}).get("result", {})
+        cols = [c["name"] for c in r.get("cols", [])]
+        self.lastrowid = r.get("last_insert_rowid")
+        if self.lastrowid is not None:
+            try:
+                self.lastrowid = int(self.lastrowid)
+            except (ValueError, TypeError):
+                pass
+        raw = r.get("rows", [])
+        self._rows = []
+        for raw_row in raw:
+            self._rows.append(tuple(
+                None if cell["type"] == "null" else cell["value"]
+                for cell in raw_row
+            ))
+        self._idx = 0
+
+    def fetchone(self):
+        if self._idx < len(self._rows):
+            row = self._rows[self._idx]
+            self._idx += 1
+            return row
+        return None
+
+    def fetchall(self):
+        return self._rows[self._idx:]
+
+    def __iter__(self):
+        return iter(self._rows)
+
+
+class _TursoConnection:
+    def __init__(self):
+        self._stmts = []
+
+    def execute(self, sql, parameters=()):
+        results = _turso_pipeline([(sql, list(parameters))])
+        if results[0].get("type") == "error":
+            raise sqlite3.OperationalError(results[0]["error"]["message"])
+        return _TursoCursor(results[0])
+
+    def executemany(self, sql, seq_of_params):
+        stmts = [(sql, list(p)) for p in seq_of_params]
+        _turso_pipeline(stmts)
+
+    def commit(self):
+        pass
+
+    def close(self):
+        pass
 
     def __enter__(self):
-        return self._conn
+        return self
 
-    def __exit__(self, exc_type, exc, tb):
-        if exc_type is None:
-            try:
-                self._conn.commit()
-            except Exception:
-                pass
-        if not USE_TURSO:
-            self._conn.close()
-        return False
+    def __exit__(self, *_):
+        pass
 
-    def __getattr__(self, name):
-        return getattr(self._conn, name)
+
+_sqlite_connect = sqlite3.connect
 
 
 def _db_connect(database, *args, **kwargs):
     if USE_TURSO:
-        global _turso_shared_conn
-        if _turso_shared_conn is None:
-            # libsql-experimental requires https:// not libsql:// for remote connections
-            turso_url = TURSO_DATABASE_URL
-            if turso_url.startswith('libsql://'):
-                turso_url = 'https://' + turso_url[len('libsql://'):]
-            _turso_shared_conn = libsql.connect(turso_url, auth_token=TURSO_AUTH_TOKEN)
-        # Do not close shared connection on exit; just commit when needed.
-        return _ConnectionProxy(_turso_shared_conn)
+        return _TursoConnection()
     return _sqlite_connect(database, *args, **kwargs)
 
 
@@ -317,7 +387,7 @@ def _db_connect(database, *args, **kwargs):
 sqlite3.connect = _db_connect
 
 if USE_TURSO:
-    DATABASE = TURSO_DATABASE_URL
+    DATABASE = TURSO_DATABASE_URL  # value unused for Turso path but kept for consistency
 elif os.getenv('VERCEL'):
     DATABASE = '/tmp/invoices.db'
 else:
