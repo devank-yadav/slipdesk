@@ -32,12 +32,14 @@ def _pdf_libs():
     from reportlab.pdfgen import canvas as _canvas
     from reportlab.lib.pagesizes import A4 as _A4, landscape as _landscape
     from reportlab.pdfbase.pdfmetrics import stringWidth as _stringWidth
+    from reportlab.lib.utils import ImageReader as _ImageReader
     from pypdf import PdfWriter as _PdfWriter, PdfReader as _PdfReader
     return {
         'canvas': _canvas,
         'A4': _A4,
         'landscape': _landscape,
         'stringWidth': _stringWidth,
+        'ImageReader': _ImageReader,
         'PdfWriter': _PdfWriter,
         'PdfReader': _PdfReader,
     }
@@ -246,7 +248,8 @@ def fill_slip_data(c, data):
     c.drawString(140, pos['driver_y'], data.get('driver_name', '') or '')
 
 
-def _build_pdf(data: dict) -> io.BytesIO:
+def _build_pdf(data: dict, signature_data: str = None) -> io.BytesIO:
+    import base64 as _b64
     route_lines = _wrap_text(data.get('route_covered', '') or '', 'Helvetica', 11, 632)
     n = max(len(route_lines), 1)
     pdf = _pdf_libs()
@@ -255,9 +258,51 @@ def _build_pdf(data: dict) -> io.BytesIO:
     w, h = pdf['landscape'](pdf['A4'])
     draw_slip_template(c, w, h, n_route_lines=n)
     fill_slip_data(c, data)
+    # Embed digital signature above the USER SIGNATURE line (line is at y=78, label at y=62)
+    if signature_data:
+        try:
+            raw = signature_data.split(',', 1)[1] if ',' in signature_data else signature_data
+            sig_bytes = _b64.b64decode(raw)
+            sig_img = pdf['ImageReader'](io.BytesIO(sig_bytes))
+            # Place signature: x=576..800, bottom at y=84 (6pt above line), height=52pt
+            c.drawImage(sig_img, 576, 84, width=224, height=52,
+                        mask='auto', preserveAspectRatio=True, anchor='c')
+        except Exception:
+            pass  # Never break PDF generation over a bad signature image
     c.save()
     buf.seek(0)
     return buf
+
+
+def _get_sig_for_invoice(conn, invoice_id: int):
+    """Return signature_data (base64 PNG) for a signed invoice, or None."""
+    rows = conn.execute(
+        "SELECT invoice_ids, signature_data FROM signature_requests WHERE signed_at IS NOT NULL"
+    ).fetchall()
+    for (ids_json, sig_data) in rows:
+        try:
+            if invoice_id in _json.loads(ids_json or '[]'):
+                return sig_data
+        except Exception:
+            pass
+    return None
+
+
+def _build_sig_map(conn, invoice_ids: list) -> dict:
+    """Return {invoice_id: signature_data} for all signed invoices in the list."""
+    id_set = {int(i) for i in invoice_ids}
+    rows = conn.execute(
+        "SELECT invoice_ids, signature_data FROM signature_requests WHERE signed_at IS NOT NULL"
+    ).fetchall()
+    result = {}
+    for (ids_json, sig_data) in rows:
+        try:
+            for inv_id in _json.loads(ids_json or '[]'):
+                if inv_id in id_set and inv_id not in result:
+                    result[inv_id] = sig_data
+        except Exception:
+            pass
+    return result
 
 
 app = Flask(__name__)
@@ -846,6 +891,7 @@ def bulk_action():
                     FROM invoices WHERE id IN ({placeholders})""",
                 selected_ids
             ).fetchall()
+            sig_map = _build_sig_map(conn, [int(i) for i in selected_ids])
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, 'w') as zipf:
                 for r in rows:
@@ -857,7 +903,7 @@ def bulk_action():
                         'project_code': r[13], 'mail_approval_date': r[14],
                         'route_covered': r[15], 'driver_name': r[16],
                     }
-                    pdf_buf = _build_pdf(data)
+                    pdf_buf = _build_pdf(data, signature_data=sig_map.get(r[0]))
                     fname = f"slip_{r[1] or r[2].replace(' ', '_')}.pdf"
                     zipf.writestr(fname, pdf_buf.read())
             zip_buffer.seek(0)
@@ -916,6 +962,7 @@ def bulk_action():
                     FROM invoices WHERE id IN ({placeholders})""",
                 selected_ids
             ).fetchall()
+            sig_map = _build_sig_map(conn, [int(i) for i in selected_ids])
             pdf = _pdf_libs()
             writer = pdf['PdfWriter']()
             for r in rows:
@@ -927,7 +974,7 @@ def bulk_action():
                     'project_code': r[13], 'mail_approval_date': r[14],
                     'route_covered': r[15], 'driver_name': r[16],
                 }
-                reader = pdf['PdfReader'](io.BytesIO(_build_pdf(data).read()))
+                reader = pdf['PdfReader'](io.BytesIO(_build_pdf(data, signature_data=sig_map.get(r[0])).read()))
                 for page in reader.pages:
                     writer.add_page(page)
             merged_buffer = io.BytesIO()
@@ -1153,8 +1200,9 @@ def download_invoice(invoice_id):
                FROM invoices WHERE id = ? AND admin_username = ?""",
             (invoice_id, session['admin'])
         ).fetchone()
-    if not row:
-        return "Invoice not found", 404
+        if not row:
+            return "Invoice not found", 404
+        sig_data = _get_sig_for_invoice(conn, invoice_id)
     data = {
         'customer_name': row[0], 'company_name': row[1], 'date': row[2],
         'duty_slip_no': row[3], 'vehicle_type': row[4], 'vehicle_no': row[5],
@@ -1163,7 +1211,7 @@ def download_invoice(invoice_id):
         'project_code': row[12], 'mail_approval_date': row[13],
         'route_covered': row[14], 'driver_name': row[15],
     }
-    buf = _build_pdf(data)
+    buf = _build_pdf(data, signature_data=sig_data)
     filename = f"slip_{row[3] or row[0].replace(' ', '_')}.pdf"
     return send_file(buf, as_attachment=True, download_name=filename, mimetype='application/pdf')
 
@@ -1636,6 +1684,39 @@ def revoke_signature(req_id):
                             (inv_id,)
                         )
     return redirect(url_for('signatures_page'))
+
+
+@app.route('/admin/signatures/reissue/<int:req_id>', methods=['POST'])
+def reissue_signature(req_id):
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    with sqlite3.connect(DATABASE) as conn:
+        row = conn.execute(
+            "SELECT invoice_ids, customer_name FROM signature_requests WHERE id = ?", (req_id,)
+        ).fetchone()
+        if not row:
+            return redirect(url_for('signatures_page'))
+        ids = _json.loads(row[0]) if row[0] else []
+        customer_name = row[1]
+        conn.execute("DELETE FROM signature_requests WHERE id = ?", (req_id,))
+        # New token + 7-day window
+        token = secrets.token_urlsafe(16)
+        now = datetime.now()
+        created_at = now.strftime('%Y-%m-%d %H:%M:%S')
+        expires_at = (now + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+        conn.execute(
+            """INSERT INTO signature_requests (token, invoice_ids, customer_name, created_at, expires_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (token, _json.dumps(ids), customer_name, created_at, expires_at)
+        )
+        # Reset invoice status so the new request is active
+        if ids:
+            placeholders = ','.join('?' * len(ids))
+            conn.execute(
+                f"UPDATE invoices SET signature_status = 'pending', signed_at = NULL WHERE id IN ({placeholders})",
+                ids
+            )
+    return redirect(url_for('signatures_page', new_token=token))
 
 
 @app.route('/sign/<token>', methods=['GET'])
