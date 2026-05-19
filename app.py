@@ -626,6 +626,7 @@ def admin_portal():
     status_filter  = request.args.get('status', '')
     date_quick     = request.args.get('date_quick', '')    # today | week | month | last_month | last7
     status_quick   = request.args.get('status_quick', '')  # pending_bill | pending_pay | paid
+    sig_filter     = request.args.get('sig_filter', '')    # none | pending | signed
 
     page = max(int(request.args.get('page', 1) or 1), 1)
     page_size = int(request.args.get('page_size', 50) or 50)
@@ -668,6 +669,14 @@ def admin_portal():
         where_clause += " AND bill_status = 'Bill Submitted'"
     elif status_quick == 'paid':
         where_clause += " AND bill_status = 'Payment Received'"
+
+    # Signature filter
+    if sig_filter == 'none':
+        where_clause += " AND COALESCE(signature_status, '') = ''"
+    elif sig_filter == 'pending':
+        where_clause += " AND signature_status = 'pending'"
+    elif sig_filter == 'signed':
+        where_clause += " AND signature_status = 'signed'"
 
     if search_q:
         where_clause += " AND (customer_name LIKE ? OR company_name LIKE ? OR vehicle_no LIKE ? OR vehicle_type LIKE ? OR driver_name LIKE ? OR duty_slip_no LIKE ?)"
@@ -754,6 +763,7 @@ def admin_portal():
                            status_filter=status_filter,
                            date_quick=date_quick,
                            status_quick=status_quick,
+                           sig_filter=sig_filter,
                            stats_total=stats_total,
                            stats_this_month=stats_this_month,
                            stats_pending_bill=stats_pending_bill,
@@ -1608,16 +1618,23 @@ def revoke_signature(req_id):
         if row:
             ids = _json.loads(row[0]) if row[0] else []
             conn.execute("DELETE FROM signature_requests WHERE id = ?", (req_id,))
-            for inv_id in ids:
-                still_pending = conn.execute(
-                    "SELECT 1 FROM signature_requests WHERE json_each.value = ? AND signed_at IS NULL",
-                    (inv_id,)
-                ).fetchone()
-                if not still_pending:
-                    conn.execute(
-                        "UPDATE invoices SET signature_status = NULL WHERE id = ? AND signature_status = 'pending'",
-                        (inv_id,)
-                    )
+            if ids:
+                # Find invoice IDs still covered by another active (unsigned) request
+                remaining = conn.execute(
+                    "SELECT invoice_ids FROM signature_requests WHERE signed_at IS NULL"
+                ).fetchall()
+                still_covered = set()
+                for (r_ids,) in remaining:
+                    try:
+                        still_covered.update(_json.loads(r_ids))
+                    except Exception:
+                        pass
+                for inv_id in ids:
+                    if inv_id not in still_covered:
+                        conn.execute(
+                            "UPDATE invoices SET signature_status = NULL WHERE id = ? AND signature_status = 'pending'",
+                            (inv_id,)
+                        )
     return redirect(url_for('signatures_page'))
 
 
