@@ -1446,8 +1446,93 @@ def generate_invoice():
                 )
 
     _cache_bust()
+    with sqlite3.connect(DATABASE) as _id_conn:
+        new_id = _id_conn.execute(
+            "SELECT id FROM invoices WHERE admin_username = ? AND created_at = ? ORDER BY id DESC LIMIT 1",
+            (admin_username, created_at)
+        ).fetchone()
+    new_invoice_id = new_id[0] if new_id else None
+
+    if new_invoice_id:
+        return redirect(url_for('generator_success', invoice_id=new_invoice_id))
+    # fallback: direct PDF download if ID lookup fails
     filename = f"slip_{duty_slip_no or customer_name.replace(' ', '_')}.pdf"
     return send_file(buf, as_attachment=True, download_name=filename, mimetype='application/pdf')
+
+
+@app.route('/generator/success/<int:invoice_id>')
+def generator_success(invoice_id):
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    with sqlite3.connect(DATABASE) as conn:
+        row = conn.execute(
+            "SELECT id, customer_name, duty_slip_no, date, vehicle_type, driver_name, signature_status "
+            "FROM invoices WHERE id = ? AND admin_username = ?",
+            (invoice_id, session['admin'])
+        ).fetchone()
+    if not row:
+        return redirect(url_for('admin_portal'))
+    return render_template('generator_success.html',
+                           invoice_id=row[0], customer_name=row[1],
+                           duty_slip_no=row[2], slip_date=row[3],
+                           vehicle_type=row[4], driver_name=row[5],
+                           signature_status=row[6] or '')
+
+
+@app.route('/invoice/<int:invoice_id>/create_sign_link', methods=['POST'])
+def create_sign_link(invoice_id):
+    if 'admin' not in session:
+        return jsonify({'ok': False}), 401
+    with sqlite3.connect(DATABASE) as conn:
+        row = conn.execute(
+            "SELECT customer_name, COALESCE(signature_status,'') FROM invoices WHERE id = ? AND admin_username = ?",
+            (invoice_id, session['admin'])
+        ).fetchone()
+        if not row:
+            return jsonify({'ok': False, 'error': 'Not found'}), 404
+        customer_name, sig_status = row
+        if sig_status == 'signed':
+            return jsonify({'ok': False, 'error': 'Already signed'}), 400
+        token = secrets.token_urlsafe(16)
+        now = datetime.now()
+        created_at_sig = now.strftime('%Y-%m-%d %H:%M:%S')
+        expires_at_sig = (now + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+        ids_json = _json.dumps([invoice_id])
+        conn.execute(
+            """INSERT INTO signature_requests (token, invoice_ids, customer_name, created_at, expires_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (token, ids_json, customer_name, created_at_sig, expires_at_sig)
+        )
+        conn.execute(
+            "UPDATE invoices SET signature_status = 'pending' WHERE id = ? AND COALESCE(signature_status,'') != 'signed'",
+            (invoice_id,)
+        )
+    return jsonify({'ok': True, 'token': token, 'customer_name': customer_name})
+
+
+@app.route('/last_slip/json')
+def last_slip_json():
+    if 'admin' not in session:
+        return jsonify({}), 401
+    with sqlite3.connect(DATABASE) as conn:
+        row = conn.execute(
+            """SELECT customer_name, company_name, vehicle_type, vehicle_no,
+                      driver_name, starting_km, total_km, project_code,
+                      mail_approval_date, starting_time, closing_time, route_covered
+               FROM invoices WHERE admin_username = ?
+               ORDER BY id DESC LIMIT 1""",
+            (session['admin'],)
+        ).fetchone()
+    if not row:
+        return jsonify({}), 404
+    return jsonify({
+        'customer_name': row[0] or '', 'company_name': row[1] or '',
+        'vehicle_type': row[2] or '', 'vehicle_no': row[3] or '',
+        'driver_name': row[4] or '', 'starting_km': row[5] or '',
+        'total_km': row[6] or '', 'project_code': row[7] or '',
+        'mail_approval_date': row[8] or '', 'starting_time': row[9] or '',
+        'closing_time': row[10] or '', 'route_covered': row[11] or '',
+    })
 
 
 @app.route('/templates/<int:template_id>/json', methods=['GET'])

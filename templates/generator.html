@@ -520,14 +520,15 @@
     {% if prefill %}<span class="clone-badge"><svg class="icon" width="14" height="14"><use href="#icon-copy"/></svg> Pre-filled from existing slip</span>{% endif %}
   </div>
 
-  {% if quick_templates %}
   <div class="quick-tpl-bar">
     <span class="quick-tpl-label">Quick fill:</span>
+    <button type="button" class="quick-tpl-btn" id="lastSlipBtn"
+            style="background:#f0fdf4;border-color:#86efac;color:#166534;"
+            onclick="applyLastSlip(this)">↩ Last Slip</button>
     {% for tpl in quick_templates %}
     <button type="button" class="quick-tpl-btn" onclick="applyQuickTemplate({{ tpl[0] }}, this)">{{ tpl[1] }}</button>
     {% endfor %}
   </div>
-  {% endif %}
 
   <div class="form-card">
     <form action="/generate" method="post">
@@ -1016,6 +1017,33 @@
     // =====================================================================
     // QUICK TEMPLATE APPLY
     // =====================================================================
+    function applyLastSlip(btn) {
+      btn.classList.add('loading');
+      fetch('/last_slip/json')
+        .then(r => { if (!r.ok) throw new Error('no slip'); return r.json(); })
+        .then(d => {
+          const set = (sel, val) => { const el = document.querySelector(sel); if (el && val !== undefined) el.value = val; };
+          set('#customer_name', d.customer_name);
+          set('#company_name',  d.company_name);
+          set('#vehicle_type',  d.vehicle_type);
+          set('#vehicle_no',    d.vehicle_no);
+          set('#driver_name',   d.driver_name);
+          set('#starting_km',   d.starting_km);
+          set('#project_code',  d.project_code);
+          set('#starting_time', d.starting_time);
+          set('#closing_time',  d.closing_time);
+          if (d.total_km) { totalKmEl.value = d.total_km; recalcCloseFromStartAndTotal(); }
+          if (d.route_covered) document.getElementById('route_covered').value = d.route_covered;
+          // trigger autocomplete fills
+          const custEl = document.getElementById('customer_name');
+          if (custEl) custEl.dispatchEvent(new Event('input'));
+          const vtEl = document.getElementById('vehicle_type');
+          if (vtEl) vtEl.dispatchEvent(new Event('input'));
+        })
+        .catch(() => { if (window._showToast) window._showToast('No previous slip found', true); })
+        .finally(() => btn.classList.remove('loading'));
+    }
+
     function applyQuickTemplate(id, btn) {
       btn.classList.add('loading');
       fetch('/templates/' + id + '/json')
