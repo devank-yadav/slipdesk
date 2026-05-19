@@ -165,6 +165,7 @@
     align-items: center;
     gap: 2px;
     flex: 1;
+    min-width: 0;
   }
 
   .nav-link {
@@ -179,6 +180,7 @@
     transition: background 0.12s, color 0.12s;
     font-size: 14px;
     white-space: nowrap;
+    flex-shrink: 0;
   }
   .nav-link svg { flex-shrink: 0; opacity: 0.7; transition: opacity 0.12s; }
   .nav-link:hover { background: #f2f2f7; color: #007aff; }
@@ -189,6 +191,44 @@
     font-weight: 600;
   }
   .nav-link.active svg { opacity: 1; }
+
+  /* ---- Responsive: icon-only at medium widths ---- */
+  @media (max-width: 1100px) {
+    .nav-label { display: none; }
+    .nav-link { padding: 7px 9px; gap: 0; }
+  }
+
+  /* ---- Responsive: hamburger at mobile ---- */
+  .ham-btn {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 36px; height: 36px;
+    border: none; background: none; cursor: pointer;
+    border-radius: 8px; padding: 0; flex-shrink: 0;
+    color: #3c3c43;
+  }
+  .ham-btn:hover { background: #f2f2f7; }
+
+  @media (max-width: 768px) {
+    .ham-btn { display: flex; }
+    .navbar-links {
+      display: none;
+      position: absolute;
+      top: 56px; left: 0; right: 0;
+      background: #fff;
+      border-bottom: 1px solid #e5e5ea;
+      flex-direction: column;
+      align-items: stretch;
+      padding: 8px 12px;
+      z-index: 200;
+      box-shadow: 0 4px 16px rgba(0,0,0,.08);
+    }
+    .navbar-links.open { display: flex; }
+    .nav-label { display: inline !important; }
+    .nav-link { padding: 10px 12px; gap: 10px; font-size: 15px; }
+    .navbar { position: relative; }
+  }
 
   .navbar-right {
     display: flex;
@@ -250,42 +290,46 @@
 
   <div class="navbar-sep"></div>
 
-  <div class="navbar-links">
+  <button class="ham-btn" id="hamBtn" aria-label="Menu">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+
+  <div class="navbar-links" id="navLinks">
     <a href="/admin_portal" class="nav-link {% if request.path == '/admin_portal' %}active{% endif %}">
       <svg class="icon" width="16" height="16"><use href="#icon-grid"/></svg>
-      Dashboard
+      <span class="nav-label">Dashboard</span>
     </a>
     <a href="/generator" class="nav-link {% if '/generator' in request.path or '/clone/' in request.path %}active{% endif %}">
       <svg class="icon" width="16" height="16"><use href="#icon-doc-plus"/></svg>
-      New Slip
-    </a>
-    <a href="/templates" class="nav-link {% if '/templates' in request.path %}active{% endif %}">
-      <svg class="icon" width="16" height="16"><use href="#icon-doc-plus"/></svg>
-      Templates
-    </a>
-    <a href="/admin/signatures" class="nav-link {% if request.path == '/admin/signatures' %}active{% endif %}">
-      <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-      Signatures
-    </a>
-    <a href="/admin/customers" class="nav-link {% if '/admin/customers' in request.path %}active{% endif %}">
-      <svg class="icon" width="16" height="16"><use href="#icon-user"/></svg>
-      Customers
-    </a>
-    <a href="/admin/drivers" class="nav-link {% if '/admin/drivers' in request.path %}active{% endif %}">
-      <svg class="icon" width="16" height="16"><use href="#icon-truck"/></svg>
-      Drivers
+      <span class="nav-label">New Slip</span>
     </a>
     <a href="/admin/slips" class="nav-link {% if '/admin/slips' in request.path %}active{% endif %}">
       <svg class="icon" width="16" height="16"><use href="#icon-document"/></svg>
-      Slip Management
+      <span class="nav-label">All Files</span>
+    </a>
+    <a href="/templates" class="nav-link {% if '/templates' in request.path %}active{% endif %}">
+      <svg class="icon" width="16" height="16"><use href="#icon-copy"/></svg>
+      <span class="nav-label">Templates</span>
+    </a>
+    <a href="/admin/signatures" class="nav-link {% if request.path == '/admin/signatures' %}active{% endif %}">
+      <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+      <span class="nav-label">Signatures</span>
+    </a>
+    <a href="/admin/customers" class="nav-link {% if '/admin/customers' in request.path %}active{% endif %}">
+      <svg class="icon" width="16" height="16"><use href="#icon-user"/></svg>
+      <span class="nav-label">Customers</span>
+    </a>
+    <a href="/admin/drivers" class="nav-link {% if '/admin/drivers' in request.path %}active{% endif %}">
+      <svg class="icon" width="16" height="16"><use href="#icon-truck"/></svg>
+      <span class="nav-label">Drivers</span>
     </a>
     <a href="/admin/bulk_import" class="nav-link {% if '/admin/bulk_import' in request.path %}active{% endif %}">
       <svg class="icon" width="16" height="16"><use href="#icon-download"/></svg>
-      Bulk Import
+      <span class="nav-label">Bulk Import</span>
     </a>
     <a href="/settings" class="nav-link {% if '/settings' in request.path %}active{% endif %}">
       <svg class="icon" width="16" height="16"><use href="#icon-cog"/></svg>
-      Settings
+      <span class="nav-label">Settings</span>
     </a>
   </div>
 
@@ -305,3 +349,8 @@
 
 <!-- Vercel Speed Insights (non-Next.js apps) -->
 <script defer src="/_vercel/speed-insights/script.js"></script>
+<script>
+  document.getElementById('hamBtn').onclick = function() {
+    document.getElementById('navLinks').classList.toggle('open');
+  };
+</script>

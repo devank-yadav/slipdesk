@@ -9,7 +9,7 @@ import hashlib
 from urllib.parse import urlencode
 from datetime import datetime, date, timedelta
 
-from flask import Flask, render_template, request, send_file, redirect, url_for, session, jsonify
+from flask import Flask, render_template, request, send_file, redirect, url_for, session, jsonify, Response
 from functools import lru_cache
 
 import urllib.request
@@ -438,7 +438,7 @@ def _build_sig_map(conn, invoice_ids: list) -> dict:
 
 
 app = Flask(__name__)
-app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.config['TEMPLATES_AUTO_RELOAD'] = bool(os.environ.get('FLASK_DEBUG'))
 app.secret_key = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
 
 
@@ -464,7 +464,7 @@ def _add_perf_headers(response):
     data = response.get_data()
     if len(data) < 512:
         return response
-    compressed = _gz.compress(data, compresslevel=4)
+    compressed = _gz.compress(data, compresslevel=6)
     if len(compressed) >= len(data):
         return response
     response.set_data(compressed)
@@ -609,6 +609,36 @@ def _db_connect(database, *args, **kwargs):
 # Keep existing sqlite3.connect(...) call sites working with Turso.
 sqlite3.connect = _db_connect
 
+
+class _MatCursor:
+    """Materialised cursor — rows fetched eagerly so connection can close."""
+    def __init__(self, rows):
+        self._rows = rows
+        self._idx = 0
+
+    def fetchone(self):
+        if self._idx < len(self._rows):
+            r = self._rows[self._idx]; self._idx += 1; return r
+        return None
+
+    def fetchall(self):
+        return self._rows[self._idx:]
+
+
+def _db_multi_exec(queries):
+    """Run [(sql, params), ...] returning a list of cursor-like objects.
+    On Turso: one HTTP round-trip for all queries.
+    On SQLite: sequential execution, rows materialised before connection closes."""
+    if USE_TURSO:
+        results = _turso_pipeline([(sql, list(params)) for sql, params in queries])
+        return [_TursoCursor(r) for r in results[:-1]]
+    conn = _sqlite_connect(DATABASE)
+    try:
+        cursors = [_MatCursor(conn.execute(sql, params).fetchall()) for sql, params in queries]
+    finally:
+        conn.close()
+    return cursors
+
 if USE_TURSO:
     DATABASE = TURSO_DATABASE_URL  # value unused for Turso path but kept for consistency
 elif os.getenv('VERCEL'):
@@ -662,6 +692,7 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_vehicle_type ON invoices(vehicle_type)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_customer_name ON invoices(customer_name)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_duty_slip_no ON invoices(duty_slip_no)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_signature_status ON invoices(signature_status)")
 
         conn.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -820,6 +851,21 @@ def get_next_duty_slip_no():
     return str(max_num + 1) if max_num > 0 else ''
 
 
+_FAVICON_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+    b'<rect width="32" height="32" rx="7" fill="#007aff"/>'
+    b'<text x="16" y="22" text-anchor="middle" font-family="-apple-system,system-ui,sans-serif"'
+    b' font-weight="900" font-size="15" fill="white">OT</text></svg>'
+)
+
+
+@app.route('/favicon.ico')
+@app.route('/favicon.svg')
+def favicon():
+    return Response(_FAVICON_SVG, mimetype='image/svg+xml',
+                    headers={'Cache-Control': 'public, max-age=604800'})
+
+
 @app.route('/')
 def home():
     if 'admin' in session:
@@ -963,36 +1009,34 @@ def admin_portal(_partial=False):
         LIMIT ? OFFSET ?
     """
 
-    with sqlite3.connect(DATABASE) as conn:
-        count_row = conn.execute(f"SELECT COUNT(*) FROM invoices {where_clause}", tuple(params)).fetchone()
-        total_results = count_row[0] if count_row else 0
-        invoices = conn.execute(query, tuple(params + [page_size, offset])).fetchall()
-        driver_names = [
-            row[0] for row in conn.execute(
-                "SELECT DISTINCT driver_name FROM invoices WHERE driver_name IS NOT NULL AND driver_name != '' ORDER BY driver_name ASC"
-            ).fetchall() if row[0]
-        ]
-        vehicle_names = [
-            row[0] for row in conn.execute(
-                "SELECT DISTINCT vehicle_type FROM invoices WHERE vehicle_type IS NOT NULL AND vehicle_type != '' ORDER BY vehicle_type ASC"
-            ).fetchall() if row[0]
-        ]
-        # Dashboard hero stats — compute in one round-trip
-        stats = conn.execute("""
-            SELECT
-              COUNT(*) AS total,
-              SUM(CASE WHEN strftime('%Y-%m', date) = ? THEN 1 ELSE 0 END) AS this_month,
-              SUM(CASE WHEN COALESCE(bill_status,'Bill Generated') = 'Bill Generated' THEN 1 ELSE 0 END) AS pending_bill,
-              SUM(CASE WHEN bill_status = 'Bill Submitted' THEN 1 ELSE 0 END) AS pending_pay,
-              SUM(CASE WHEN bill_status = 'Payment Received' AND strftime('%Y-%m', payment_date) = ? THEN 1 ELSE 0 END) AS paid_month
-            FROM invoices
-        """, (today.strftime('%Y-%m'), today.strftime('%Y-%m'))).fetchone()
+    _ym = today.strftime('%Y-%m')
+    _stats_sql = """
+        SELECT COUNT(*) AS total,
+          SUM(CASE WHEN strftime('%Y-%m', date) = ? THEN 1 ELSE 0 END) AS this_month,
+          SUM(CASE WHEN COALESCE(bill_status,'Bill Generated') = 'Bill Generated' THEN 1 ELSE 0 END) AS pending_bill,
+          SUM(CASE WHEN bill_status = 'Bill Submitted' THEN 1 ELSE 0 END) AS pending_pay,
+          SUM(CASE WHEN bill_status = 'Payment Received' AND strftime('%Y-%m', payment_date) = ? THEN 1 ELSE 0 END) AS paid_month
+        FROM invoices
+    """
+    # Batch all 5 queries → 1 HTTP round-trip on Turso
+    _curs = _db_multi_exec([
+        (f"SELECT COUNT(*) FROM invoices {where_clause}", tuple(params)),
+        (query, tuple(params + [page_size, offset])),
+        ("SELECT DISTINCT driver_name FROM invoices WHERE driver_name IS NOT NULL AND driver_name != '' ORDER BY driver_name ASC", ()),
+        ("SELECT DISTINCT vehicle_type FROM invoices WHERE vehicle_type IS NOT NULL AND vehicle_type != '' ORDER BY vehicle_type ASC", ()),
+        (_stats_sql, (_ym, _ym)),
+    ])
+    total_results  = (_curs[0].fetchone() or (0,))[0]
+    invoices       = _curs[1].fetchall()
+    driver_names   = [r[0] for r in _curs[2].fetchall() if r[0]]
+    vehicle_names  = [r[0] for r in _curs[3].fetchall() if r[0]]
+    stats          = _curs[4].fetchone()
 
-        stats_total = stats[0] if stats else 0
-        stats_this_month = stats[1] if stats else 0
-        stats_pending_bill = stats[2] if stats else 0
-        stats_pending_pay = stats[3] if stats else 0
-        stats_paid_month = stats[4] if stats else 0
+    stats_total = stats[0] if stats else 0
+    stats_this_month = stats[1] if stats else 0
+    stats_pending_bill = stats[2] if stats else 0
+    stats_pending_pay = stats[3] if stats else 0
+    stats_paid_month = stats[4] if stats else 0
 
     ctx = dict(
         invoices=invoices,
@@ -1533,45 +1577,40 @@ def settings_page():
                 message = "Customer removed."
         _cache_bust()
 
-    with sqlite3.connect(DATABASE) as conn:
-        total_invoices = conn.execute("SELECT COUNT(*) FROM invoices").fetchone()[0]
-        invoices_this_month = conn.execute(
-            "SELECT COUNT(*) FROM invoices WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m','now')"
-        ).fetchone()[0]
-        drivers   = conn.execute("SELECT id, name FROM drivers ORDER BY name ASC").fetchall()
-        vehicles  = conn.execute("SELECT id, name, COALESCE(vehicle_no,'') FROM vehicles ORDER BY name ASC").fetchall()
-        customers = conn.execute("SELECT id, name, COALESCE(company,'') FROM customers ORDER BY name ASC").fetchall()
-        not_submitted = conn.execute(
-            "SELECT COUNT(*) FROM invoices WHERE COALESCE(bill_status,'Bill Generated') = 'Bill Generated'"
-        ).fetchone()[0]
-        bill_submitted = conn.execute(
-            "SELECT COUNT(*) FROM invoices WHERE bill_status = 'Bill Submitted'"
-        ).fetchone()[0]
-        payment_received = conn.execute(
-            "SELECT COUNT(*) FROM invoices WHERE bill_status = 'Payment Received'"
-        ).fetchone()[0]
-        vehicle_km_rows = conn.execute("""
-            SELECT vehicle_type,
-                   strftime('%Y-%m', date) as month,
+    # Batch all settings queries → 1 HTTP round-trip on Turso
+    _sc = _db_multi_exec([
+        ("SELECT COUNT(*) FROM invoices", ()),
+        ("SELECT COUNT(*) FROM invoices WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m','now')", ()),
+        ("SELECT id, name FROM drivers ORDER BY name ASC", ()),
+        ("SELECT id, name, COALESCE(vehicle_no,'') FROM vehicles ORDER BY name ASC", ()),
+        ("SELECT id, name, COALESCE(company,'') FROM customers ORDER BY name ASC", ()),
+        ("SELECT COUNT(*) FROM invoices WHERE COALESCE(bill_status,'Bill Generated') = 'Bill Generated'", ()),
+        ("SELECT COUNT(*) FROM invoices WHERE bill_status = 'Bill Submitted'", ()),
+        ("SELECT COUNT(*) FROM invoices WHERE bill_status = 'Payment Received'", ()),
+        ("""SELECT vehicle_type, strftime('%Y-%m', date) as month,
                    ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)), 1) as km
             FROM invoices
             WHERE vehicle_type IS NOT NULL AND vehicle_type != ''
               AND date IS NOT NULL AND date != ''
-            GROUP BY vehicle_type, month
-            ORDER BY month DESC, vehicle_type ASC
-        """).fetchall()
-        monthly_report_rows = conn.execute("""
-            SELECT strftime('%Y-%m', date) AS month,
-                   COUNT(*) AS slips,
+            GROUP BY vehicle_type, month ORDER BY month DESC, vehicle_type ASC""", ()),
+        ("""SELECT strftime('%Y-%m', date) AS month, COUNT(*) AS slips,
                    SUM(CASE WHEN COALESCE(bill_status,'Bill Generated')='Bill Generated' THEN 1 ELSE 0 END) AS not_submitted,
                    SUM(CASE WHEN bill_status='Bill Submitted' THEN 1 ELSE 0 END) AS submitted,
                    SUM(CASE WHEN bill_status='Payment Received' THEN 1 ELSE 0 END) AS paid,
                    ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)),1) AS km
-            FROM invoices
-            WHERE date IS NOT NULL AND date != ''
-            GROUP BY month
-            ORDER BY month DESC
-        """).fetchall()
+            FROM invoices WHERE date IS NOT NULL AND date != ''
+            GROUP BY month ORDER BY month DESC""", ()),
+    ])
+    total_invoices       = (_sc[0].fetchone() or (0,))[0]
+    invoices_this_month  = (_sc[1].fetchone() or (0,))[0]
+    drivers              = _sc[2].fetchall()
+    vehicles             = _sc[3].fetchall()
+    customers            = _sc[4].fetchall()
+    not_submitted        = (_sc[5].fetchone() or (0,))[0]
+    bill_submitted       = (_sc[6].fetchone() or (0,))[0]
+    payment_received     = (_sc[7].fetchone() or (0,))[0]
+    vehicle_km_rows      = _sc[8].fetchall()
+    monthly_report_rows  = _sc[9].fetchall()
 
     return render_template('settings.html',
                            message=message,
