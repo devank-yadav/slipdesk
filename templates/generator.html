@@ -80,11 +80,11 @@
     /* ---- FORM CARD ---- */
     .form-card {
       margin: 0 auto;
-      max-width: 860px;
+      max-width: 980px;
       background: var(--card);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      padding: 28px 32px;
+      padding: 32px 40px;
     }
     .section-label {
       font-size: 13px;
@@ -92,7 +92,7 @@
       text-transform: none;
       letter-spacing: 0;
       color: var(--text);
-      margin: 28px 0 14px;
+      margin: 32px 0 16px;
       padding: 0 0 0 10px;
       border-left: 3px solid var(--primary);
       border-bottom: none;
@@ -105,21 +105,21 @@
     .form-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 14px 20px;
+      gap: 18px 28px;
     }
     .form-grid .full { grid-column: 1 / -1; }
     .three-col {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
-      gap: 14px 20px;
+      gap: 18px 28px;
     }
     /* Odometer / Timing: 3-col with styled auto-calculated column */
     .calc-row {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
-      gap: 14px 20px;
+      gap: 18px 28px;
     }
-    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
     .field label {
       font-size: 12px;
       font-weight: 600;
@@ -131,7 +131,7 @@
     .field input,
     .field select,
     .field textarea {
-      padding: 10px 13px;
+      padding: 11px 14px;
       border: 1.5px solid var(--border);
       border-radius: 8px;
       font-size: 14px;
@@ -473,11 +473,11 @@
     @media (max-width: 640px) {
       .page-header { padding: 14px 16px 8px; }
       .quick-tpl-bar { padding: 6px 14px; }
-      .form-card { margin: 0 12px; padding: 16px 14px; }
-      .form-grid { grid-template-columns: 1fr; }
+      .form-card { margin: 0 10px; padding: 18px 16px; }
+      .form-grid { grid-template-columns: 1fr; gap: 14px; }
       .form-grid .full { grid-column: 1; }
-      .three-col { grid-template-columns: 1fr 1fr; }
-      .calc-row { grid-template-columns: 1fr 1fr; }
+      .three-col { grid-template-columns: 1fr 1fr; gap: 14px; }
+      .calc-row { grid-template-columns: 1fr 1fr; gap: 14px; }
       .calc-row .auto-col { grid-column: 1 / -1; }
       .form-footer { flex-wrap: wrap; gap: 10px; }
       .btn-save-tpl { margin-left: 0; width: 100%; justify-content: center; }
@@ -536,7 +536,7 @@
       <!-- PARTY INFO -->
       <div class="section-label"><svg class="icon" width="14" height="14"><use href="#icon-user"/></svg> Party Information</div>
       <div class="form-grid">
-        <div class="field full">
+        <div class="field">
           <label for="customer_name">Customer Name *</label>
           <div class="ac-wrap" style="position:relative;width:100%;">
           <input type="text" id="customer_name" name="customer_name"
@@ -545,7 +545,7 @@
                  placeholder="Select or type customer…" required>
           </div>
         </div>
-        <div class="field full">
+        <div class="field">
           <label for="company_name">Company Name</label>
           <input type="text" id="company_name" name="company_name"
                  value="{{ prefill.get('company_name', '') }}"
