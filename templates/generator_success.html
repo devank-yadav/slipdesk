@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slip Generated — Osprey Travels</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --blue: #007aff; --green: #34c759; --red: #ff3b30;
+      --bg: #f2f2f7; --card: #ffffff; --text: #1c1c1e; --muted: #8e8e93;
+      --border: #e5e5ea; --radius: 14px;
+    }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+           background: var(--bg); color: var(--text); font-size: 14px; padding-bottom: 60px; }
+
+    .page { max-width: 520px; margin: 0 auto; padding: 32px 20px; }
+
+    /* Success header */
+    .success-header { text-align: center; margin-bottom: 28px; }
+    .check-circle {
+      width: 64px; height: 64px; border-radius: 50%;
+      background: #e8f5e9; display: inline-flex; align-items: center; justify-content: center;
+      margin-bottom: 14px;
+    }
+    .check-circle svg { color: var(--green); }
+    .success-header h1 { margin: 0 0 6px; font-size: 22px; font-weight: 700; }
+    .success-header p { margin: 0; font-size: 14px; color: var(--muted); }
+
+    /* Slip info card */
+    .slip-card {
+      background: var(--card); border-radius: var(--radius); border: 1px solid var(--border);
+      padding: 18px 20px; margin-bottom: 16px;
+      display: flex; align-items: center; gap: 14px;
+    }
+    .slip-avatar {
+      width: 46px; height: 46px; border-radius: 12px; flex-shrink: 0;
+      background: linear-gradient(135deg, #e8f0fe, #c7dffe);
+      color: var(--blue); display: flex; align-items: center; justify-content: center;
+      font-size: 20px; font-weight: 800;
+    }
+    .slip-info { flex: 1; min-width: 0; }
+    .slip-name { font-weight: 700; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .slip-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+    /* Action cards */
+    .action-card {
+      background: var(--card); border-radius: var(--radius); border: 1px solid var(--border);
+      padding: 18px 20px; margin-bottom: 12px;
+    }
+    .action-card-title {
+      font-size: 13px; font-weight: 700; margin: 0 0 12px;
+      display: flex; align-items: center; gap: 7px;
+    }
+    .action-card-title svg { color: var(--muted); }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      padding: 11px 18px; border-radius: 10px; font-size: 13px; font-weight: 600;
+      cursor: pointer; font-family: inherit; text-decoration: none; border: none;
+      transition: opacity 0.12s, background 0.12s; width: 100%;
+    }
+    .btn + .btn { margin-top: 8px; }
+    .btn-blue    { background: var(--blue); color: #fff; }
+    .btn-blue:hover { background: #0066dd; }
+    .btn-outline { background: var(--card); color: var(--blue); border: 1.5px solid var(--border); }
+    .btn-outline:hover { background: #f0f6ff; }
+    .btn-green   { background: #25d366; color: #fff; }
+    .btn-green:hover { background: #1da851; }
+    .btn-ghost   { background: var(--card); color: var(--muted); border: 1.5px solid var(--border); }
+    .btn-ghost:hover { background: #f2f2f7; color: var(--text); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* Sign link result box */
+    .sign-result { display: none; margin-top: 12px; }
+    .sign-result.show { display: block; }
+    .sign-url-box {
+      background: #f9f9fb; border: 1.5px solid var(--border); border-radius: 9px;
+      padding: 10px 12px; font-family: monospace; font-size: 12px;
+      word-break: break-all; color: var(--text); margin-bottom: 10px;
+    }
+    .btn-row { display: flex; gap: 8px; }
+    .btn-row .btn { flex: 1; }
+
+    /* Nav footer */
+    .nav-footer { display: flex; gap: 10px; margin-top: 20px; }
+    .nav-footer .btn { flex: 1; }
+
+    @media (max-width: 540px) {
+      .page { padding: 20px 16px; }
+    }
+  </style>
+</head>
+<body>
+{% include 'navbar.html' %}
+
+<div class="page">
+
+  <div class="success-header">
+    <div class="check-circle">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+    </div>
+    <h1>Slip Generated!</h1>
+    <p>The duty slip has been saved and is ready to share.</p>
+  </div>
+
+  <!-- Slip summary -->
+  <div class="slip-card">
+    <div class="slip-avatar">{{ customer_name[0]|upper if customer_name else '?' }}</div>
+    <div class="slip-info">
+      <div class="slip-name">{{ customer_name or '—' }}</div>
+      <div class="slip-meta">
+        {% if duty_slip_no %}Slip #{{ duty_slip_no }} · {% endif %}
+        {{ slip_date or '' }}
+        {% if vehicle_type %} · {{ vehicle_type }}{% endif %}
+        {% if driver_name %} · {{ driver_name }}{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Download -->
+  <div class="action-card">
+    <div class="action-card-title">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Download
+    </div>
+    <a class="btn btn-blue" href="/invoice/{{ invoice_id }}/download">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Download PDF
+    </a>
+  </div>
+
+  <!-- Signature + WhatsApp -->
+  <div class="action-card">
+    <div class="action-card-title">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+      </svg>
+      Signature
+    </div>
+
+    {% if signature_status == 'signed' %}
+      <div style="font-size:13px;color:#2e7d32;font-weight:600;">✓ Already signed</div>
+    {% else %}
+      <button class="btn btn-outline" id="createLinkBtn" onclick="createSignLink()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+        </svg>
+        Create Signing Link
+      </button>
+
+      <div class="sign-result" id="signResult">
+        <div class="sign-url-box" id="signUrl"></div>
+        <div class="btn-row">
+          <button class="btn btn-outline" onclick="copyLink()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            Copy Link
+          </button>
+          <button class="btn btn-green" id="waBtn" onclick="sendWhatsApp()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z"/>
+            </svg>
+            Send via WhatsApp
+          </button>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Navigation -->
+  <div class="nav-footer">
+    <a class="btn btn-ghost" href="/generator">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      New Slip
+    </a>
+    <a class="btn btn-ghost" href="/admin_portal">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+        <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+      </svg>
+      View All Slips
+    </a>
+  </div>
+
+</div>
+
+<script>
+const INVOICE_ID    = {{ invoice_id }};
+const CUSTOMER_NAME = {{ customer_name | tojson }};
+const DUTY_SLIP_NO  = {{ (duty_slip_no or '') | tojson }};
+const SLIP_DATE     = {{ (slip_date or '') | tojson }};
+let   _signUrl      = '';
+
+function createSignLink() {
+  const btn = document.getElementById('createLinkBtn');
+  btn.disabled = true;
+  btn.textContent = 'Creating…';
+
+  fetch('/invoice/' + INVOICE_ID + '/create_sign_link', { method: 'POST' })
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(data => {
+      if (!data.ok) throw new Error(data.error || 'Failed');
+      _signUrl = location.origin + '/sign/' + data.token;
+      document.getElementById('signUrl').textContent = _signUrl;
+      document.getElementById('signResult').classList.add('show');
+      btn.style.display = 'none';
+    })
+    .catch(err => {
+      btn.disabled = false;
+      btn.textContent = 'Create Signing Link';
+      if (window._showToast) window._showToast('Could not create link: ' + err.message, true);
+    });
+}
+
+function copyLink() {
+  if (!_signUrl) return;
+  navigator.clipboard.writeText(_signUrl).then(() => {
+    if (window._showToast) window._showToast('Signing link copied!');
+  });
+}
+
+function sendWhatsApp() {
+  if (!_signUrl) return;
+  const slipRef = DUTY_SLIP_NO ? 'slip #' + DUTY_SLIP_NO : 'your slip';
+  const dateStr = SLIP_DATE ? ' for ' + SLIP_DATE : '';
+  const msg = 'Hi ' + CUSTOMER_NAME + ', ' + slipRef + dateStr
+            + ' from Osprey Travels is ready for your signature. '
+            + 'Please sign here: ' + _signUrl;
+  window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+}
+</script>
+</body>
+</html>
