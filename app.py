@@ -702,7 +702,7 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_vehicle_type ON invoices(vehicle_type)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_customer_name ON invoices(customer_name)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_duty_slip_no ON invoices(duty_slip_no)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_signature_status ON invoices(signature_status)")
+        # signature_status index is created after the column migration below
 
         conn.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -788,6 +788,8 @@ def init_db():
             conn.execute("ALTER TABLE invoices ADD COLUMN signed_at TEXT")
         if 'closing_date' not in inv_cols:
             conn.execute("ALTER TABLE invoices ADD COLUMN closing_date TEXT")
+        # Now safe to create — column guaranteed to exist
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_signature_status ON invoices(signature_status)")
 
         conn.execute('''
             CREATE TABLE IF NOT EXISTS signature_requests (

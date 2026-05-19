@@ -768,14 +768,29 @@
     // DUPLICATE DETECTION — check before submit
     // =====================================================================
     let _dupDismissed = false;
+    const _genForm   = document.querySelector('form[action="/generate"]');
+    const _submitBtn = document.getElementById('btnSubmit');
 
-    document.querySelector('form[action="/generate"]').addEventListener('submit', function(e) {
-      if (_dupDismissed) return; // user already acknowledged
+    function _lockSubmit() {
+      _submitBtn.disabled = true;
+      _submitBtn.textContent = 'Generating…';
+    }
+    function _unlockSubmit() {
+      _submitBtn.disabled = false;
+      _submitBtn.textContent = 'Generate Duty Slip';
+    }
+
+    _genForm.addEventListener('submit', function(e) {
+      if (_dupDismissed) {
+        _dupDismissed = false; // reset so next submission checks again
+        _lockSubmit();
+        return; // let the form submit naturally
+      }
       const form = this;
       const customer = (form.elements['customer_name'] || {}).value || '';
       const date     = (form.elements['date'] || {}).value || '';
       const vehicleNo= (form.elements['vehicle_no'] || {}).value || '';
-      if (!customer || !date) return; // nothing to check
+      if (!customer || !date) { _lockSubmit(); return; } // nothing to check, submit
 
       e.preventDefault();
 
@@ -791,22 +806,22 @@
             `#${d.duty_slip_no || d.id} · ${d.date} · ${d.route || '—'} (${d.driver || '—'})`
           ).join('<br>');
           document.getElementById('dupList').innerHTML = list;
-          // set "View Existing" link to filter dashboard by this customer
           document.getElementById('dupViewLink').href =
             `/admin_portal?customer_name=${encodeURIComponent(customer)}`;
           document.getElementById('dupWarning').style.display = 'block';
           document.getElementById('dupWarning').scrollIntoView({ behavior:'smooth', block:'nearest' });
         } else {
+          _lockSubmit();
           form.submit();
         }
       })
-      .catch(() => form.submit()); // on network error, allow submit
+      .catch(() => { _lockSubmit(); form.submit(); }); // on network error, allow submit
     });
 
     function dismissDup() {
       _dupDismissed = true;
       document.getElementById('dupWarning').style.display = 'none';
-      document.querySelector('form[action="/generate"]').submit();
+      _genForm.requestSubmit(); // triggers the submit event (which will see _dupDismissed=true)
     }
 
     // =====================================================================
