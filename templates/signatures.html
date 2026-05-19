@@ -150,6 +150,35 @@
     }
     .btn-revoke:hover { background: #ffe5e4; }
     .btn-revoke[disabled] { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+    .badge-reminder {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: #fff3e0; color: #e65100;
+      border: 1px solid #ffcc80;
+      padding: 2px 8px; border-radius: 20px;
+      font-size: 11px; font-weight: 600; white-space: nowrap;
+    }
+    .btn-remind {
+      padding: 6px 10px; border-radius: 7px;
+      border: none; background: #ff9500; color: #fff;
+      font-size: 12px; font-weight: 600;
+      cursor: pointer; font-family: inherit;
+      display: inline-flex; align-items: center; gap: 5px;
+      text-decoration: none;
+    }
+    .btn-remind:hover { background: #e08500; }
+
+    .audit-row td { background: #f9f9fb; padding: 8px 14px 10px 50px; font-size: 12px; color: var(--muted); }
+    .audit-row { display: none; }
+    .audit-row.open { display: table-row; }
+    .audit-detail { display: flex; gap: 20px; flex-wrap: wrap; align-items: center; }
+    .audit-item { display: flex; flex-direction: column; gap: 2px; }
+    .audit-item span:first-child { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+    .audit-item span:last-child  { font-size: 12px; color: var(--text); font-weight: 500; }
+
+    tr.signed-row { cursor: pointer; }
+    tr.signed-row:hover td { background: #f5fdf6; }
+
     .btn-reissue {
       padding: 6px 10px; border-radius: 7px;
       border: 1px solid #ffe0b2; background: #fff8f0;
@@ -232,7 +261,8 @@
         {% for req in requests %}
         {% set link = request.host_url.rstrip('/') + '/sign/' + req.token %}
         {% set wa_msg = 'Dear ' + (req.customer_name or 'Customer') + ', please review and sign your Osprey Travels duty slip(s). Tap the link below to sign digitally:\n' + link %}
-        <tr>
+        {% set reminder_msg = 'Dear ' + (req.customer_name or 'Customer') + ', this is a gentle reminder to please sign your Osprey Travels duty slip(s). The link is still valid:\n' + link %}
+        <tr {% if req.status == 'signed' %}class="signed-row" onclick="toggleAudit('audit-{{ req.id }}')" title="Click to view signing details"{% endif %}>
           <td>
             <div class="cust-name">{{ req.customer_name or '—' }}</div>
             <div class="slip-count">{{ req.invoice_count }} slip{{ 's' if req.invoice_count != 1 else '' }}</div>
@@ -250,15 +280,21 @@
               {% if req.signed_at %}
                 <div class="signed-date">{{ req.signed_at[:10] }}</div>
               {% endif %}
+              {% if req.device %}
+                <div style="font-size:11px;color:var(--muted);margin-top:2px">📱 {{ req.device }}</div>
+              {% endif %}
             {% elif req.status == 'expired' %}
               <span class="badge badge-expired">Expired</span>
             {% else %}
               <span class="badge badge-pending">⏳ Pending</span>
+              {% if req.hours_pending is not none and req.hours_pending >= 48 %}
+                <div style="margin-top:4px"><span class="badge-reminder">🔔 {{ req.hours_pending }}h ago</span></div>
+              {% endif %}
             {% endif %}
           </td>
           <td>
             <div class="action-btns">
-              {# Pending: Copy + WhatsApp + Revoke #}
+              {# Pending: Copy + WhatsApp + Remind (if >48h) + Revoke #}
               {% if req.status == 'pending' %}
               <button class="btn-icon-copy" onclick="copyLink('{{ link }}', this)" title="Copy link">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
@@ -268,14 +304,20 @@
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
                 WhatsApp
               </a>
+              {% if req.hours_pending is not none and req.hours_pending >= 48 %}
+              <a class="btn-remind" href="https://wa.me/?text={{ reminder_msg|urlencode }}" target="_blank" rel="noopener" title="Send reminder">
+                🔔 Remind
+              </a>
+              {% endif %}
               <form method="post" action="/admin/signatures/revoke/{{ req.id }}" style="display:inline"
                     onsubmit="return confirm('Revoke this link? The customer will no longer be able to sign.')">
                 <button type="submit" class="btn-revoke">Revoke</button>
               </form>
               {% endif %}
 
-              {# Signed: Re-issue only (invalidates old signature, sends fresh link) #}
+              {# Signed: audit hint + Re-issue #}
               {% if req.status == 'signed' %}
+              <span style="font-size:11px;color:var(--muted)">Click row for audit</span>
               <form method="post" action="/admin/signatures/reissue/{{ req.id }}" style="display:inline"
                     onsubmit="return confirm('Re-issue signature for {{ req.customer_name or 'this customer' }}?\n\nThis will invalidate the existing signature and generate a new link for them to sign again.')">
                 <button type="submit" class="btn-reissue">
@@ -285,7 +327,7 @@
               </form>
               {% endif %}
 
-              {# Expired: Re-issue + Revoke #}
+              {# Expired: Re-issue + Delete #}
               {% if req.status == 'expired' %}
               <form method="post" action="/admin/signatures/reissue/{{ req.id }}" style="display:inline">
                 <button type="submit" class="btn-reissue">
@@ -301,6 +343,33 @@
             </div>
           </td>
         </tr>
+        {# Audit trail row — only for signed requests, hidden until clicked #}
+        {% if req.status == 'signed' %}
+        <tr class="audit-row" id="audit-{{ req.id }}">
+          <td colspan="5">
+            <div class="audit-detail">
+              <div class="audit-item">
+                <span>Signed at</span>
+                <span>{{ req.signed_at or '—' }}</span>
+              </div>
+              <div class="audit-item">
+                <span>Device</span>
+                <span>{{ req.device or 'Unknown' }}</span>
+              </div>
+              <div class="audit-item">
+                <span>IP Address</span>
+                <span>{{ req.signer_ip or '—' }}</span>
+              </div>
+              {% if req.signer_ua %}
+              <div class="audit-item" style="max-width:320px">
+                <span>User Agent</span>
+                <span style="word-break:break-all;font-size:11px">{{ req.signer_ua[:120] }}{% if req.signer_ua|length > 120 %}…{% endif %}</span>
+              </div>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endif %}
         {% endfor %}
       {% else %}
         <tr><td colspan="5">
@@ -333,6 +402,10 @@ function showToast(msg) {
   t.textContent = msg;
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2500);
+}
+function toggleAudit(id) {
+  const row = document.getElementById(id);
+  if (row) row.classList.toggle('open');
 }
 </script>
 </body>

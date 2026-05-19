@@ -77,6 +77,26 @@ def _format_date(d):
         return d or ''
 
 
+def _parse_ua(ua: str) -> str:
+    """Return a short human-readable device label from a User-Agent string."""
+    if not ua:
+        return 'Unknown'
+    u = ua.lower()
+    if 'iphone' in u:
+        return 'iPhone'
+    if 'ipad' in u:
+        return 'iPad'
+    if 'android' in u:
+        return 'Android Phone' if 'mobile' in u else 'Android Tablet'
+    if 'windows' in u:
+        return 'Windows'
+    if 'macintosh' in u or 'mac os x' in u:
+        return 'Mac'
+    if 'linux' in u:
+        return 'Linux'
+    return 'Desktop'
+
+
 def _route_positions(n_lines):
     """Return dynamic y-coordinates for route lines, driver label, and signature."""
     route_y = 248
@@ -286,6 +306,84 @@ def _get_sig_for_invoice(conn, invoice_id: int):
         except Exception:
             pass
     return None
+
+
+def _build_cover_page(title: str, slips: list, subtitle: str = '') -> io.BytesIO:
+    """Portrait A4 cover/summary page prepended to batch PDF exports."""
+    pdf = _pdf_libs()
+    buf = io.BytesIO()
+    w, h = pdf['A4']   # ~595 x 842 pt
+    c = pdf['canvas'].Canvas(buf, pagesize=pdf['A4'])
+
+    # Brand header
+    c.setFillColorRGB(*COLOR_HEADER)
+    c.setFont('Helvetica-Bold', 22)
+    _draw_tracked_right(c, w - 40, h - 52, 'OSPREY',  'Helvetica-Bold', 22, 5)
+    _draw_tracked_right(c, w - 40, h - 76, 'TRAVELS', 'Helvetica-Bold', 22, 5)
+    c.setFont('Helvetica', 8)
+    c.setFillColorRGB(*COLOR_MUTED)
+    c.drawString(40, h - 52, '9718305627 / 9718305628')
+    c.drawString(40, h - 64, 'B213, Saraswati Enclave, Gurgaon')
+
+    c.setStrokeColorRGB(*COLOR_DARK)
+    c.setLineWidth(1.0)
+    c.line(40, h - 90, w - 40, h - 90)
+
+    c.setFillColorRGB(*COLOR_DARK)
+    c.setFont('Helvetica-Bold', 17)
+    c.drawString(40, h - 118, title)
+
+    y = h - 138
+    if subtitle:
+        c.setFont('Helvetica', 11)
+        c.setFillColorRGB(*COLOR_MUTED)
+        c.drawString(40, y, subtitle)
+        y -= 18
+    c.setFont('Helvetica', 9)
+    c.setFillColorRGB(*COLOR_MUTED)
+    c.drawString(40, y, f'Generated: {datetime.now().strftime("%d %b %Y, %I:%M %p")}')
+    y -= 13
+    c.drawString(40, y, f'Total: {len(slips)} slip{"s" if len(slips) != 1 else ""}')
+    y -= 26
+
+    # Table header
+    col_x = [40, 90, 160, 262, 475]
+    col_hdrs = ['SLIP #', 'DATE', 'CUSTOMER', 'ROUTE COVERED', 'STATUS']
+    c.setFillColorRGB(*COLOR_DARK)
+    c.rect(40, y - 4, w - 80, 18, fill=1, stroke=0)
+    c.setFillColorRGB(1, 1, 1)
+    c.setFont('Helvetica-Bold', 8)
+    for x, hdr in zip(col_x, col_hdrs):
+        c.drawString(x + 3, y + 2, hdr)
+    y -= 20
+
+    c.setFont('Helvetica', 8)
+    row_h = 16
+    for idx, slip in enumerate(slips):
+        if y < 50:
+            c.setFillColorRGB(*COLOR_MUTED)
+            c.drawString(44, y + 2, f'… and {len(slips) - idx} more slips')
+            break
+        if idx % 2 == 0:
+            c.setFillColorRGB(0.96, 0.96, 0.97)
+            c.rect(40, y - 2, w - 80, row_h, fill=1, stroke=0)
+        c.setFillColorRGB(*COLOR_TEXT)
+        route_raw = str(slip.get('route_covered', '') or '')
+        route = (route_raw[:40] + '…') if len(route_raw) > 40 else route_raw
+        vals = [
+            str(slip.get('duty_slip_no', '') or '')[:12],
+            _format_date(slip.get('date', '') or ''),
+            str(slip.get('customer_name', '') or '')[:18],
+            route,
+            str(slip.get('bill_status', '') or ''),
+        ]
+        for x, val in zip(col_x, vals):
+            c.drawString(x + 3, y + 3, val)
+        y -= row_h
+
+    c.save()
+    buf.seek(0)
+    return buf
 
 
 def _build_sig_map(conn, invoice_ids: list) -> dict:
@@ -592,9 +690,13 @@ def init_db():
                 expires_at TEXT,
                 signed_at TEXT,
                 signature_data TEXT,
-                signer_ip TEXT
+                signer_ip TEXT,
+                signer_ua TEXT
             )
         ''')
+        sig_cols = [col[1] for col in conn.execute("PRAGMA table_info(signature_requests)").fetchall()]
+        if 'signer_ua' not in sig_cols:
+            conn.execute("ALTER TABLE signature_requests ADD COLUMN signer_ua TEXT")
 
 
 init_db()
@@ -958,13 +1060,25 @@ def bulk_action():
                 f"""SELECT id, duty_slip_no, customer_name, company_name, date,
                            vehicle_type, vehicle_no, starting_km, closing_km, total_km,
                            starting_time, closing_time, total_time,
-                           project_code, mail_approval_date, route_covered, driver_name
+                           project_code, mail_approval_date, route_covered, driver_name,
+                           COALESCE(bill_status, 'Bill Generated')
                     FROM invoices WHERE id IN ({placeholders})""",
                 selected_ids
             ).fetchall()
             sig_map = _build_sig_map(conn, [int(i) for i in selected_ids])
             pdf = _pdf_libs()
             writer = pdf['PdfWriter']()
+            # Cover page
+            slip_summaries = [
+                {'duty_slip_no': r[1], 'customer_name': r[2], 'date': r[4],
+                 'route_covered': r[15], 'bill_status': r[17]}
+                for r in rows
+            ]
+            customers_in_batch = list(dict.fromkeys(r[2] for r in rows if r[2]))
+            cover_subtitle = customers_in_batch[0] if len(customers_in_batch) == 1 else f'{len(customers_in_batch)} customers'
+            cover_reader = pdf['PdfReader'](io.BytesIO(_build_cover_page('Batch Export', slip_summaries, cover_subtitle).read()))
+            for page in cover_reader.pages:
+                writer.add_page(page)
             for r in rows:
                 data = {
                     'duty_slip_no': r[1], 'customer_name': r[2], 'company_name': r[3],
@@ -1629,11 +1743,12 @@ def signatures_page():
     new_token = request.args.get('new_token', '')
     with sqlite3.connect(DATABASE) as conn:
         rows = conn.execute(
-            """SELECT id, token, invoice_ids, customer_name, created_at, expires_at, signed_at, signer_ip
+            """SELECT id, token, invoice_ids, customer_name, created_at, expires_at, signed_at, signer_ip, signer_ua
                FROM signature_requests ORDER BY created_at DESC"""
         ).fetchall()
 
-    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    now = datetime.now()
+    now_str = now.strftime('%Y-%m-%d %H:%M:%S')
     requests_data = []
     for r in rows:
         ids = _json.loads(r[2]) if r[2] else []
@@ -1645,11 +1760,22 @@ def signatures_page():
             status = 'expired'
         else:
             status = 'pending'
+        # Compute hours since creation for reminder badge
+        hours_pending = None
+        if status == 'pending' and r[4]:
+            try:
+                created_dt = datetime.strptime(r[4], '%Y-%m-%d %H:%M:%S')
+                hours_pending = int((now - created_dt).total_seconds() / 3600)
+            except Exception:
+                pass
         requests_data.append({
             'id': r[0], 'token': r[1], 'invoice_count': len(ids),
             'customer_name': r[3], 'created_at': r[4],
             'expires_at': expires_at, 'signed_at': signed_at,
-            'signer_ip': r[7], 'status': status,
+            'signer_ip': r[7], 'signer_ua': r[8] or '',
+            'device': _parse_ua(r[8] or ''),
+            'hours_pending': hours_pending,
+            'status': status,
         })
 
     return render_template('signatures.html', requests=requests_data, new_token=new_token)
@@ -1780,12 +1906,13 @@ def submit_signature(token):
         return jsonify({'ok': False, 'error': 'Please draw your signature before submitting'})
 
     signer_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')
+    signer_ua = request.headers.get('User-Agent', '')
     ids = _json.loads(req[1]) if req[1] else []
 
     with sqlite3.connect(DATABASE) as conn:
         conn.execute(
-            "UPDATE signature_requests SET signed_at = ?, signature_data = ?, signer_ip = ? WHERE id = ?",
-            (now_str, sig_data, signer_ip, req[0])
+            "UPDATE signature_requests SET signed_at = ?, signature_data = ?, signer_ip = ?, signer_ua = ? WHERE id = ?",
+            (now_str, sig_data, signer_ip, signer_ua, req[0])
         )
         if ids:
             placeholders = ','.join('?' * len(ids))
@@ -1795,6 +1922,168 @@ def submit_signature(token):
             )
 
     return jsonify({'ok': True})
+
+
+# --------------------------
+# CUSTOMER HISTORY
+# --------------------------
+@app.route('/admin/customers')
+def customers_page():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    with sqlite3.connect(DATABASE) as conn:
+        rows = conn.execute("""
+            SELECT customer_name,
+                   COUNT(*) AS total,
+                   MAX(date) AS last_date,
+                   SUM(CASE WHEN signature_status = 'signed'  THEN 1 ELSE 0 END) AS signed_count,
+                   SUM(CASE WHEN signature_status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+                   SUM(CASE WHEN COALESCE(signature_status,'') = '' THEN 1 ELSE 0 END) AS unsigned_count
+            FROM invoices
+            WHERE customer_name IS NOT NULL AND customer_name != ''
+            GROUP BY customer_name
+            ORDER BY MAX(date) DESC
+        """).fetchall()
+    customers_data = [
+        {
+            'name': r[0], 'total': r[1], 'last_date': r[2],
+            'signed': r[3], 'pending': r[4], 'unsigned': r[5],
+        }
+        for r in rows
+    ]
+    return render_template('customers.html', customers=customers_data)
+
+
+@app.route('/admin/signatures/sign_all_customer', methods=['POST'])
+def sign_all_customer():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    customer_name = request.form.get('customer_name', '').strip()
+    if not customer_name:
+        return redirect(url_for('customers_page'))
+    with sqlite3.connect(DATABASE) as conn:
+        rows = conn.execute(
+            """SELECT id FROM invoices
+               WHERE customer_name = ? AND COALESCE(signature_status,'') != 'signed'""",
+            (customer_name,)
+        ).fetchall()
+    ids = [r[0] for r in rows]
+    if not ids:
+        return redirect(url_for('customers_page'))
+    token = secrets.token_urlsafe(16)
+    now = datetime.now()
+    created_at = now.strftime('%Y-%m-%d %H:%M:%S')
+    expires_at = (now + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+    with sqlite3.connect(DATABASE) as conn:
+        conn.execute(
+            """INSERT INTO signature_requests (token, invoice_ids, customer_name, created_at, expires_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (token, _json.dumps(ids), customer_name, created_at, expires_at)
+        )
+        placeholders = ','.join('?' * len(ids))
+        conn.execute(
+            f"UPDATE invoices SET signature_status = 'pending' WHERE id IN ({placeholders}) AND COALESCE(signature_status,'') != 'signed'",
+            ids
+        )
+    return redirect(url_for('signatures_page', new_token=token))
+
+
+# --------------------------
+# DRIVER REPORT
+# --------------------------
+@app.route('/admin/drivers')
+def drivers_page():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    with sqlite3.connect(DATABASE) as conn:
+        rows = conn.execute("""
+            SELECT driver_name,
+                   COUNT(*) AS total,
+                   MAX(date) AS last_date,
+                   MIN(date) AS first_date,
+                   ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)), 1) AS total_km
+            FROM invoices
+            WHERE driver_name IS NOT NULL AND driver_name != ''
+            GROUP BY driver_name
+            ORDER BY MAX(date) DESC
+        """).fetchall()
+    drivers_data = [
+        {'name': r[0], 'total': r[1], 'last_date': r[2], 'first_date': r[3], 'total_km': r[4] or 0}
+        for r in rows
+    ]
+    today_str = date.today().strftime('%Y-%m-%d')
+    return render_template('drivers.html', drivers=drivers_data, today_str=today_str)
+
+
+@app.route('/admin/drivers/<path:driver_name>/report')
+def driver_report(driver_name):
+    if 'admin' not in session:
+        return redirect(url_for('login_page'))
+    date_from = request.args.get('date_from', '')
+    date_to   = request.args.get('date_to', '')
+    where = "WHERE driver_name = ?"
+    params = [driver_name]
+    if date_from:
+        where += " AND date >= ?"
+        params.append(date_from)
+    if date_to:
+        where += " AND date <= ?"
+        params.append(date_to)
+    with sqlite3.connect(DATABASE) as conn:
+        rows = conn.execute(
+            f"""SELECT id, duty_slip_no, customer_name, company_name, date,
+                       vehicle_type, vehicle_no, starting_km, closing_km, total_km,
+                       starting_time, closing_time, total_time,
+                       project_code, mail_approval_date, route_covered,
+                       COALESCE(bill_status, 'Bill Generated')
+                FROM invoices {where}
+                ORDER BY date ASC, id ASC""",
+            params
+        ).fetchall()
+        sig_map = _build_sig_map(conn, [r[0] for r in rows])
+    if not rows:
+        return "No slips found for this driver and date range.", 404
+    slip_summaries = [
+        {'duty_slip_no': r[1], 'customer_name': r[2], 'date': r[4],
+         'route_covered': r[15], 'bill_status': r[16]}
+        for r in rows
+    ]
+    date_range = ''
+    if date_from or date_to:
+        date_range = f'{_format_date(date_from) if date_from else "—"}  to  {_format_date(date_to) if date_to else "—"}'
+    total_km = sum(
+        float(r[9]) for r in rows if r[9] and str(r[9]).replace('.', '', 1).isdigit()
+    )
+    subtitle = f'{driver_name}   |   {date_range or "All time"}   |   {total_km:.1f} km total'
+    pdf_libs = _pdf_libs()
+    writer = pdf_libs['PdfWriter']()
+    cover_reader = pdf_libs['PdfReader'](io.BytesIO(
+        _build_cover_page('Driver Report', slip_summaries, subtitle).read()
+    ))
+    for page in cover_reader.pages:
+        writer.add_page(page)
+    for r in rows:
+        data = {
+            'duty_slip_no': r[1], 'customer_name': r[2], 'company_name': r[3],
+            'date': r[4], 'vehicle_type': r[5], 'vehicle_no': r[6],
+            'starting_km': r[7], 'closing_km': r[8], 'total_km': r[9],
+            'starting_time': r[10], 'closing_time': r[11], 'total_time': r[12],
+            'project_code': r[13], 'mail_approval_date': r[14],
+            'route_covered': r[15], 'driver_name': driver_name,
+        }
+        slip_reader = pdf_libs['PdfReader'](io.BytesIO(
+            _build_pdf(data, signature_data=sig_map.get(r[0])).read()
+        ))
+        for page in slip_reader.pages:
+            writer.add_page(page)
+    buf = io.BytesIO()
+    writer.write(buf)
+    buf.seek(0)
+    safe_name = driver_name.replace(' ', '_')
+    stamp = f'_{date_from}_{date_to}' if (date_from or date_to) else ''
+    return send_file(buf, mimetype='application/pdf',
+                     download_name=f'driver_report_{safe_name}{stamp}.pdf',
+                     as_attachment=True)
 
 
 @app.errorhandler(404)

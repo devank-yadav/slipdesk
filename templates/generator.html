@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% if prefill %}Clone Duty Slip{% else %}New Duty Slip{% endif %} — Osprey Travels</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
@@ -428,6 +429,23 @@
     }
     .btn-apply-route:disabled { opacity: 0.35; cursor: not-allowed; }
     .btn-apply-route:not(:disabled):hover { background: #14532d; }
+
+    /* ---- RESPONSIVE ---- */
+    @media (max-width: 640px) {
+      .page-header { padding: 14px 16px 8px; }
+      .quick-tpl-bar { padding: 6px 14px; }
+      .form-card { margin: 0 12px; padding: 16px 14px; }
+      .form-grid { grid-template-columns: 1fr; }
+      .form-grid .full { grid-column: 1; }
+      .three-col { grid-template-columns: 1fr 1fr; }
+      .form-footer { flex-wrap: wrap; gap: 10px; }
+      .btn-save-tpl { margin-left: 0; width: 100%; justify-content: center; }
+      .btn-submit { flex: 1; }
+      #mapPreview { height: 200px; }
+      .loop-row .loop-inputs { grid-template-columns: 1fr auto 1fr; }
+      .loop-row .loop-inputs .loop-count,
+      .loop-row .loop-inputs .loop-times { display: none; }
+    }
 
     /* Google Places Autocomplete dropdown — make it look native and ensure visibility */
     .pac-container {

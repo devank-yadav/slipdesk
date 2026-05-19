@@ -224,13 +224,13 @@
               <div class="cust-cell">
                 <div class="cust-avatar">{{ inv[1][0]|upper if inv[1] else '?' }}</div>
                 <div class="cust-info">
-                  <div class="cust-name">{{ inv[1] }}</div>
+                  <a class="cust-name" href="/admin/customers?name={{ inv[1]|urlencode }}" style="text-decoration:none;color:inherit" onclick="event.stopPropagation()">{{ inv[1] }}</a>
                   {% if inv[2] %}<div class="cust-company">{{ inv[2] }}</div>{% endif %}
                 </div>
               </div>
             </td>
             <td>{{ inv[3] or '—' }}</td>
-            <td class="driver-cell">{{ inv[7] or '—' }}</td>
+            <td class="driver-cell">{% if inv[7] %}<a href="/admin/drivers" style="text-decoration:none;color:inherit" onclick="event.stopPropagation()">{{ inv[7] }}</a>{% else %}—{% endif %}</td>
             <td>
               <span class="badge {{ badge_class }}"
                     data-id="{{ inv[0] }}"

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Drivers — Osprey Travels</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --blue: #007aff; --green: #34c759; --bg: #f2f2f7; --card: #ffffff;
+      --text: #1c1c1e; --muted: #8e8e93; --border: #e5e5ea; --radius: 12px;
+    }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+           background: var(--bg); color: var(--text); font-size: 14px; padding-bottom: 48px; }
+
+    .hero { display: flex; align-items: center; justify-content: space-between; padding: 20px 28px 12px; }
+    .hero h1 { margin: 0; font-size: 22px; font-weight: 700; }
+    .hero p  { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+
+    .table-card { margin: 0 28px; background: var(--card); border-radius: var(--radius);
+                  border: 1px solid var(--border); overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th { padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 700;
+               text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted);
+               background: #f7f7fa; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    tbody tr { border-bottom: 1px solid var(--border); }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #fafafa; }
+    td { padding: 12px 14px; vertical-align: middle; }
+
+    .driver-avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: #f0fdf4; color: #166534;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700; flex-shrink: 0;
+    }
+    .driver-name-cell { display: flex; align-items: center; gap: 10px; }
+    .driver-name { font-weight: 600; }
+    .driver-dates { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .stat-num { font-weight: 700; font-size: 15px; }
+    .stat-label { font-size: 11px; color: var(--muted); }
+
+    /* Report form in the row */
+    .report-form { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .report-form input[type="date"] {
+      padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 12px; font-family: inherit; outline: none;
+    }
+    .report-form input[type="date"]:focus { border-color: var(--blue); }
+    .btn-report {
+      padding: 6px 12px; border-radius: 7px; border: none;
+      background: var(--blue); color: #fff;
+      font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;
+      white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;
+    }
+    .btn-report:hover { background: #005ec4; }
+    .btn-view {
+      padding: 6px 10px; border-radius: 7px;
+      border: 1px solid var(--border); background: var(--card);
+      font-size: 12px; font-weight: 600; color: var(--blue);
+      text-decoration: none; display: inline-flex; align-items: center; gap: 5px;
+      white-space: nowrap;
+    }
+    .btn-view:hover { background: #f0f6ff; }
+
+    .empty-state { padding: 56px 24px; text-align: center; color: var(--muted); }
+
+    @media (max-width: 700px) {
+      .hero, .table-card { padding-left: 14px; padding-right: 14px; margin-left: 12px; margin-right: 12px; }
+      thead th.hide-m, td.hide-m { display: none; }
+      .report-form { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+{% include 'navbar.html' %}
+
+<div class="hero">
+  <div>
+    <h1>Drivers</h1>
+    <p>{{ drivers|length }} driver{{ 's' if drivers|length != 1 else '' }} on record</p>
+  </div>
+</div>
+
+<div class="table-card">
+  <table>
+    <thead>
+      <tr>
+        <th>Driver</th>
+        <th class="hide-m">Slips</th>
+        <th class="hide-m">Total KM</th>
+        <th>Download Report</th>
+        <th>View Slips</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if drivers %}
+        {% for d in drivers %}
+        <tr>
+          <td>
+            <div class="driver-name-cell">
+              <div class="driver-avatar">{{ d.name[0]|upper }}</div>
+              <div>
+                <div class="driver-name">{{ d.name }}</div>
+                <div class="driver-dates">
+                  {{ d.first_date or '—' }} → {{ d.last_date or '—' }}
+                </div>
+              </div>
+            </div>
+          </td>
+          <td class="hide-m">
+            <div class="stat-num">{{ d.total }}</div>
+            <div class="stat-label">slips</div>
+          </td>
+          <td class="hide-m">
+            <div class="stat-num">{{ d.total_km }}</div>
+            <div class="stat-label">km</div>
+          </td>
+          <td>
+            <form class="report-form" action="/admin/drivers/{{ d.name|urlencode }}/report" method="get">
+              <input type="date" name="date_from" placeholder="From" max="{{ today_str }}">
+              <input type="date" name="date_to"   placeholder="To"   max="{{ today_str }}">
+              <button type="submit" class="btn-report">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                PDF
+              </button>
+            </form>
+          </td>
+          <td>
+            <a class="btn-view" href="/admin_portal?driver={{ d.name|urlencode }}">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              View
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="5">
+          <div class="empty-state"><p>No drivers found. Add drivers in Settings.</p></div>
+        </td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+</body>
+</html>
