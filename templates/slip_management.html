@@ -284,14 +284,15 @@
     // Update month counts (skip when searching — counts would reflect query, not full month)
     if (!_smQ) {
       fetch('/admin/slips/month_counts?' + params)
-        .then(r => r.json())
+        .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
         .then(counts => {
           document.querySelectorAll('.sm-month-btn').forEach(btn => {
             const m = btn.dataset.month ? parseInt(btn.dataset.month) : null;
             const cnt = m ? (counts[m] || 0) : Object.values(counts).reduce((a,b)=>a+b,0);
             btn.querySelector('.sm-month-count').textContent = cnt;
           });
-        });
+        })
+        .catch(() => {}); // non-critical, counts just won't update
     }
   }
 
@@ -334,6 +335,7 @@
   // Inline status change
   function bindStatusSelects() {
     document.querySelectorAll('.sm-status-sel').forEach(sel => {
+      sel.dataset.prev = sel.value; // snapshot current value for revert on error
       sel.addEventListener('change', function() {
         const id = this.dataset.id;
         const newStatus = this.value;
@@ -341,26 +343,33 @@
         const fd = new FormData();
         fd.append('status', newStatus);
         fetch('/update_status/' + id, { method: 'POST', body: fd })
-          .then(r => r.json())
+          .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
           .then(data => {
             this.classList.remove('saving');
             if (data.ok && window._showToast) window._showToast('Status updated');
+            else if (!data.ok) { this.value = this.dataset.prev || this.value; }
           })
-          .catch(() => { this.classList.remove('saving'); });
+          .catch(() => {
+            this.classList.remove('saving');
+            if (window._showToast) window._showToast('Failed to update status', true);
+          });
       });
     });
   }
 
   // Bulk selection
+  // Wire select-all once (not inside rebindChecks which runs on every AJAX refresh)
+  const _selectAllEl = document.getElementById('smSelectAll');
+  if (_selectAllEl) {
+    _selectAllEl.addEventListener('change', function() {
+      document.querySelectorAll('.sm-check').forEach(c => c.checked = this.checked);
+      updateBulkBar();
+    });
+  }
+
   function rebindChecks() {
     const selectAll = document.getElementById('smSelectAll');
-    if (selectAll) {
-      selectAll.checked = false;
-      selectAll.addEventListener('change', function() {
-        document.querySelectorAll('.sm-check').forEach(c => c.checked = this.checked);
-        updateBulkBar();
-      });
-    }
+    if (selectAll) selectAll.checked = false;
     document.querySelectorAll('.sm-check').forEach(c => {
       c.addEventListener('change', updateBulkBar);
     });
@@ -401,11 +410,15 @@
     if (!ids.length) return;
     if (!confirm('Delete ' + ids.length + ' slip(s) permanently?')) return;
     Promise.all(ids.map(id =>
-      fetch('/delete_invoice/' + id, { method: 'POST' })
-    )).then(() => {
+      fetch('/delete_invoice/' + id, { method: 'POST' }).then(r => r.ok)
+    )).then(results => {
+      const deleted = results.filter(Boolean).length;
       clearSelection();
       loadRows(false);
-      if (window._showToast) window._showToast(ids.length + ' slip(s) deleted');
+      if (window._showToast) window._showToast(deleted + ' slip(s) deleted');
+    }).catch(() => {
+      loadRows(false);
+      if (window._showToast) window._showToast('Some deletions failed', true);
     });
   }
 

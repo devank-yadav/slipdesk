@@ -79,12 +79,11 @@
 
     /* ---- FORM CARD ---- */
     .form-card {
-      margin: 0 auto;
-      max-width: 980px;
+      margin: 0 28px;
       background: var(--card);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      padding: 32px 40px;
+      padding: 28px 32px;
     }
     .section-label {
       font-size: 13px;
@@ -92,7 +91,7 @@
       text-transform: none;
       letter-spacing: 0;
       color: var(--text);
-      margin: 32px 0 16px;
+      margin: 28px 0 14px;
       padding: 0 0 0 10px;
       border-left: 3px solid var(--primary);
       border-bottom: none;
@@ -105,21 +104,21 @@
     .form-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 18px 28px;
+      gap: 14px 20px;
     }
     .form-grid .full { grid-column: 1 / -1; }
     .three-col {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
-      gap: 18px 28px;
+      gap: 14px 20px;
     }
     /* Odometer / Timing: 3-col with styled auto-calculated column */
     .calc-row {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
-      gap: 18px 28px;
+      gap: 14px 20px;
     }
-    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field { display: flex; flex-direction: column; gap: 5px; }
     .field label {
       font-size: 12px;
       font-weight: 600;
@@ -131,7 +130,7 @@
     .field input,
     .field select,
     .field textarea {
-      padding: 11px 14px;
+      padding: 10px 13px;
       border: 1.5px solid var(--border);
       border-radius: 8px;
       font-size: 14px;
@@ -473,11 +472,11 @@
     @media (max-width: 640px) {
       .page-header { padding: 14px 16px 8px; }
       .quick-tpl-bar { padding: 6px 14px; }
-      .form-card { margin: 0 10px; padding: 18px 16px; }
-      .form-grid { grid-template-columns: 1fr; gap: 14px; }
+      .form-card { margin: 0 12px; padding: 16px 14px; }
+      .form-grid { grid-template-columns: 1fr; }
       .form-grid .full { grid-column: 1; }
-      .three-col { grid-template-columns: 1fr 1fr; gap: 14px; }
-      .calc-row { grid-template-columns: 1fr 1fr; gap: 14px; }
+      .three-col { grid-template-columns: 1fr 1fr; }
+      .calc-row { grid-template-columns: 1fr 1fr; }
       .calc-row .auto-col { grid-column: 1 / -1; }
       .form-footer { flex-wrap: wrap; gap: 10px; }
       .btn-save-tpl { margin-left: 0; width: 100%; justify-content: center; }
@@ -525,7 +524,7 @@
   <div class="quick-tpl-bar">
     <span class="quick-tpl-label">Quick fill:</span>
     {% for tpl in quick_templates %}
-    <button type="button" class="quick-tpl-btn" onclick="applyQuickTemplate({{ tpl[0] }})">{{ tpl[1] }}</button>
+    <button type="button" class="quick-tpl-btn" onclick="applyQuickTemplate({{ tpl[0] }}, this)">{{ tpl[1] }}</button>
     {% endfor %}
   </div>
   {% endif %}
@@ -773,7 +772,7 @@
       if (_dupDismissed) return; // user already acknowledged
       const form = this;
       const customer = (form.elements['customer_name'] || {}).value || '';
-      const date     = (form.elements['dn'] || {}).value || '';
+      const date     = (form.elements['date'] || {}).value || '';
       const vehicleNo= (form.elements['vehicle_no'] || {}).value || '';
       if (!customer || !date) return; // nothing to check
 
@@ -815,7 +814,7 @@
     function saveAsTemplate() {
       const form = document.querySelector('form[action="/generate"]');
       const fields = ['customer_name','company_name','driver_name','vehicle_type',
-                      'vehicle_no','dn','starting_km','total_km','remarks',
+                      'vehicle_no','starting_km','total_km',
                       'project_code','mail_approval_date'];
       const params = new URLSearchParams();
       fields.forEach(f => {
@@ -1017,8 +1016,7 @@
     // =====================================================================
     // QUICK TEMPLATE APPLY
     // =====================================================================
-    function applyQuickTemplate(id) {
-      const btn = event.currentTarget;
+    function applyQuickTemplate(id, btn) {
       btn.classList.add('loading');
       fetch('/templates/' + id + '/json')
         .then(r => r.json())
