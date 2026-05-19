@@ -20,20 +20,26 @@
     <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ s[6] or '' }}">{{ s[6] or '—' }}</td>
     <td>{{ s[7] or '—' }}</td>
     <td>
-      <span class="sm-badge {{ badge_cls }}">{{ bill_st }}</span>
-      {% if sig_st == 'signed' %}
-        <span class="sm-badge smb-signed">✓ Signed</span>
-      {% elif sig_st == 'pending' %}
-        <span class="sm-badge smb-sigpend">⏳ Sig. Pending</span>
-      {% endif %}
+      <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
+        <select class="sm-status-sel" data-id="{{ s[0] }}" title="Change bill status">
+          <option value="Bill Generated"   {% if bill_st == 'Bill Generated'   %}selected{% endif %}>Generated</option>
+          <option value="Bill Submitted"   {% if bill_st == 'Bill Submitted'   %}selected{% endif %}>Submitted</option>
+          <option value="Payment Received" {% if bill_st == 'Payment Received' %}selected{% endif %}>Paid</option>
+        </select>
+        {% if sig_st == 'signed' %}
+          <span class="sm-badge smb-signed">✓ Signed</span>
+        {% elif sig_st == 'pending' %}
+          <span class="sm-badge smb-sigpend">⏳ Sig. Pending</span>
+        {% endif %}
+      </div>
     </td>
     <td>
       <div style="display:flex;gap:6px;align-items:center;">
         <a href="/invoice/{{ s[0] }}/download" class="sm-action-btn" title="Download PDF">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         </a>
-        <a href="/admin_portal?customer_name={{ s[4]|urlencode }}" class="sm-action-btn" title="View in dashboard">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        <a href="/generator?clone_id={{ s[0] }}" class="sm-action-btn" title="Clone slip">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         </a>
         <form method="post" action="/delete_invoice/{{ s[0] }}" style="display:inline;"
               onsubmit="return confirm('Delete this slip permanently?')">

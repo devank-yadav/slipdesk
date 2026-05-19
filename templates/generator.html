@@ -118,9 +118,9 @@
     .field input,
     .field select,
     .field textarea {
-      padding: 9px 11px;
-      border: 1px solid var(--border);
-      border-radius: 7px;
+      padding: 10px 13px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
       font-size: 14px;
       outline: none;
       background: #fff;
@@ -496,7 +496,7 @@
       <!-- PARTY INFO -->
       <div class="section-label">Party Information</div>
       <div class="form-grid">
-        <div class="field">
+        <div class="field full">
           <label for="customer_name">Customer Name *</label>
           <div class="ac-wrap" style="position:relative;">
           <input type="text" id="customer_name" name="customer_name"
@@ -505,10 +505,11 @@
                  placeholder="Select or type customer…" required>
           </div>
         </div>
-        <div class="field">
+        <div class="field full">
           <label for="company_name">Company Name</label>
           <input type="text" id="company_name" name="company_name"
-                 value="{{ prefill.get('company_name', '') }}">
+                 value="{{ prefill.get('company_name', '') }}"
+                 placeholder="Auto-filled from customer">
         </div>
       </div>
 
@@ -672,7 +673,7 @@
       <!-- DRIVER -->
       <div class="section-label">Driver</div>
       <div class="form-grid">
-        <div class="field">
+        <div class="field full">
           <label for="driver_name">Driver Name *</label>
           <select id="driver_name" name="driver_name" required>
             <option value="">— Select Driver —</option>

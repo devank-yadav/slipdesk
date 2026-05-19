@@ -1119,7 +1119,7 @@ def delete_invoice(invoice_id):
     if 'admin' not in session:
         return redirect(url_for('home'))
     delete_invoice_file(invoice_id)
-    return redirect(url_for('admin_portal'))
+    return redirect(url_for('admin_portal') + '?flash=Slip+deleted')
 
 
 @app.route('/bulk_action', methods=['POST'])
@@ -1137,7 +1137,7 @@ def bulk_action():
 
         if action == 'delete':
             conn.execute(f"DELETE FROM invoices WHERE id IN ({placeholders})", selected_ids)
-            return redirect(url_for('admin_portal'))
+            return redirect(url_for('admin_portal') + f'?flash={len(selected_ids)}+slip(s)+deleted')
 
         elif action == 'download':
             rows = conn.execute(
@@ -2284,7 +2284,9 @@ def add_customer():
             else:
                 conn.execute("INSERT INTO customers (name, company) VALUES (?, ?)", (name, company))
                 _cache_bust()
-    return redirect(url_for('customers_page', add_error=error) if error else url_for('customers_page'))
+    if error:
+        return redirect(url_for('customers_page') + f'?add_error={error}')
+    return redirect(url_for('customers_page') + '?flash=Customer+added')
 
 
 @app.route('/admin/customers/merge', methods=['POST'])
@@ -2300,7 +2302,7 @@ def merge_customers():
             conn.execute("UPDATE slip_templates SET customer_name = ? WHERE LOWER(customer_name) = LOWER(?)", (to_name, from_name))
             conn.execute("DELETE FROM customers WHERE LOWER(name) = LOWER(?) AND LOWER(name) != LOWER(?)", (from_name, to_name))
         _cache_bust()
-    return redirect(url_for('customers_page', merged='1'))
+    return redirect(url_for('customers_page') + '?flash=Customers+merged')
 
 
 # --------------------------
@@ -2346,7 +2348,9 @@ def add_driver():
                 _cache_bust()
             except sqlite3.IntegrityError:
                 error = f'Driver "{name}" already exists.'
-    return redirect(url_for('drivers_page', add_error=error) if error else url_for('drivers_page'))
+    if error:
+        return redirect(url_for('drivers_page') + f'?add_error={error}')
+    return redirect(url_for('drivers_page') + '?flash=Driver+added')
 
 
 @app.route('/admin/drivers/<path:driver_name>/report')
@@ -2424,7 +2428,7 @@ def driver_report(driver_name):
 # --------------------------
 # SLIP MANAGEMENT
 # --------------------------
-def _slip_mgmt_query(year, month, status, date_type):
+def _slip_mgmt_query(year, month, status, date_type, q=None):
     col = "date" if date_type == 'duty' else "created_at"
     where = f"WHERE strftime('%Y', {col}) = ?"
     params = [str(year)]
@@ -2439,6 +2443,11 @@ def _slip_mgmt_query(year, month, status, date_type):
     }
     if status and status in STATUS_MAP:
         where += f" AND {STATUS_MAP[status]}"
+    if q:
+        like = f"%{q}%"
+        where += (" AND (customer_name LIKE ? OR duty_slip_no LIKE ?"
+                  " OR driver_name LIKE ? OR route_covered LIKE ? OR company_name LIKE ?)")
+        params.extend([like, like, like, like, like])
     return where, params
 
 
@@ -2502,8 +2511,9 @@ def slip_management_rows():
     month     = request.args.get('month', '')
     status    = request.args.get('status', 'all')
     date_type = request.args.get('date_type', 'duty')
+    q         = (request.args.get('q') or '').strip()
     col       = "date" if date_type == 'duty' else "created_at"
-    where, params = _slip_mgmt_query(year, month, status, date_type)
+    where, params = _slip_mgmt_query(year, month, status, date_type, q)
     with sqlite3.connect(DATABASE) as conn:
         slips = conn.execute(
             f"""SELECT id, duty_slip_no, date, created_at, customer_name, company_name,

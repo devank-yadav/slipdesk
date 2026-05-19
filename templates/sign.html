@@ -395,6 +395,7 @@ function clearSig() {
   canvas.classList.remove('has-sig');
   document.getElementById('sigHint').style.display = '';
   document.getElementById('btnSubmit').disabled = true;
+  hasSig = false;
 }
 
 function showToast(msg) {

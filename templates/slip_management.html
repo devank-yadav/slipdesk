@@ -129,6 +129,30 @@
     }
     .sm-spinner.show { display: flex; }
 
+    /* Search bar */
+    .sm-search-wrap {
+      padding: 10px 20px; border-bottom: 1px solid var(--border);
+      background: var(--card);
+    }
+    .sm-search-input {
+      width: 100%; padding: 8px 12px 8px 34px; border: 1.5px solid var(--border);
+      border-radius: 8px; font-size: 13px; font-family: inherit; outline: none;
+      background: #f7f7fa url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 10px center;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .sm-search-input:focus { border-color: var(--blue); background-color: #fff; }
+    .sm-search-input::placeholder { color: var(--muted); }
+
+    /* Inline status select */
+    .sm-status-sel {
+      padding: 3px 6px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 11px; font-weight: 700; font-family: inherit;
+      background: #f7f7fa; color: var(--text); cursor: pointer; outline: none;
+      transition: border-color 0.1s;
+    }
+    .sm-status-sel:focus { border-color: var(--blue); }
+    .sm-status-sel.saving { opacity: 0.5; pointer-events: none; }
+
     @media (max-width: 768px) {
       .sm-sidebar { width: 160px; }
     }
@@ -184,6 +208,12 @@
       </div>
     </div>
 
+    <div class="sm-search-wrap">
+      <input type="text" class="sm-search-input" id="smSearch"
+             placeholder="Search by customer, slip #, driver, route…"
+             oninput="onSearchInput(this.value)">
+    </div>
+
     <div class="sm-bulk-bar" id="bulkBar">
       <span id="bulkCount">0 selected</span>
       <button class="sm-bulk-btn" onclick="bulkDownload()">Download ZIPs</button>
@@ -219,6 +249,8 @@
   let _smMonth  = '{{ month if month else "" }}';
   let _smStatus = '{{ status }}';
   let _smDType  = '{{ date_type }}';
+  let _smQ      = '';
+  let _smSearchTimer = null;
 
   function _buildParams() {
     const p = new URLSearchParams();
@@ -226,6 +258,7 @@
     if (_smMonth) p.set('month', _smMonth);
     p.set('status', _smStatus);
     p.set('date_type', _smDType);
+    if (_smQ) p.set('q', _smQ);
     return p;
   }
 
@@ -248,16 +281,26 @@
         document.getElementById('smTbody').style.opacity = '1';
       });
 
-    // Update month counts
-    fetch('/admin/slips/month_counts?' + params)
-      .then(r => r.json())
-      .then(counts => {
-        document.querySelectorAll('.sm-month-btn').forEach(btn => {
-          const m = btn.dataset.month ? parseInt(btn.dataset.month) : null;
-          const cnt = m ? (counts[m] || 0) : Object.values(counts).reduce((a,b)=>a+b,0);
-          btn.querySelector('.sm-month-count').textContent = cnt;
+    // Update month counts (skip when searching — counts would reflect query, not full month)
+    if (!_smQ) {
+      fetch('/admin/slips/month_counts?' + params)
+        .then(r => r.json())
+        .then(counts => {
+          document.querySelectorAll('.sm-month-btn').forEach(btn => {
+            const m = btn.dataset.month ? parseInt(btn.dataset.month) : null;
+            const cnt = m ? (counts[m] || 0) : Object.values(counts).reduce((a,b)=>a+b,0);
+            btn.querySelector('.sm-month-count').textContent = cnt;
+          });
         });
-      });
+    }
+  }
+
+  function onSearchInput(val) {
+    clearTimeout(_smSearchTimer);
+    _smSearchTimer = setTimeout(() => {
+      _smQ = val.trim();
+      loadRows(false);
+    }, 280);
   }
 
   function selectMonth(m) {
@@ -288,6 +331,26 @@
     });
   });
 
+  // Inline status change
+  function bindStatusSelects() {
+    document.querySelectorAll('.sm-status-sel').forEach(sel => {
+      sel.addEventListener('change', function() {
+        const id = this.dataset.id;
+        const newStatus = this.value;
+        this.classList.add('saving');
+        const fd = new FormData();
+        fd.append('status', newStatus);
+        fetch('/update_status/' + id, { method: 'POST', body: fd })
+          .then(r => r.json())
+          .then(data => {
+            this.classList.remove('saving');
+            if (data.ok && window._showToast) window._showToast('Status updated');
+          })
+          .catch(() => { this.classList.remove('saving'); });
+      });
+    });
+  }
+
   // Bulk selection
   function rebindChecks() {
     const selectAll = document.getElementById('smSelectAll');
@@ -301,6 +364,7 @@
     document.querySelectorAll('.sm-check').forEach(c => {
       c.addEventListener('change', updateBulkBar);
     });
+    bindStatusSelects();
   }
 
   function updateBulkBar() {
@@ -338,7 +402,11 @@
     if (!confirm('Delete ' + ids.length + ' slip(s) permanently?')) return;
     Promise.all(ids.map(id =>
       fetch('/delete_invoice/' + id, { method: 'POST' })
-    )).then(() => { clearSelection(); loadRows(false); });
+    )).then(() => {
+      clearSelection();
+      loadRows(false);
+      if (window._showToast) window._showToast(ids.length + ' slip(s) deleted');
+    });
   }
 
   window.addEventListener('popstate', () => {

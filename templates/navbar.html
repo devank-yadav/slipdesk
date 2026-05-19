@@ -150,7 +150,8 @@
     font-weight: 900;
     letter-spacing: -1px;
   }
-  .navbar-brand span { color: #007aff; }
+  .navbar-brand .brand-name { color: #1c1c1e; }
+  .navbar-brand .brand-name span { color: #007aff; }
 
   .navbar-sep {
     width: 1px;
@@ -280,12 +281,27 @@
 
   /* Shared icon sizing */
   .icon { display: inline-block; vertical-align: middle; flex-shrink: 0; }
+
+  /* ---- Global toast ---- */
+  #_toast {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(16px);
+    background: #1c1c1e; color: #fff; padding: 11px 20px; border-radius: 10px;
+    font-size: 13px; font-weight: 600; white-space: nowrap;
+    box-shadow: 0 4px 20px rgba(0,0,0,.22);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.18s, transform 0.18s;
+    z-index: 9999;
+  }
+  #_toast.show {
+    opacity: 1; transform: translateX(-50%) translateY(0);
+  }
+  #_toast.error { background: #ff3b30; }
 </style>
 
 <nav class="navbar">
   <a class="navbar-brand" href="/admin_portal">
     <div class="brand-mark">OT</div>
-    Osprey <span>Travels</span>
+    <span class="brand-name">Osprey <span>Travels</span></span>
   </a>
 
   <div class="navbar-sep"></div>
@@ -349,8 +365,34 @@
 
 <!-- Vercel Speed Insights (non-Next.js apps) -->
 <script defer src="/_vercel/speed-insights/script.js"></script>
+
+<div id="_toast"></div>
+
 <script>
   document.getElementById('hamBtn').onclick = function() {
     document.getElementById('navLinks').classList.toggle('open');
   };
+
+  // Global toast — triggered by ?flash=... or ?flash_error=... in URL
+  (function() {
+    function showToast(msg, isError) {
+      const t = document.getElementById('_toast');
+      t.textContent = msg;
+      t.className = isError ? 'show error' : 'show';
+      clearTimeout(t._tid);
+      t._tid = setTimeout(() => { t.className = ''; }, 3200);
+    }
+
+    window._showToast = showToast;
+
+    const p = new URLSearchParams(location.search);
+    const msg = p.get('flash');
+    const err = p.get('flash_error');
+    if (msg || err) {
+      showToast(msg || err, !!err);
+      p.delete('flash'); p.delete('flash_error');
+      const qs = p.toString();
+      history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash);
+    }
+  })();
 </script>
