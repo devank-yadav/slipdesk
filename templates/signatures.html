@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signatures — Osprey Travels</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --blue: #007aff;
+      --green: #34c759;
+      --orange: #ff9500;
+      --red: #ff3b30;
+      --bg: #f2f2f7;
+      --card: #ffffff;
+      --text: #1c1c1e;
+      --muted: #8e8e93;
+      --border: #e5e5ea;
+      --radius: 12px;
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      padding-bottom: 48px;
+    }
+    .hero {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 20px 28px 12px;
+    }
+    .hero h1 { margin: 0; font-size: 22px; font-weight: 700; }
+    .hero p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+
+    /* NEW LINK BANNER */
+    .new-banner {
+      margin: 0 28px 20px;
+      background: #e8f5e9;
+      border: 1.5px solid #a5d6a7;
+      border-radius: var(--radius);
+      padding: 16px 18px;
+    }
+    .new-banner-label {
+      font-size: 12px; font-weight: 700; color: #2e7d32;
+      text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
+    }
+    .link-row {
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    }
+    .link-box {
+      flex: 1; min-width: 0;
+      background: #fff;
+      border: 1px solid #c8e6c9;
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 13px;
+      color: var(--text);
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .btn-copy, .btn-wa {
+      flex-shrink: 0;
+      padding: 9px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .btn-copy { background: var(--blue); color: #fff; }
+    .btn-copy:hover { background: #005ec4; }
+    .btn-wa { background: #25d366; color: #fff; }
+    .btn-wa:hover { background: #1da851; }
+
+    /* TABLE CARD */
+    .table-card {
+      margin: 0 28px;
+      background: var(--card);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .table-meta {
+      padding: 14px 18px 10px;
+      font-size: 13px; color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--muted);
+      background: #f7f7fa;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    tbody tr { border-bottom: 1px solid var(--border); }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #fafafa; }
+    td { padding: 12px 14px; vertical-align: middle; }
+
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 10px; border-radius: 20px;
+      font-size: 12px; font-weight: 600; white-space: nowrap;
+    }
+    .badge-signed  { background: #e8f5e9; color: #2e7d32; }
+    .badge-pending { background: #fff8e1; color: #e65100; }
+    .badge-expired { background: #f5f5f5; color: var(--muted); }
+
+    .cust-name { font-weight: 600; }
+    .slip-count { font-size: 12px; color: var(--muted); }
+    .date-cell { font-size: 13px; color: var(--muted); white-space: nowrap; }
+    .signed-date { font-size: 12px; color: #2e7d32; margin-top: 2px; }
+
+    .action-btns { display: flex; gap: 6px; align-items: center; }
+    .btn-icon-copy {
+      padding: 6px 10px; border-radius: 7px;
+      border: 1px solid var(--border); background: var(--card);
+      font-size: 12px; font-weight: 600; color: var(--blue);
+      cursor: pointer; font-family: inherit;
+      display: inline-flex; align-items: center; gap: 5px;
+      transition: background 0.1s;
+    }
+    .btn-icon-copy:hover { background: #f0f0f5; }
+    .btn-icon-wa {
+      padding: 6px 10px; border-radius: 7px;
+      border: none; background: #25d366;
+      font-size: 12px; font-weight: 600; color: #fff;
+      cursor: pointer; font-family: inherit;
+      display: inline-flex; align-items: center; gap: 5px;
+      text-decoration: none;
+    }
+    .btn-icon-wa:hover { background: #1da851; }
+    .btn-revoke {
+      padding: 6px 10px; border-radius: 7px;
+      border: 1px solid #ffd0cd; background: #fff5f5;
+      font-size: 12px; font-weight: 600; color: var(--red);
+      cursor: pointer; font-family: inherit;
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+    .btn-revoke:hover { background: #ffe5e4; }
+    .btn-revoke[disabled] { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+    .empty-state {
+      padding: 56px 24px;
+      text-align: center;
+      color: var(--muted);
+    }
+    .empty-state svg { opacity: 0.25; margin-bottom: 12px; }
+    .empty-state p { margin: 6px 0 0; font-size: 14px; }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: #1c1c1e; color: #fff;
+      padding: 11px 18px; border-radius: 10px;
+      font-size: 13px; font-weight: 500;
+      opacity: 0; transition: opacity 0.2s;
+      pointer-events: none; white-space: nowrap; z-index: 999;
+    }
+    .toast.show { opacity: 1; }
+
+    @media (max-width: 700px) {
+      .hero, .table-card, .new-banner { margin-left: 12px; margin-right: 12px; padding-left: 14px; padding-right: 14px; }
+      .action-btns { flex-wrap: wrap; }
+      thead th.hide-mobile, td.hide-mobile { display: none; }
+    }
+  </style>
+</head>
+<body>
+{% include 'navbar.html' %}
+
+<div class="hero">
+  <div>
+    <h1>Signatures</h1>
+    <p>Manage digital signature requests sent to customers</p>
+  </div>
+</div>
+
+{% if new_token %}
+{% set new_link = request.host_url.rstrip('/') + '/sign/' + new_token %}
+<div class="new-banner">
+  <div class="new-banner-label">✓ New signature link created</div>
+  <div class="link-row">
+    <div class="link-box" id="newLinkBox">{{ new_link }}</div>
+    <button class="btn-copy" onclick="copyLink('{{ new_link }}', this)">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      Copy Link
+    </button>
+    <a class="btn-wa" href="https://wa.me/?text={{ ('Dear Customer, please review and sign your Osprey Travels duty slip(s). Tap the link below to sign digitally:\n' + new_link)|urlencode }}" target="_blank" rel="noopener">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
+      WhatsApp
+    </a>
+  </div>
+</div>
+{% endif %}
+
+<div class="table-card">
+  <div class="table-meta">
+    {{ requests|length }} signature request{{ 's' if requests|length != 1 else '' }}
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Customer</th>
+        <th>Slips</th>
+        <th class="hide-mobile">Sent</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if requests %}
+        {% for req in requests %}
+        {% set link = request.host_url.rstrip('/') + '/sign/' + req.token %}
+        {% set wa_msg = 'Dear ' + (req.customer_name or 'Customer') + ', please review and sign your Osprey Travels duty slip(s). Tap the link below to sign digitally:\n' + link %}
+        <tr>
+          <td>
+            <div class="cust-name">{{ req.customer_name or '—' }}</div>
+            <div class="slip-count">{{ req.invoice_count }} slip{{ 's' if req.invoice_count != 1 else '' }}</div>
+          </td>
+          <td>{{ req.invoice_count }}</td>
+          <td class="hide-mobile date-cell">
+            {{ req.created_at[:10] if req.created_at else '—' }}
+            {% if req.expires_at and req.status == 'pending' %}
+              <div style="font-size:11px;color:var(--muted)">Expires {{ req.expires_at[:10] }}</div>
+            {% endif %}
+          </td>
+          <td>
+            {% if req.status == 'signed' %}
+              <span class="badge badge-signed">✓ Signed</span>
+              {% if req.signed_at %}
+                <div class="signed-date">{{ req.signed_at[:10] }}</div>
+              {% endif %}
+            {% elif req.status == 'expired' %}
+              <span class="badge badge-expired">Expired</span>
+            {% else %}
+              <span class="badge badge-pending">⏳ Pending</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="action-btns">
+              {% if req.status != 'signed' %}
+              <button class="btn-icon-copy" onclick="copyLink('{{ link }}', this)" title="Copy link">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                Copy
+              </button>
+              <a class="btn-icon-wa" href="https://wa.me/?text={{ wa_msg|urlencode }}" target="_blank" rel="noopener" title="Share on WhatsApp">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
+                WhatsApp
+              </a>
+              {% endif %}
+              {% if req.status != 'signed' %}
+              <form method="post" action="/admin/signatures/revoke/{{ req.id }}" style="display:inline"
+                    onsubmit="return confirm('Revoke this signature link? The customer will no longer be able to sign.')">
+                <button type="submit" class="btn-revoke" title="Revoke link">Revoke</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="5">
+          <div class="empty-state">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            <p>No signature requests yet.</p>
+            <p style="margin-top:6px;font-size:13px;">Select slips on the Dashboard and click <strong>Request Signature</strong>.</p>
+          </div>
+        </td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+function copyLink(url, btn) {
+  navigator.clipboard.writeText(url).then(() => {
+    const orig = btn.innerHTML;
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.innerHTML = orig; }, 2000);
+    showToast('Link copied to clipboard');
+  }).catch(() => {
+    showToast('Could not copy — please copy manually');
+  });
+}
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+</script>
+</body>
+</html>

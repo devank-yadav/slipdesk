@@ -530,6 +530,27 @@ def init_db():
         if 'route_stops_json' not in tpl_cols:
             conn.execute("ALTER TABLE slip_templates ADD COLUMN route_stops_json TEXT")
 
+        # Signature columns on invoices
+        inv_cols = [col[1] for col in conn.execute("PRAGMA table_info(invoices)").fetchall()]
+        if 'signature_status' not in inv_cols:
+            conn.execute("ALTER TABLE invoices ADD COLUMN signature_status TEXT")
+        if 'signed_at' not in inv_cols:
+            conn.execute("ALTER TABLE invoices ADD COLUMN signed_at TEXT")
+
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS signature_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token TEXT UNIQUE NOT NULL,
+                invoice_ids TEXT NOT NULL,
+                customer_name TEXT,
+                created_at TEXT,
+                expires_at TEXT,
+                signed_at TEXT,
+                signature_data TEXT,
+                signer_ip TEXT
+            )
+        ''')
+
 
 init_db()
 
@@ -681,7 +702,8 @@ def admin_portal():
                payment_date,
                vehicle_type, vehicle_no, starting_km, closing_km, total_km,
                starting_time, closing_time, total_time, dn, remarks, route_covered,
-               project_code, mail_approval_date
+               project_code, mail_approval_date,
+               COALESCE(signature_status, '') as signature_status
         FROM invoices {where_clause}
         ORDER BY id DESC
         LIMIT ? OFFSET ?
@@ -1501,6 +1523,180 @@ def templates_use(template_id):
             (datetime.now().strftime('%Y-%m-%d %H:%M'), template_id, session['admin']),
         )
     return redirect(url_for('generator_form', template_id=template_id))
+
+
+# --------------------------
+# DIGITAL SIGNATURES
+# --------------------------
+
+@app.route('/request_signature', methods=['POST'])
+def request_signature():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    invoice_ids = request.form.getlist('selected_invoices')
+    if not invoice_ids:
+        return redirect(url_for('admin_portal'))
+
+    with sqlite3.connect(DATABASE) as conn:
+        row = conn.execute(
+            "SELECT customer_name FROM invoices WHERE id = ?", (invoice_ids[0],)
+        ).fetchone()
+    customer_name = row[0] if row else ''
+
+    token = secrets.token_urlsafe(16)
+    now = datetime.now()
+    created_at = now.strftime('%Y-%m-%d %H:%M:%S')
+    expires_at = (now + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+    ids_json = _json.dumps([int(i) for i in invoice_ids])
+
+    with sqlite3.connect(DATABASE) as conn:
+        conn.execute(
+            """INSERT INTO signature_requests (token, invoice_ids, customer_name, created_at, expires_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (token, ids_json, customer_name, created_at, expires_at)
+        )
+        placeholders = ','.join('?' * len(invoice_ids))
+        conn.execute(
+            f"UPDATE invoices SET signature_status = 'pending' WHERE id IN ({placeholders}) AND COALESCE(signature_status,'') != 'signed'",
+            invoice_ids
+        )
+
+    return redirect(url_for('signatures_page', new_token=token))
+
+
+@app.route('/admin/signatures')
+def signatures_page():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    new_token = request.args.get('new_token', '')
+    with sqlite3.connect(DATABASE) as conn:
+        rows = conn.execute(
+            """SELECT id, token, invoice_ids, customer_name, created_at, expires_at, signed_at, signer_ip
+               FROM signature_requests ORDER BY created_at DESC"""
+        ).fetchall()
+
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    requests_data = []
+    for r in rows:
+        ids = _json.loads(r[2]) if r[2] else []
+        signed_at = r[6]
+        expires_at = r[5]
+        if signed_at:
+            status = 'signed'
+        elif expires_at and now_str > expires_at:
+            status = 'expired'
+        else:
+            status = 'pending'
+        requests_data.append({
+            'id': r[0], 'token': r[1], 'invoice_count': len(ids),
+            'customer_name': r[3], 'created_at': r[4],
+            'expires_at': expires_at, 'signed_at': signed_at,
+            'signer_ip': r[7], 'status': status,
+        })
+
+    return render_template('signatures.html', requests=requests_data, new_token=new_token)
+
+
+@app.route('/admin/signatures/revoke/<int:req_id>', methods=['POST'])
+def revoke_signature(req_id):
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    with sqlite3.connect(DATABASE) as conn:
+        row = conn.execute(
+            "SELECT invoice_ids FROM signature_requests WHERE id = ?", (req_id,)
+        ).fetchone()
+        if row:
+            ids = _json.loads(row[0]) if row[0] else []
+            conn.execute("DELETE FROM signature_requests WHERE id = ?", (req_id,))
+            for inv_id in ids:
+                still_pending = conn.execute(
+                    "SELECT 1 FROM signature_requests WHERE json_each.value = ? AND signed_at IS NULL",
+                    (inv_id,)
+                ).fetchone()
+                if not still_pending:
+                    conn.execute(
+                        "UPDATE invoices SET signature_status = NULL WHERE id = ? AND signature_status = 'pending'",
+                        (inv_id,)
+                    )
+    return redirect(url_for('signatures_page'))
+
+
+@app.route('/sign/<token>', methods=['GET'])
+def sign_page(token):
+    with sqlite3.connect(DATABASE) as conn:
+        req = conn.execute(
+            "SELECT id, invoice_ids, customer_name, created_at, expires_at, signed_at FROM signature_requests WHERE token = ?",
+            (token,)
+        ).fetchone()
+
+    if not req:
+        return render_template('sign.html', error='This signature link does not exist or has been revoked.')
+
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    if req[5]:
+        return render_template('sign.html', already_signed=True, signed_at=req[5], customer_name=req[2])
+    if req[4] and now_str > req[4]:
+        return render_template('sign.html', error='This signature link has expired. Please contact Osprey Travels for a new link.')
+
+    ids = _json.loads(req[1]) if req[1] else []
+    slips = []
+    with sqlite3.connect(DATABASE) as conn:
+        for inv_id in ids:
+            row = conn.execute(
+                """SELECT duty_slip_no, customer_name, company_name, date,
+                          vehicle_type, vehicle_no, route_covered, driver_name
+                   FROM invoices WHERE id = ?""",
+                (inv_id,)
+            ).fetchone()
+            if row:
+                slips.append({
+                    'id': inv_id, 'duty_slip_no': row[0],
+                    'customer_name': row[1], 'company_name': row[2],
+                    'date': row[3], 'vehicle_type': row[4],
+                    'vehicle_no': row[5], 'route_covered': row[6],
+                    'driver_name': row[7],
+                })
+
+    return render_template('sign.html', token=token, slips=slips,
+                           customer_name=req[2], expires_at=req[4])
+
+
+@app.route('/sign/<token>', methods=['POST'])
+def submit_signature(token):
+    with sqlite3.connect(DATABASE) as conn:
+        req = conn.execute(
+            "SELECT id, invoice_ids, expires_at, signed_at FROM signature_requests WHERE token = ?",
+            (token,)
+        ).fetchone()
+    if not req:
+        return jsonify({'ok': False, 'error': 'Invalid link'})
+
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    if req[3]:
+        return jsonify({'ok': False, 'error': 'Already signed'})
+    if req[2] and now_str > req[2]:
+        return jsonify({'ok': False, 'error': 'Link expired'})
+
+    sig_data = request.form.get('signature_data', '')
+    if not sig_data or len(sig_data) < 100:
+        return jsonify({'ok': False, 'error': 'Please draw your signature before submitting'})
+
+    signer_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')
+    ids = _json.loads(req[1]) if req[1] else []
+
+    with sqlite3.connect(DATABASE) as conn:
+        conn.execute(
+            "UPDATE signature_requests SET signed_at = ?, signature_data = ?, signer_ip = ? WHERE id = ?",
+            (now_str, sig_data, signer_ip, req[0])
+        )
+        if ids:
+            placeholders = ','.join('?' * len(ids))
+            conn.execute(
+                f"UPDATE invoices SET signature_status = 'signed', signed_at = ? WHERE id IN ({placeholders})",
+                [now_str] + ids
+            )
+
+    return jsonify({'ok': True})
 
 
 @app.errorhandler(404)

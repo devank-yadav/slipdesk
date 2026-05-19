@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Sign Duty Slips — Osprey Travels</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --blue: #007aff;
+      --green: #34c759;
+      --red: #ff3b30;
+      --bg: #f2f2f7;
+      --card: #ffffff;
+      --text: #1c1c1e;
+      --muted: #8e8e93;
+      --border: #e5e5ea;
+      --radius: 14px;
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      min-height: 100vh;
+    }
+
+    /* HEADER */
+    .header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-mark {
+      width: 36px; height: 36px;
+      background: var(--blue);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 900; font-size: 14px; letter-spacing: -1px;
+      flex-shrink: 0;
+    }
+    .brand-text { font-weight: 800; font-size: 17px; }
+    .brand-text span { color: var(--blue); }
+
+    .wrap { padding: 20px 16px 40px; max-width: 540px; margin: 0 auto; }
+
+    /* INTRO */
+    .intro { margin-bottom: 24px; }
+    .intro h2 { margin: 0 0 6px; font-size: 22px; font-weight: 700; }
+    .intro p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+
+    /* SLIP CARD */
+    .slip-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+    .slip-header {
+      background: #f7f7fa;
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .slip-no-badge {
+      background: var(--blue);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+    .slip-date { font-size: 13px; color: var(--muted); margin-left: auto; }
+    .slip-body { padding: 14px 16px; display: grid; gap: 10px; }
+    .field { display: flex; flex-direction: column; gap: 2px; }
+    .field-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--muted);
+    }
+    .field-value { font-size: 15px; font-weight: 500; color: var(--text); }
+    .field-value.route { line-height: 1.5; }
+    .fields-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    /* SIGNATURE SECTION */
+    .sig-section {
+      background: var(--card);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      margin-top: 8px;
+    }
+    .sig-header {
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sig-header h3 { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+    .sig-header p { margin: 0; font-size: 13px; color: var(--muted); }
+    .sig-canvas-wrap {
+      position: relative;
+      padding: 16px;
+    }
+    .sig-instruction {
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 10px;
+      pointer-events: none;
+    }
+    canvas#sigPad {
+      display: block;
+      width: 100%;
+      height: 180px;
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      background: #fafafa;
+      touch-action: none;
+      cursor: crosshair;
+    }
+    canvas#sigPad.has-sig { border-color: var(--blue); border-style: solid; background: #fff; }
+    .sig-actions {
+      display: flex;
+      gap: 10px;
+      padding: 0 16px 16px;
+    }
+    .btn-clear {
+      flex: 1;
+      padding: 13px;
+      border: 1.5px solid var(--border);
+      background: var(--card);
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.12s;
+    }
+    .btn-clear:hover { background: #f2f2f7; }
+    .btn-submit {
+      flex: 2;
+      padding: 13px;
+      border: none;
+      background: var(--blue);
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.12s, opacity 0.12s;
+    }
+    .btn-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-submit:not(:disabled):active { background: #005ec4; }
+
+    /* STATES */
+    .state-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 40px 24px;
+      text-align: center;
+      margin-top: 32px;
+    }
+    .state-icon {
+      font-size: 56px;
+      margin-bottom: 16px;
+      display: block;
+    }
+    .state-card h2 { margin: 0 0 10px; font-size: 22px; }
+    .state-card p { margin: 0; color: var(--muted); line-height: 1.5; font-size: 15px; }
+    .success-icon { color: var(--green); }
+    .error-icon { color: var(--red); }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: #1c1c1e; color: #fff;
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 500;
+      opacity: 0;
+      transition: opacity 0.25s;
+      z-index: 999;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+
+    @media (max-width: 400px) {
+      .fields-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="brand-mark">OT</div>
+  <div class="brand-text">Osprey <span>Travels</span></div>
+</div>
+
+<div class="wrap">
+
+{% if error %}
+  <div class="state-card">
+    <span class="state-icon error-icon">✕</span>
+    <h2>Link Unavailable</h2>
+    <p>{{ error }}</p>
+  </div>
+
+{% elif already_signed %}
+  <div class="state-card">
+    <span class="state-icon success-icon">✓</span>
+    <h2>Already Signed</h2>
+    <p>
+      {% if customer_name %}Dear <strong>{{ customer_name }}</strong>, your{% else %}These{% endif %}
+      duty slips have already been signed.
+      {% if signed_at %}<br><small style="color:var(--muted)">Signed on {{ signed_at[:10] }}</small>{% endif %}
+    </p>
+  </div>
+
+{% elif slips %}
+  <div id="mainView">
+    <div class="intro">
+      <h2>Review & Sign</h2>
+      <p>
+        {% if customer_name %}Dear <strong>{{ customer_name }}</strong>, please{% else %}Please{% endif %}
+        review the duty slip{{ 's' if slips|length > 1 else '' }} below and add your signature at the bottom.
+        {% if slips|length > 1 %}<br>Your single signature will apply to all {{ slips|length }} slips.{% endif %}
+      </p>
+    </div>
+
+    {% for slip in slips %}
+    <div class="slip-card">
+      <div class="slip-header">
+        <span class="slip-no-badge">Slip #{{ slip.duty_slip_no or slip.id }}</span>
+        <span class="slip-date">{{ slip.date or '' }}</span>
+      </div>
+      <div class="slip-body">
+        <div class="fields-grid">
+          <div class="field">
+            <span class="field-label">Customer</span>
+            <span class="field-value">{{ slip.customer_name or '—' }}</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Company</span>
+            <span class="field-value">{{ slip.company_name or '—' }}</span>
+          </div>
+        </div>
+        <div class="fields-grid">
+          <div class="field">
+            <span class="field-label">Vehicle Type</span>
+            <span class="field-value">{{ slip.vehicle_type or '—' }}</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Vehicle No.</span>
+            <span class="field-value">{{ slip.vehicle_no or '—' }}</span>
+          </div>
+        </div>
+        <div class="field">
+          <span class="field-label">Driver</span>
+          <span class="field-value">{{ slip.driver_name or '—' }}</span>
+        </div>
+        {% if slip.route_covered %}
+        <div class="field">
+          <span class="field-label">Route Covered</span>
+          <span class="field-value route">{{ slip.route_covered }}</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+
+    <!-- SIGNATURE PAD -->
+    <div class="sig-section">
+      <div class="sig-header">
+        <h3>Your Signature</h3>
+        <p>Draw your signature in the box below</p>
+      </div>
+      <div class="sig-canvas-wrap">
+        <div class="sig-instruction" id="sigHint">Sign here ↓</div>
+        <canvas id="sigPad"></canvas>
+      </div>
+      <div class="sig-actions">
+        <button class="btn-clear" onclick="clearSig()">Clear</button>
+        <button class="btn-submit" id="btnSubmit" onclick="submitSig()" disabled>Sign & Submit</button>
+      </div>
+    </div>
+
+    {% if expires_at %}
+    <p style="text-align:center;font-size:12px;color:var(--muted);margin-top:16px;">
+      Link expires on {{ expires_at[:10] }}
+    </p>
+    {% endif %}
+  </div>
+
+  <!-- Success screen (hidden initially) -->
+  <div id="successView" style="display:none">
+    <div class="state-card">
+      <span class="state-icon success-icon">✓</span>
+      <h2>Signed Successfully</h2>
+      <p>Thank you{% if customer_name %}, <strong>{{ customer_name }}</strong>{% endif %}.<br>
+         Your signature has been recorded. You may close this page.</p>
+    </div>
+  </div>
+
+{% else %}
+  <div class="state-card">
+    <span class="state-icon error-icon">!</span>
+    <h2>No Slips Found</h2>
+    <p>The slips associated with this link could not be found.</p>
+  </div>
+{% endif %}
+
+</div><!-- /wrap -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ---- Signature Pad (vanilla canvas, no library needed) ----
+const canvas = document.getElementById('sigPad');
+if (canvas) {
+  const ctx = canvas.getContext('2d');
+  let drawing = false, hasSig = false;
+
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    const ratio = window.devicePixelRatio || 1;
+    const oldData = hasSig ? ctx.getImageData(0, 0, canvas.width, canvas.height) : null;
+    canvas.width  = rect.width  * ratio;
+    canvas.height = rect.height * ratio;
+    ctx.scale(ratio, ratio);
+    ctx.strokeStyle = '#1c1c1e';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (oldData) ctx.putImageData(oldData, 0, 0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function pos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+  }
+
+  function start(e) {
+    e.preventDefault();
+    drawing = true;
+    const p = pos(e);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+  }
+  function move(e) {
+    e.preventDefault();
+    if (!drawing) return;
+    const p = pos(e);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    if (!hasSig) {
+      hasSig = true;
+      canvas.classList.add('has-sig');
+      document.getElementById('sigHint').style.display = 'none';
+      document.getElementById('btnSubmit').disabled = false;
+    }
+  }
+  function stop(e) { e.preventDefault(); drawing = false; }
+
+  canvas.addEventListener('mousedown',  start, { passive: false });
+  canvas.addEventListener('mousemove',  move,  { passive: false });
+  canvas.addEventListener('mouseup',    stop,  { passive: false });
+  canvas.addEventListener('mouseleave', stop,  { passive: false });
+  canvas.addEventListener('touchstart', start, { passive: false });
+  canvas.addEventListener('touchmove',  move,  { passive: false });
+  canvas.addEventListener('touchend',   stop,  { passive: false });
+}
+
+function clearSig() {
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const ratio = window.devicePixelRatio || 1;
+  ctx.clearRect(0, 0, canvas.width / ratio, canvas.height / ratio);
+  canvas.classList.remove('has-sig');
+  document.getElementById('sigHint').style.display = '';
+  document.getElementById('btnSubmit').disabled = true;
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+function submitSig() {
+  const btn = document.getElementById('btnSubmit');
+  const sigData = canvas.toDataURL('image/png');
+  btn.disabled = true;
+  btn.textContent = 'Submitting…';
+
+  const form = new FormData();
+  form.append('signature_data', sigData);
+
+  fetch('/sign/{{ token }}', { method: 'POST', body: form })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        document.getElementById('mainView').style.display = 'none';
+        document.getElementById('successView').style.display = '';
+        window.scrollTo(0, 0);
+      } else {
+        showToast(data.error || 'Something went wrong. Please try again.');
+        btn.disabled = false;
+        btn.textContent = 'Sign & Submit';
+      }
+    })
+    .catch(() => {
+      showToast('Network error. Please check your connection and try again.');
+      btn.disabled = false;
+      btn.textContent = 'Sign & Submit';
+    });
+}
+</script>
+</body>
+</html>
