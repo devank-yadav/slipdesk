@@ -497,15 +497,12 @@
       <div class="form-grid">
         <div class="field">
           <label for="customer_name">Customer Name *</label>
+          <div class="ac-wrap" style="position:relative;">
           <input type="text" id="customer_name" name="customer_name"
-                 list="customerOptions" autocomplete="off"
+                 autocomplete="off"
                  value="{{ prefill.get('customer_name', '') }}"
                  placeholder="Select or type customer…" required>
-          <datalist id="customerOptions">
-            {% for c in customer_list %}
-              <option value="{{ c }}">
-            {% endfor %}
-          </datalist>
+          </div>
         </div>
         <div class="field">
           <label for="company_name">Company Name</label>
@@ -533,15 +530,12 @@
       <div class="form-grid">
         <div class="field">
           <label for="vehicle_type">Type of Vehicle</label>
+          <div class="ac-wrap" style="position:relative;">
           <input type="text" id="vehicle_type" name="vehicle_type"
-                 list="vehicleOptions" autocomplete="off"
+                 autocomplete="off"
                  value="{{ prefill.get('vehicle_type', '') }}"
                  placeholder="Select or type vehicle…">
-          <datalist id="vehicleOptions">
-            {% for v in vehicle_list %}
-              <option value="{{ v }}">
-            {% endfor %}
-          </datalist>
+          </div>
         </div>
         <div class="field">
           <label for="vehicle_no">Vehicle No</label>
@@ -688,44 +682,6 @@
         </div>
       </div>
 
-      <!-- MAKE RECURRING -->
-      <div class="section-label" style="margin-top:4px;">Recurring Schedule</div>
-      <div class="form-card" style="background:#f7f9ff; border:1px solid #c7dffe; border-radius:10px; padding:14px 16px; margin-bottom:16px;">
-        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; user-select:none;">
-          <input type="checkbox" name="make_recurring" id="makeRecurring" value="1"
-                 style="width:18px; height:18px; accent-color:var(--primary); flex-shrink:0;">
-          <div>
-            <span style="font-weight:700; font-size:14px; color:var(--text);">Save as recurring schedule</span>
-            <span style="font-size:12px; color:var(--text-muted); margin-left:6px;">Auto-generate this slip on selected days</span>
-          </div>
-        </label>
-
-        <div id="recurringFields" style="display:none; margin-top:14px; border-top:1px solid #dbeeff; padding-top:14px;">
-          <div class="form-grid" style="margin-bottom:12px;">
-            <div class="field full">
-              <label for="recurring_name">Schedule Name</label>
-              <input type="text" id="recurring_name" name="recurring_name"
-                     placeholder="e.g. Daily Airport — Rahul">
-            </div>
-          </div>
-          <div class="field">
-            <label>Repeat on Days</label>
-            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:4px;">
-              {% for i, d in [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}
-              <label style="display:flex; align-items:center; gap:5px; background:#f2f2f7;
-                             border-radius:8px; padding:6px 10px; font-size:12px; font-weight:600;
-                             cursor:pointer; user-select:none;">
-                <input type="checkbox" name="recurring_days" value="{{ i }}"
-                       {% if i < 5 %}checked{% endif %}
-                       style="accent-color:var(--primary);">
-                {{ d }}
-              </label>
-              {% endfor %}
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- Duplicate warning banner (shown by JS) -->
       <div id="dupWarning" style="display:none; margin-bottom:14px; padding:12px 14px;
            background:#fff8e1; border:1px solid #ffe082; border-radius:8px; font-size:13px;">
@@ -754,40 +710,6 @@
   </div>
 
   <script>
-    // =====================================================================
-    // MAKE RECURRING — toggle panel + auto-fill schedule name
-    // =====================================================================
-    (function() {
-      const cb    = document.getElementById('makeRecurring');
-      const panel = document.getElementById('recurringFields');
-      const nameInput = document.getElementById('recurring_name');
-
-      function syncPanel() {
-        panel.style.display = cb.checked ? 'block' : 'none';
-        if (cb.checked && !nameInput.value.trim()) autoFillName();
-      }
-
-      function autoFillName() {
-        const customer = (document.getElementById('customer_name') || {}).value || '';
-        const route    = (document.getElementById('route_covered') || {}).value || '';
-        if (customer) {
-          nameInput.value = route
-            ? customer + ' — ' + route.substring(0, 40)
-            : customer;
-        }
-      }
-
-      cb.addEventListener('change', syncPanel);
-
-      // Re-auto-fill when customer or route changes (only if field is currently auto-generated)
-      ['customer_name', 'route_covered'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.addEventListener('change', () => {
-          if (cb.checked) autoFillName();
-        });
-      });
-    })();
-
     // =====================================================================
     // DUPLICATE DETECTION — check before submit
     // =====================================================================
@@ -857,17 +779,91 @@
     const vehicleMap   = {{ vehicle_map   | tojson }};
     const customerMap  = {{ customer_map  | tojson }};
 
+    // =====================================================================
+    // CUSTOM AUTOCOMPLETE
+    // =====================================================================
+    class Autocomplete {
+      constructor(input, items, onSelect) {
+        this.input = input;
+        this.items = items; // [{value, secondary}]
+        this.onSelect = onSelect;
+        this.dd = null;
+        this.activeIdx = -1;
+        input.addEventListener('input', () => this._render());
+        input.addEventListener('keydown', e => this._key(e));
+        document.addEventListener('click', e => { if (!input.contains(e.target)) this._close(); });
+      }
+      _filtered() {
+        const q = this.input.value.toLowerCase();
+        if (!q) return this.items.slice(0, 8);
+        return this.items.filter(i => i.value.toLowerCase().includes(q) || (i.secondary||'').toLowerCase().includes(q)).slice(0, 8);
+      }
+      _render() {
+        this._close();
+        const matches = this._filtered();
+        if (!matches.length) return;
+        this.dd = document.createElement('div');
+        Object.assign(this.dd.style, {
+          position:'absolute', top:'100%', left:'0', right:'0', zIndex:'9999',
+          background:'#fff', border:'1.5px solid #e5e5ea', borderRadius:'10px',
+          boxShadow:'0 4px 20px rgba(0,0,0,.12)', marginTop:'4px', overflow:'hidden'
+        });
+        matches.forEach((item, i) => {
+          const row = document.createElement('div');
+          Object.assign(row.style, {
+            padding:'9px 14px', cursor:'pointer', display:'flex',
+            justifyContent:'space-between', alignItems:'center', fontSize:'13px'
+          });
+          row.innerHTML = `<span style="font-weight:600">${item.value}</span>` +
+            (item.secondary ? `<span style="color:#8e8e93;font-size:12px">${item.secondary}</span>` : '');
+          row.addEventListener('mousedown', e => { e.preventDefault(); this._select(item); });
+          row.addEventListener('mouseenter', () => { this.activeIdx = i; this._highlight(); });
+          this.dd.appendChild(row);
+        });
+        this.input.parentNode.appendChild(this.dd);
+        this.activeIdx = -1;
+      }
+      _highlight() {
+        if (!this.dd) return;
+        [...this.dd.children].forEach((r, i) => {
+          r.style.background = i === this.activeIdx ? '#f0f6ff' : '';
+        });
+      }
+      _key(e) {
+        if (!this.dd) { if (e.key === 'ArrowDown') this._render(); return; }
+        const rows = this.dd.children.length;
+        if (e.key === 'ArrowDown') { e.preventDefault(); this.activeIdx = Math.min(this.activeIdx+1, rows-1); this._highlight(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); this.activeIdx = Math.max(this.activeIdx-1, -1); this._highlight(); }
+        else if (e.key === 'Enter' && this.activeIdx >= 0) { e.preventDefault(); this._select(this._filtered()[this.activeIdx]); }
+        else if (e.key === 'Escape') this._close();
+      }
+      _select(item) {
+        this.input.value = item.value;
+        this._close();
+        if (this.onSelect) this.onSelect(item);
+      }
+      _close() { if (this.dd) { this.dd.remove(); this.dd = null; } }
+    }
+
     (function () {
       const vTypeEl  = document.getElementById('vehicle_type');
       const vNoEl    = document.getElementById('vehicle_no');
       const custEl   = document.getElementById('customer_name');
       const compEl   = document.getElementById('company_name');
 
+      const vehicleItems = Object.entries(vehicleMap).map(([v, no]) => ({ value: v, secondary: no || '' }));
+      new Autocomplete(vTypeEl, vehicleItems, item => {
+        if (vehicleMap[item.value] !== undefined) vNoEl.value = vehicleMap[item.value];
+      });
       vTypeEl.addEventListener('input', function () {
         const no = vehicleMap[this.value];
         if (no !== undefined) vNoEl.value = no;
       });
 
+      const customerItems = Object.entries(customerMap).map(([c, co]) => ({ value: c, secondary: co || '' }));
+      new Autocomplete(custEl, customerItems, item => {
+        if (customerMap[item.value] !== undefined) compEl.value = customerMap[item.value];
+      });
       custEl.addEventListener('input', function () {
         const co = customerMap[this.value];
         if (co !== undefined) compEl.value = co;
@@ -1045,6 +1041,7 @@
         }
       });
 
+    let _originAcAttached = false;
     function setRouteMode(mode) {
       document.getElementById('btnManual').classList.toggle('active', mode === 'manual');
       document.getElementById('btnMap').classList.toggle('active', mode === 'map');
@@ -1057,6 +1054,12 @@
           document.getElementById('mapsLoading').style.display = '';
         } else {
           setTimeout(() => google.maps.event.trigger(mapInstance, 'resize'), 50);
+          if (!_originAcAttached) {
+            const originInput = document.getElementById('originInput');
+            attachAutocomplete(originInput);
+            originInput.addEventListener('blur', debouncedCalc);
+            _originAcAttached = true;
+          }
         }
       }
     }
@@ -1081,10 +1084,14 @@
 
       document.getElementById('mapPlaceholder').style.display = 'none';
 
-      // Attach autocomplete to the static origin input
-      const originInput = document.getElementById('originInput');
-      attachAutocomplete(originInput);
-      originInput.addEventListener('blur', debouncedCalc);
+      // If map section is already visible (user clicked before script loaded),
+      // resize and attach origin autocomplete now
+      if (!_originAcAttached) {
+        const originInput = document.getElementById('originInput');
+        attachAutocomplete(originInput);
+        originInput.addEventListener('blur', debouncedCalc);
+        _originAcAttached = true;
+      }
 
       // If map section is already visible (user clicked before script loaded), resize
       if (document.getElementById('mapSection').style.display !== 'none') {
@@ -1106,6 +1113,7 @@
       });
       ac.addListener('place_changed', () => {
         const place = ac.getPlace();
+        if (!place || !place.geometry) return;
         if (place && place.name) {
           let shortName = place.name;
           if (place.address_components) {
@@ -1454,11 +1462,23 @@
       kmSyncLock = false;
     }
 
+    const ADDRESS_ALIASES = {
+      'Saraswati Enclave, Gurugram': 'Car Stand',
+      'Saraswati Enclave, Gurgaon':  'Car Stand',
+      'Saraswati Enclave':           'Car Stand',
+    };
+    function applyAliases(text) {
+      for (const [addr, alias] of Object.entries(ADDRESS_ALIASES)) {
+        text = text.replace(new RegExp(addr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), alias);
+      }
+      return text;
+    }
+
     function applyRoute() {
       if (!currentRoute) return;
 
       const { distance_km, stops } = currentRoute;
-      document.getElementById('route_covered').value = stops.join(' → ');
+      document.getElementById('route_covered').value = applyAliases(stops.join(' → '));
       kmSyncLock = true;
       totalKmEl.value = distance_km;
       recalcCloseFromStartAndTotal();

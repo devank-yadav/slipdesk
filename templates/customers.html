@@ -97,9 +97,24 @@
 {% include 'navbar.html' %}
 
 {% if new_portal %}
-<div class="portal-banner show" style="margin: 12px 28px 0;">
-  <strong>Portal link created for {{ new_portal.customer }}:</strong>
-  <div class="portal-url">{{ request.host_url }}portal/{{ new_portal.token }}</div>
+<div class="portal-banner show" style="margin: 12px 28px 0;" id="portalBanner">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+    <strong>Portal link created for {{ new_portal }}:</strong>
+    <button onclick="copyPortalUrl()" style="padding:4px 10px;border-radius:6px;border:1px solid #a5d6a7;background:#fff;font-size:12px;font-weight:600;color:#2e7d32;cursor:pointer;">Copy</button>
+  </div>
+  <div class="portal-url" id="portalUrlText">{{ request.host_url }}portal/{{ portal_link }}</div>
+</div>
+{% endif %}
+
+{% if merged %}
+<div style="margin:12px 28px 0;padding:10px 14px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;font-size:13px;color:#2e7d32;">
+  Customers merged successfully.
+</div>
+{% endif %}
+
+{% if add_error %}
+<div style="margin:12px 28px 0;padding:10px 14px;background:#fdecea;border:1px solid #ffcdd2;border-radius:8px;font-size:13px;color:#c62828;">
+  {{ add_error }}
 </div>
 {% endif %}
 
@@ -108,6 +123,16 @@
     <h1>Customers</h1>
     <p>{{ customers|length }} customer{{ 's' if customers|length != 1 else '' }} across all slips</p>
   </div>
+  <form method="post" action="/admin/customers/add" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <input type="text" name="name" placeholder="Customer name" required
+           style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;width:160px;outline:none;">
+    <input type="text" name="company" placeholder="Company (optional)"
+           style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;width:160px;outline:none;">
+    <button type="submit"
+            style="padding:8px 14px;border-radius:8px;border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">
+      + Add Customer
+    </button>
+  </form>
 </div>
 
 <div class="grid">
@@ -162,7 +187,7 @@
           <button type="submit" class="btn-portal {% if c.portal_token %}has-link{% endif %}"
                   title="{% if c.portal_token %}Portal link exists — click to regenerate{% else %}Create public portal link{% endif %}">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-            {% if c.portal_token %}Portal Link{% else %}Get Portal Link{% endif %}
+            {% if c.portal_token %}Update Link{% else %}Generate Link{% endif %}
           </button>
         </form>
         {% if c.portal_token %}
@@ -172,6 +197,11 @@
           Open
         </a>
         {% endif %}
+        <button class="btn-view" onclick="openMergeModal('{{ c.name|e }}')" title="Merge into another customer"
+                style="flex:none;color:#8e8e93;border-color:#e5e5ea;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          Merge
+        </button>
       </div>
     </div>
     {% endfor %}
@@ -181,5 +211,50 @@
   </div>
   {% endif %}
 </div>
+
+<!-- Merge modal -->
+<dialog id="mergeDialog" style="border:none;border-radius:14px;padding:24px;width:340px;box-shadow:0 8px 40px rgba(0,0,0,.18);font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif;">
+  <h3 style="margin:0 0 6px;font-size:16px;">Merge Customer</h3>
+  <p style="margin:0 0 16px;font-size:13px;color:#8e8e93;">Merge <strong id="mergeFromLabel"></strong> into:</p>
+  <form method="post" action="/admin/customers/merge">
+    <input type="hidden" name="from_name" id="mergeFromInput">
+    <select name="to_name" id="mergeToSelect"
+            style="width:100%;padding:9px 12px;border:1.5px solid #e5e5ea;border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:16px;outline:none;">
+    </select>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button type="button" onclick="document.getElementById('mergeDialog').close()"
+              style="padding:8px 16px;border-radius:8px;border:1px solid #e5e5ea;background:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">
+        Cancel
+      </button>
+      <button type="submit"
+              style="padding:8px 16px;border-radius:8px;border:none;background:#ff3b30;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"
+              onclick="return confirm('This will move all slips from ' + document.getElementById('mergeFromLabel').textContent + ' to the selected customer. Continue?')">
+        Merge
+      </button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const ALL_CUSTOMERS = {{ all_names | tojson }};
+
+function openMergeModal(fromName) {
+  document.getElementById('mergeFromLabel').textContent = fromName;
+  document.getElementById('mergeFromInput').value = fromName;
+  const sel = document.getElementById('mergeToSelect');
+  sel.innerHTML = '';
+  ALL_CUSTOMERS.filter(n => n.toLowerCase() !== fromName.toLowerCase()).forEach(n => {
+    const opt = document.createElement('option');
+    opt.value = n; opt.textContent = n;
+    sel.appendChild(opt);
+  });
+  document.getElementById('mergeDialog').showModal();
+}
+
+function copyPortalUrl() {
+  const txt = document.getElementById('portalUrlText');
+  if (txt) navigator.clipboard.writeText(txt.textContent.trim());
+}
+</script>
 </body>
 </html>

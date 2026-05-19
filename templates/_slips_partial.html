@@ -1,0 +1,146 @@
+<div class="table-card">
+  <div class="table-meta">
+    {% set total_pages = ((total_results + page_size - 1) // page_size) if total_results is not none else 1 %}
+    Showing <strong>{{ invoices|length }}</strong> slip{{ 's' if invoices|length != 1 else '' }}
+    <span style="color:var(--text-muted);font-weight:600;">
+      — Page {{ page }} of {{ total_pages }} ({{ total_results }} total)
+    </span>
+  </div>
+  <table id="invoiceTable">
+    <thead>
+      <tr>
+        <th><input type="checkbox" id="selectAll" title="Select all"></th>
+        <th>Slip #</th>
+        <th>Customer</th>
+        <th>Date</th>
+        <th>Driver</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if invoices %}
+        {% for inv in invoices %}
+        {% set status = inv[8] or 'Bill Generated' %}
+        {% if status == 'Bill Generated' %}
+          {% set badge_class = 'badge-generated' %}
+          {% set status_icon = 'icon-document' %}
+        {% elif status == 'Bill Submitted' %}
+          {% set badge_class = 'badge-submitted' %}
+          {% set status_icon = 'icon-clock' %}
+        {% else %}
+          {% set badge_class = 'badge-received' %}
+          {% set status_icon = 'icon-check' %}
+        {% endif %}
+        <tr class="data-row" onclick="toggleExpand({{ inv[0] }}, event)">
+          <td><input type="checkbox" class="row-check" value="{{ inv[0] }}"></td>
+          <td class="slip-no">{{ inv[4] or '—' }}</td>
+          <td>
+            <div class="cust-cell">
+              <div class="cust-avatar">{{ inv[1][0]|upper if inv[1] else '?' }}</div>
+              <div class="cust-info">
+                <a class="cust-name" href="/admin/customers?name={{ inv[1]|urlencode }}" style="text-decoration:none;color:inherit" onclick="event.stopPropagation()">{{ inv[1] }}</a>
+                {% if inv[2] %}<div class="cust-company">{{ inv[2] }}</div>{% endif %}
+              </div>
+            </div>
+          </td>
+          <td>{{ inv[3] or '—' }}</td>
+          <td class="driver-cell">{% if inv[7] %}<a href="/admin/drivers" style="text-decoration:none;color:inherit" onclick="event.stopPropagation()">{{ inv[7] }}</a>{% else %}—{% endif %}</td>
+          <td>
+            <span class="badge {{ badge_class }}"
+                  data-id="{{ inv[0] }}"
+                  data-status="{{ status }}"
+                  data-paydate="{{ inv[9] or '' }}"
+                  onclick="openModal(this); event.stopPropagation();"
+                  title="Click to update status">
+              <svg class="icon" width="12" height="12"><use href="#{{ status_icon }}"/></svg> {{ status }}
+            </span>
+            {% if inv[9] and status == 'Payment Received' %}
+              <span class="payment-date-hint"><svg class="icon" width="11" height="11"><use href="#icon-calendar"/></svg> {{ inv[9] }}</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="row-actions">
+              {% if inv[23] == 'signed' %}
+              <span title="Digitally signed" style="display:inline-flex;align-items:center;gap:3px;background:#e8f5e9;color:#2e7d32;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;">✓ Signed</span>
+              {% elif inv[23] == 'pending' %}
+              <span title="Signature requested" style="display:inline-flex;align-items:center;gap:3px;background:#fff8e1;color:#e65100;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;">⏳ Sig. Pending</span>
+              {% endif %}
+              <a class="icon-btn" href="/invoice/{{ inv[0] }}/download" title="Download PDF" onclick="event.stopPropagation()"><svg class="icon" width="15" height="15"><use href="#icon-download"/></svg></a>
+              <a class="icon-btn" href="/clone/{{ inv[0] }}" title="Clone slip"
+                 onclick="return handleClone(event, {{ inv[0] }}, {{ 'true' if inv[23] == 'signed' else 'false' }})"><svg class="icon" width="15" height="15"><use href="#icon-copy"/></svg></a>
+              <form method="post" action="/delete_invoice/{{ inv[0] }}" style="display:inline;"
+                    onsubmit="return confirm('Delete this invoice permanently?')" onclick="event.stopPropagation()">
+                <button class="icon-btn danger" type="submit" title="Delete"><svg class="icon" width="15" height="15"><use href="#icon-trash"/></svg></button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        <tr class="expand-row" id="expand-{{ inv[0] }}">
+          <td colspan="7">
+            <div class="expand-inner">
+              <div class="ef"><span class="ef-label">Vehicle Type</span><span class="ef-value">{{ inv[10] or '—' }}</span></div>
+              <div class="ef"><span class="ef-label">Vehicle No.</span><span class="ef-value">{{ inv[11] or '—' }}</span></div>
+              <div class="ef"><span class="ef-label">Project Code</span><span class="ef-value">{{ inv[21] if inv|length > 21 and inv[21] else (inv[18] or '—') }}</span></div>
+              <div class="ef"><span class="ef-label">Mail Approval</span><span class="ef-value">{{ inv[22] if inv|length > 22 and inv[22] else (inv[19] or '—') }}</span></div>
+              <div class="ef"><span class="ef-label">Starting KM</span><span class="ef-value">{{ inv[12] or '—' }}</span></div>
+              <div class="ef"><span class="ef-label">Closing KM</span><span class="ef-value">{{ inv[13] or '—' }}</span></div>
+              <div class="ef"><span class="ef-label">Total KM</span><span class="ef-value">{{ inv[14] or '—' }}</span></div>
+              <div class="ef"><span class="ef-label">Starting Time</span><span class="ef-value">{{ inv[15] or '—' }}</span></div>
+              <div class="ef"><span class="ef-label">Closing Time</span><span class="ef-value">{{ inv[16] or '—' }}</span></div>
+              <div class="ef"><span class="ef-label">Total Time</span><span class="ef-value">{{ inv[17] or '—' }}</span></div>
+              {% if inv[20] %}
+              <div class="ef full"><span class="ef-label">Route Covered</span><span class="ef-value">{{ inv[20] }}</span></div>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td colspan="7">
+            <div class="empty-state">
+              <div class="empty-icon"><svg width="48" height="48" style="opacity:0.35"><use href="#icon-document"/></svg></div>
+              <p>No duty slips found.</p>
+              <a href="/admin_portal"><svg class="icon" width="14" height="14"><use href="#icon-x"/></svg> Clear filters</a>
+            </div>
+          </td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  {% if total_pages > 1 %}
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-top:1px solid var(--border);gap:10px;flex-wrap:wrap;">
+    <div style="display:flex;gap:6px;align-items:center;">
+      {% if page > 1 %}
+        <a class="chip ajax-page" href="#" data-page="{{ page-1 }}" data-page-size="{{ page_size }}">← Prev</a>
+      {% else %}
+        <span class="chip" style="opacity:.45;pointer-events:none;">← Prev</span>
+      {% endif %}
+      {% for p in range(1, total_pages+1) %}
+        {% if p == page %}
+          <span class="chip" style="background:var(--primary,#007aff);color:#fff;">{{ p }}</span>
+        {% elif p == 1 or p == total_pages or (p >= page-2 and p <= page+2) %}
+          <a class="chip ajax-page" href="#" data-page="{{ p }}" data-page-size="{{ page_size }}">{{ p }}</a>
+        {% elif p == page-3 or p == page+3 %}
+          <span class="chip" style="opacity:.45;pointer-events:none;">…</span>
+        {% endif %}
+      {% endfor %}
+      {% if page < total_pages %}
+        <a class="chip ajax-page" href="#" data-page="{{ page+1 }}" data-page-size="{{ page_size }}">Next →</a>
+      {% else %}
+        <span class="chip" style="opacity:.45;pointer-events:none;">Next →</span>
+      {% endif %}
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <span style="font-size:12px;color:#8e8e93;font-weight:700;text-transform:uppercase;letter-spacing:.4px;">Rows</span>
+      <select id="pageSizeSelect" style="padding:7px 10px;border:1.5px solid #e5e5ea;border-radius:10px;background:#fff;font-weight:600;">
+        {% for s in [10,25,50,100] %}
+          <option value="{{ s }}" {% if page_size == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  {% endif %}
+</div>

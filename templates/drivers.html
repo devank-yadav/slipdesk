@@ -76,11 +76,25 @@
 <body>
 {% include 'navbar.html' %}
 
+{% if add_error %}
+<div style="margin:12px 28px 0;padding:10px 14px;background:#fdecea;border:1px solid #ffcdd2;border-radius:8px;font-size:13px;color:#c62828;">
+  {{ add_error }}
+</div>
+{% endif %}
+
 <div class="hero">
   <div>
     <h1>Drivers</h1>
     <p>{{ drivers|length }} driver{{ 's' if drivers|length != 1 else '' }} on record</p>
   </div>
+  <form method="post" action="/admin/drivers/add" style="display:flex;gap:8px;align-items:center;">
+    <input type="text" name="name" placeholder="Driver name" required
+           style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;width:180px;outline:none;">
+    <button type="submit"
+            style="padding:8px 14px;border-radius:8px;border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">
+      + Add Driver
+    </button>
+  </form>
 </div>
 
 <div class="table-card">

@@ -181,6 +181,7 @@
   <form id="signatureForm" method="post" action="/request_signature" style="display:none"></form>
 
   <!-- TABLE -->
+  <div id="slips-region">
   <div class="table-card">
     <div class="table-meta">
       {% set total_pages = ((total_results + page_size - 1) // page_size) if total_results is not none else 1 %}
@@ -334,14 +335,23 @@
 
     {% if total_pages > 1 %}
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-top:1px solid var(--border);gap:10px;flex-wrap:wrap;">
-      <div style="display:flex;gap:8px;align-items:center;">
+      <div style="display:flex;gap:6px;align-items:center;">
         {% if page > 1 %}
-          <a class="chip" href="/admin_portal?{% if base_query %}{{ base_query }}&{% endif %}page={{ page-1 }}&page_size={{ page_size }}">← Prev</a>
+          <a class="chip ajax-page" href="#" data-page="{{ page-1 }}" data-page-size="{{ page_size }}">← Prev</a>
         {% else %}
           <span class="chip" style="opacity:.45;pointer-events:none;">← Prev</span>
         {% endif %}
+        {% for p in range(1, total_pages+1) %}
+          {% if p == page %}
+            <span class="chip" style="background:var(--primary);color:#fff;">{{ p }}</span>
+          {% elif p == 1 or p == total_pages or (p >= page-2 and p <= page+2) %}
+            <a class="chip ajax-page" href="#" data-page="{{ p }}" data-page-size="{{ page_size }}">{{ p }}</a>
+          {% elif p == page-3 or p == page+3 %}
+            <span class="chip" style="opacity:.45;pointer-events:none;">…</span>
+          {% endif %}
+        {% endfor %}
         {% if page < total_pages %}
-          <a class="chip" href="/admin_portal?{% if base_query %}{{ base_query }}&{% endif %}page={{ page+1 }}&page_size={{ page_size }}">Next →</a>
+          <a class="chip ajax-page" href="#" data-page="{{ page+1 }}" data-page-size="{{ page_size }}">Next →</a>
         {% else %}
           <span class="chip" style="opacity:.45;pointer-events:none;">Next →</span>
         {% endif %}
@@ -349,15 +359,16 @@
 
       <div style="display:flex;gap:10px;align-items:center;">
         <span style="font-size:12px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px;">Rows</span>
-        <select onchange="location.href=this.value" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:10px;background:#fff;font-weight:600;">
-          {% for s in [50,100,200] %}
-            <option value="/admin_portal?{% if base_query %}{{ base_query }}&{% endif %}page=1&page_size={{ s }}" {% if page_size == s %}selected{% endif %}>{{ s }}</option>
+        <select id="pageSizeSelect" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:10px;background:#fff;font-weight:600;">
+          {% for s in [10,25,50,100] %}
+            <option value="{{ s }}" {% if page_size == s %}selected{% endif %}>{{ s }}</option>
           {% endfor %}
         </select>
       </div>
     </div>
     {% endif %}
   </div>
+  </div><!-- #slips-region -->
 
   <!-- BULK STATUS MODAL -->
   <div class="modal-overlay" id="bulkStatusModal">
@@ -584,6 +595,62 @@
       const icon = s === 'Payment Received' ? 'icon-check' : s === 'Bill Submitted' ? 'icon-clock' : 'icon-document';
       return '<svg class="icon" width="12" height="12"><use href="#' + icon + '"/></svg>';
     }
+  // ── AJAX SLIPS REGION ──────────────────────────────────────────────────
+  function _slipsParams(overrides) {
+    const p = new URLSearchParams(window.location.search);
+    for (const [k, v] of Object.entries(overrides)) {
+      if (v !== undefined) p.set(k, v);
+    }
+    return p.toString();
+  }
+
+  function loadSlips(params, pushState) {
+    const region = document.getElementById('slips-region');
+    region.style.opacity = '0.5';
+    region.style.pointerEvents = 'none';
+    fetch('/admin/portal/slips?' + params, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(r => r.text())
+      .then(html => {
+        region.innerHTML = html;
+        region.style.opacity = '';
+        region.style.pointerEvents = '';
+        rebindRegion();
+        if (pushState) history.pushState(null, '', '/admin_portal?' + params);
+      })
+      .catch(() => { region.style.opacity = ''; region.style.pointerEvents = ''; });
+  }
+
+  function rebindRegion() {
+    document.querySelectorAll('.ajax-page').forEach(a => {
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        const pg   = a.dataset.page;
+        const ps   = a.dataset.pageSize;
+        loadSlips(_slipsParams({ page: pg, page_size: ps }), true);
+      });
+    });
+    const sel = document.getElementById('pageSizeSelect');
+    if (sel) sel.addEventListener('change', () => {
+      loadSlips(_slipsParams({ page: 1, page_size: sel.value }), true);
+    });
+  }
+
+  rebindRegion();
+
+  // Intercept filter form submission
+  const filterForm = document.querySelector('form[method="get"]');
+  if (filterForm) {
+    filterForm.addEventListener('submit', e => {
+      e.preventDefault();
+      const params = new URLSearchParams(new FormData(filterForm)).toString();
+      loadSlips(params, true);
+    });
+  }
+
+  // Handle browser back/forward
+  window.addEventListener('popstate', () => {
+    loadSlips(window.location.search.slice(1), false);
+  });
   </script>
 </body>
 </html>

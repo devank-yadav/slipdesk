@@ -1,0 +1,54 @@
+{% if slips %}
+  {% for s in slips %}
+  {% set bill_st = s[10] %}
+  {% set sig_st  = s[11] %}
+  {% if bill_st == 'Bill Generated' %}
+    {% set badge_cls = 'smb-generated' %}
+  {% elif bill_st == 'Bill Submitted' %}
+    {% set badge_cls = 'smb-submitted' %}
+  {% else %}
+    {% set badge_cls = 'smb-paid' %}
+  {% endif %}
+  <tr class="sm-row">
+    <td><input type="checkbox" class="sm-check" value="{{ s[0] }}"></td>
+    <td class="sm-slipno">{{ s[1] or '—' }}</td>
+    <td>{{ s[2] or '—' }}</td>
+    <td>
+      <div style="font-weight:600;">{{ s[4] or '—' }}</div>
+      {% if s[5] %}<div style="font-size:11px;color:#8e8e93;">{{ s[5] }}</div>{% endif %}
+    </td>
+    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ s[6] or '' }}">{{ s[6] or '—' }}</td>
+    <td>{{ s[7] or '—' }}</td>
+    <td>
+      <span class="sm-badge {{ badge_cls }}">{{ bill_st }}</span>
+      {% if sig_st == 'signed' %}
+        <span class="sm-badge smb-signed">✓ Signed</span>
+      {% elif sig_st == 'pending' %}
+        <span class="sm-badge smb-sigpend">⏳ Sig. Pending</span>
+      {% endif %}
+    </td>
+    <td>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <a href="/invoice/{{ s[0] }}/download" class="sm-action-btn" title="Download PDF">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </a>
+        <a href="/admin_portal?customer_name={{ s[4]|urlencode }}" class="sm-action-btn" title="View in dashboard">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </a>
+        <form method="post" action="/delete_invoice/{{ s[0] }}" style="display:inline;"
+              onsubmit="return confirm('Delete this slip permanently?')">
+          <button class="sm-action-btn sm-danger" type="submit" title="Delete">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+          </button>
+        </form>
+      </div>
+    </td>
+  </tr>
+  {% endfor %}
+{% else %}
+  <tr>
+    <td colspan="8" style="padding:48px 24px;text-align:center;color:#8e8e93;">
+      No slips found for the selected filters.
+    </td>
+  </tr>
+{% endif %}

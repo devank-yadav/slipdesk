@@ -796,6 +796,15 @@ def delete_invoice_file(invoice_id):
         conn.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
 
 
+def _canonical_name(conn, table, name):
+    """Return the already-stored canonical name (preserving its original case) if a
+    case-insensitive match exists, otherwise return name as-is."""
+    row = conn.execute(
+        f"SELECT name FROM {table} WHERE LOWER(name) = LOWER(?)", (name,)
+    ).fetchone()
+    return row[0] if row else name
+
+
 def get_next_duty_slip_no():
     with sqlite3.connect(DATABASE) as conn:
         rows = conn.execute(
@@ -848,7 +857,7 @@ def logout():
 # ADMIN PORTAL
 # --------------------------
 @app.route('/admin_portal')
-def admin_portal():
+def admin_portal(_partial=False):
     if 'admin' not in session:
         return redirect(url_for('home'))
 
@@ -865,8 +874,8 @@ def admin_portal():
     sig_filter     = request.args.get('sig_filter', '')    # none | pending | signed
 
     page = max(int(request.args.get('page', 1) or 1), 1)
-    page_size = int(request.args.get('page_size', 50) or 50)
-    page_size = min(max(page_size, 20), 200)
+    page_size = int(request.args.get('page_size', 10) or 10)
+    page_size = min(max(page_size, 10), 200)
     offset = (page - 1) * page_size
     base_args = request.args.to_dict(flat=True)
     base_args.pop('page', None)
@@ -985,31 +994,44 @@ def admin_portal():
         stats_pending_pay = stats[3] if stats else 0
         stats_paid_month = stats[4] if stats else 0
 
-    return render_template('admin_portal.html',
-                           invoices=invoices,
-                           driver_names=driver_names,
-                           vehicle_names=vehicle_names,
-                           search_q=search_q,
-                           customer_name=customer_name,
-                           driver_filter=driver_filter,
-                           vehicle_filter=vehicle_filter,
-                           month_filter=month_filter,
-                           date_from=date_from,
-                           date_to=date_to,
-                           status_filter=status_filter,
-                           date_quick=date_quick,
-                           status_quick=status_quick,
-                           sig_filter=sig_filter,
-                           stats_total=stats_total,
-                           stats_this_month=stats_this_month,
-                           stats_pending_bill=stats_pending_bill,
-                           stats_pending_pay=stats_pending_pay,
-                           stats_paid_month=stats_paid_month,
-                           today_str=today.strftime('%A, %d %B %Y'),
-                           page=page,
-                           page_size=page_size,
-                           total_results=total_results,
-                           base_query=base_query)
+    ctx = dict(
+        invoices=invoices,
+        driver_names=driver_names,
+        vehicle_names=vehicle_names,
+        search_q=search_q,
+        customer_name=customer_name,
+        driver_filter=driver_filter,
+        vehicle_filter=vehicle_filter,
+        month_filter=month_filter,
+        date_from=date_from,
+        date_to=date_to,
+        status_filter=status_filter,
+        date_quick=date_quick,
+        status_quick=status_quick,
+        sig_filter=sig_filter,
+        stats_total=stats_total,
+        stats_this_month=stats_this_month,
+        stats_pending_bill=stats_pending_bill,
+        stats_pending_pay=stats_pending_pay,
+        stats_paid_month=stats_paid_month,
+        today_str=today.strftime('%A, %d %B %Y'),
+        page=page,
+        page_size=page_size,
+        total_results=total_results,
+        base_query=base_query,
+    )
+    if _partial:
+        return render_template('_slips_partial.html', **ctx)
+    return render_template('admin_portal.html', **ctx)
+
+
+@app.route('/admin/portal/slips')
+def portal_slips_fragment():
+    """Return only the slips table region as an HTML partial for AJAX pagination."""
+    if 'admin' not in session:
+        return '', 401
+    # Reuse same filter/pagination logic as admin_portal but render partial only
+    return admin_portal(_partial=True)
 
 
 @app.route('/update_status/<int:invoice_id>', methods=['POST'])
@@ -1297,6 +1319,13 @@ def generate_invoice():
     route_covered = request.form['route_covered']
     driver_name = request.form['driver_name']
 
+    # Normalize names to existing canonical versions to prevent case-duplicate records
+    with sqlite3.connect(DATABASE) as _norm_conn:
+        if customer_name:
+            customer_name = _canonical_name(_norm_conn, 'customers', customer_name)
+        if vehicle_type:
+            vehicle_type = _canonical_name(_norm_conn, 'vehicles', vehicle_type)
+
     slip_data = {
         'customer_name': customer_name,
         'company_name': company_name,
@@ -1356,43 +1385,6 @@ def generate_invoice():
                     "INSERT INTO vehicles (name, vehicle_no) VALUES (?, ?)",
                     (vehicle_type, vehicle_no or '')
                 )
-
-    # Optional: save as recurring schedule
-    make_recurring = request.form.get('make_recurring') == '1'
-    if make_recurring:
-        rec_name = (request.form.get('recurring_name') or '').strip()
-        if not rec_name:
-            rec_name = f"{customer_name} — {route_covered[:40]}" if route_covered else customer_name
-        rec_days_raw = request.form.getlist('recurring_days')
-        rec_days = sorted({int(d) for d in rec_days_raw if d.isdigit() and 0 <= int(d) <= 6})
-        if not rec_days:
-            rec_days = [0, 1, 2, 3, 4]  # Mon–Fri default
-        today_str = date_value  # use slip date as first "last_generated" so it doesn't re-fire today
-        with sqlite3.connect(DATABASE) as conn:
-            # Upsert: if a schedule with same name exists, update its details
-            existing = conn.execute(
-                "SELECT id FROM recurring_trips WHERE LOWER(name) = LOWER(?)", (rec_name,)
-            ).fetchone()
-            if existing:
-                conn.execute("""
-                    UPDATE recurring_trips
-                    SET customer_name=?, company_name=?, vehicle_type=?, vehicle_no=?,
-                        driver_name=?, route_covered=?, project_code=?,
-                        days_of_week=?, active=1
-                    WHERE id=?
-                """, (customer_name, company_name, vehicle_type, vehicle_no,
-                      driver_name, route_covered, project_code,
-                      _json.dumps(rec_days), existing[0]))
-            else:
-                conn.execute("""
-                    INSERT INTO recurring_trips
-                    (name, customer_name, company_name, vehicle_type, vehicle_no,
-                     driver_name, route_covered, project_code, days_of_week, active,
-                     last_generated, created_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,1,?,?)
-                """, (rec_name, customer_name, company_name, vehicle_type, vehicle_no,
-                      driver_name, route_covered, project_code, _json.dumps(rec_days),
-                      today_str, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
 
     _cache_bust()
     filename = f"slip_{duty_slip_no or customer_name.replace(' ', '_')}.pdf"
@@ -2091,9 +2083,11 @@ def customers_page():
         return redirect(url_for('home'))
     new_portal = request.args.get('new_portal', '')
     portal_token = request.args.get('portal_token', '')
+    merged = request.args.get('merged', '')
+    add_error = request.args.get('add_error', '')
     with sqlite3.connect(DATABASE) as conn:
         rows = conn.execute("""
-            SELECT i.customer_name,
+            SELECT COALESCE(c.name, MIN(i.customer_name)) AS display_name,
                    COUNT(*) AS total,
                    MAX(i.date) AS last_date,
                    SUM(CASE WHEN i.signature_status = 'signed'  THEN 1 ELSE 0 END) AS signed_count,
@@ -2103,9 +2097,15 @@ def customers_page():
             FROM invoices i
             LEFT JOIN customers c ON LOWER(c.name) = LOWER(i.customer_name)
             WHERE i.customer_name IS NOT NULL AND i.customer_name != ''
-            GROUP BY i.customer_name
+            GROUP BY LOWER(i.customer_name)
             ORDER BY MAX(i.date) DESC
         """).fetchall()
+        all_customer_names = [r[0] for r in conn.execute(
+            "SELECT COALESCE(c.name, MIN(i.customer_name)) FROM invoices i "
+            "LEFT JOIN customers c ON LOWER(c.name) = LOWER(i.customer_name) "
+            "WHERE i.customer_name IS NOT NULL AND i.customer_name != '' "
+            "GROUP BY LOWER(i.customer_name) ORDER BY 1 ASC"
+        ).fetchall()]
     customers_data = [
         {
             'name': r[0], 'total': r[1], 'last_date': r[2],
@@ -2118,7 +2118,9 @@ def customers_page():
     if new_portal and portal_token:
         portal_link = portal_token
     return render_template('customers.html', customers=customers_data,
-                           new_portal=new_portal, portal_link=portal_link)
+                           all_names=all_customer_names,
+                           new_portal=new_portal, portal_link=portal_link,
+                           merged=merged, add_error=add_error)
 
 
 @app.route('/admin/customers/portal_link', methods=['POST'])
@@ -2228,6 +2230,40 @@ def sign_all_customer():
     return redirect(url_for('signatures_page', new_token=token))
 
 
+@app.route('/admin/customers/add', methods=['POST'])
+def add_customer():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    name = (request.form.get('name') or '').strip()
+    company = (request.form.get('company') or '').strip()
+    error = ''
+    if name:
+        with sqlite3.connect(DATABASE) as conn:
+            exists = conn.execute("SELECT 1 FROM customers WHERE LOWER(name) = LOWER(?)", (name,)).fetchone()
+            if exists:
+                error = f'Customer "{name}" already exists.'
+            else:
+                conn.execute("INSERT INTO customers (name, company) VALUES (?, ?)", (name, company))
+                _cache_bust()
+    return redirect(url_for('customers_page', add_error=error) if error else url_for('customers_page'))
+
+
+@app.route('/admin/customers/merge', methods=['POST'])
+def merge_customers():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    from_name = (request.form.get('from_name') or '').strip()
+    to_name   = (request.form.get('to_name') or '').strip()
+    if from_name and to_name and from_name.lower() != to_name.lower():
+        with sqlite3.connect(DATABASE) as conn:
+            conn.execute("UPDATE invoices SET customer_name = ? WHERE LOWER(customer_name) = LOWER(?)", (to_name, from_name))
+            conn.execute("UPDATE signature_requests SET customer_name = ? WHERE LOWER(customer_name) = LOWER(?)", (to_name, from_name))
+            conn.execute("UPDATE slip_templates SET customer_name = ? WHERE LOWER(customer_name) = LOWER(?)", (to_name, from_name))
+            conn.execute("DELETE FROM customers WHERE LOWER(name) = LOWER(?) AND LOWER(name) != LOWER(?)", (from_name, to_name))
+        _cache_bust()
+    return redirect(url_for('customers_page', merged='1'))
+
+
 # --------------------------
 # DRIVER REPORT
 # --------------------------
@@ -2252,7 +2288,26 @@ def drivers_page():
         for r in rows
     ]
     today_str = date.today().strftime('%Y-%m-%d')
-    return render_template('drivers.html', drivers=drivers_data, today_str=today_str)
+    driver_list_all, _, _ = _load_ref_data()
+    add_error = request.args.get('add_error', '')
+    return render_template('drivers.html', drivers=drivers_data, today_str=today_str,
+                           driver_list_all=driver_list_all, add_error=add_error)
+
+
+@app.route('/admin/drivers/add', methods=['POST'])
+def add_driver():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    name = (request.form.get('name') or '').strip()
+    error = ''
+    if name:
+        with sqlite3.connect(DATABASE) as conn:
+            try:
+                conn.execute("INSERT INTO drivers (name) VALUES (?)", (name,))
+                _cache_bust()
+            except sqlite3.IntegrityError:
+                error = f'Driver "{name}" already exists.'
+    return redirect(url_for('drivers_page', add_error=error) if error else url_for('drivers_page'))
 
 
 @app.route('/admin/drivers/<path:driver_name>/report')
@@ -2326,184 +2381,116 @@ def driver_report(driver_name):
                      as_attachment=True)
 
 
+
 # --------------------------
-# RECURRING TRIPS
+# SLIP MANAGEMENT
 # --------------------------
-DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+def _slip_mgmt_query(year, month, status, date_type):
+    col = "date" if date_type == 'duty' else "created_at"
+    where = f"WHERE strftime('%Y', {col}) = ?"
+    params = [str(year)]
+    if month:
+        where += f" AND strftime('%m', {col}) = ?"
+        params.append(f"{int(month):02d}")
+    STATUS_MAP = {
+        'generated': "COALESCE(bill_status,'Bill Generated') = 'Bill Generated'",
+        'submitted':  "bill_status = 'Bill Submitted'",
+        'paid':       "bill_status = 'Payment Received'",
+        'signed':     "signature_status = 'signed'",
+    }
+    if status and status in STATUS_MAP:
+        where += f" AND {STATUS_MAP[status]}"
+    return where, params
 
 
-def _next_run_date(days, last_generated):
-    """Return the next ISO date string this schedule is due to run (from today)."""
-    today = date.today()
-    if not days:
-        return None
-    today_str = today.strftime('%Y-%m-%d')
-    # Scan up to 7 days ahead
-    for offset in range(1, 8):
-        d = today + timedelta(days=offset)
-        if d.weekday() in days:
-            return d.strftime('%Y-%m-%d')
-    return None
-
-
-def _generate_one_recurring(conn, trip_row, today_str, admin_username):
-    """Insert an invoice from a recurring_trip row. trip_row is a full SELECT result."""
-    next_no = get_next_duty_slip_no()
-    conn.execute("""
-        INSERT INTO invoices
-        (customer_name, company_name, date, duty_slip_no,
-         vehicle_type, vehicle_no, route_covered, driver_name,
-         project_code, admin_username, created_at, bill_status)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,'Bill Generated')
-    """, (trip_row[2], trip_row[3], today_str, next_no,
-          trip_row[4], trip_row[5], trip_row[7], trip_row[6], trip_row[8],
-          admin_username, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-    conn.execute(
-        "UPDATE recurring_trips SET last_generated = ? WHERE id = ?", (today_str, trip_row[0])
-    )
-
-
-@app.route('/admin/recurring', methods=['GET', 'POST'])
-def recurring_trips_page():
+@app.route('/admin/slips')
+def slip_management():
     if 'admin' not in session:
         return redirect(url_for('home'))
+    year      = int(request.args.get('year', date.today().year))
+    month     = request.args.get('month', '')
+    status    = request.args.get('status', 'all')
+    date_type = request.args.get('date_type', 'duty')
+    col       = "date" if date_type == 'duty' else "created_at"
 
-    if request.method == 'POST':
-        action = request.form.get('action', '')
-
-        if action == 'delete':
-            trip_id = request.form.get('trip_id')
-            if trip_id:
-                with sqlite3.connect(DATABASE) as conn:
-                    conn.execute("DELETE FROM recurring_trips WHERE id = ?", (trip_id,))
-
-        elif action == 'toggle':
-            trip_id = request.form.get('trip_id')
-            if trip_id:
-                with sqlite3.connect(DATABASE) as conn:
-                    conn.execute(
-                        "UPDATE recurring_trips SET active = 1 - COALESCE(active,1) WHERE id = ?", (trip_id,)
-                    )
-
-        elif action == 'edit':
-            trip_id = request.form.get('trip_id')
-            if trip_id:
-                days = sorted({int(d) for d in request.form.getlist('days') if d.isdigit() and 0 <= int(d) <= 6})
-                fields = {k: (request.form.get(k) or '').strip() for k in (
-                    'name', 'customer_name', 'company_name', 'vehicle_type', 'vehicle_no',
-                    'driver_name', 'route_covered', 'project_code')}
-                if fields['name']:
-                    with sqlite3.connect(DATABASE) as conn:
-                        conn.execute("""
-                            UPDATE recurring_trips
-                            SET name=?, customer_name=?, company_name=?, vehicle_type=?,
-                                vehicle_no=?, driver_name=?, route_covered=?,
-                                project_code=?, days_of_week=?
-                            WHERE id=?
-                        """, (fields['name'], fields['customer_name'], fields['company_name'],
-                              fields['vehicle_type'], fields['vehicle_no'],
-                              fields['driver_name'], fields['route_covered'],
-                              fields['project_code'], _json.dumps(days), trip_id))
-
-        elif action == 'generate_one':
-            trip_id = request.form.get('trip_id')
-            if trip_id:
-                today = date.today()
-                today_str = today.strftime('%Y-%m-%d')
-                with sqlite3.connect(DATABASE) as conn:
-                    t = conn.execute(
-                        """SELECT id, name, customer_name, company_name, vehicle_type, vehicle_no,
-                                  driver_name, route_covered, project_code, days_of_week
-                           FROM recurring_trips WHERE id = ?""", (trip_id,)
-                    ).fetchone()
-                    if t:
-                        _generate_one_recurring(conn, t, today_str, session['admin'])
-
-        elif action == 'generate_due':
-            today = date.today()
-            today_wd = today.weekday()
-            today_str = today.strftime('%Y-%m-%d')
-            with sqlite3.connect(DATABASE) as conn:
-                trips = conn.execute(
-                    """SELECT id, name, customer_name, company_name, vehicle_type, vehicle_no,
-                              driver_name, route_covered, project_code, days_of_week
-                       FROM recurring_trips WHERE active = 1
-                         AND (last_generated IS NULL OR last_generated < ?)""",
-                    (today_str,)
-                ).fetchall()
-                for t in trips:
-                    days = _json.loads(t[9] or '[]')
-                    if today_wd not in days:
-                        continue
-                    _generate_one_recurring(conn, t, today_str, session['admin'])
-
-        return redirect(url_for('recurring_trips_page'))
-
-    # GET — load trips with slip counts
-    today_wd = date.today().weekday()
-    today_str = date.today().strftime('%Y-%m-%d')
     with sqlite3.connect(DATABASE) as conn:
-        trips = conn.execute("""
-            SELECT r.id, r.name, r.customer_name, r.company_name, r.vehicle_type,
-                   r.vehicle_no, r.driver_name, r.route_covered, r.project_code,
-                   r.days_of_week, r.active, r.last_generated,
-                   COUNT(i.id) AS slip_count
-            FROM recurring_trips r
-            LEFT JOIN invoices i
-              ON LOWER(i.customer_name) = LOWER(r.customer_name)
-             AND LOWER(COALESCE(i.driver_name,'')) = LOWER(COALESCE(r.driver_name,''))
-             AND LOWER(COALESCE(i.route_covered,'')) = LOWER(COALESCE(r.route_covered,''))
-            GROUP BY r.id
-            ORDER BY r.active DESC, r.name ASC
-        """).fetchall()
+        # Available years
+        years = [r[0] for r in conn.execute(
+            "SELECT DISTINCT strftime('%Y', date) FROM invoices WHERE date IS NOT NULL ORDER BY 1 DESC"
+        ).fetchall() if r[0]]
+        if str(year) not in years and years:
+            years.insert(0, str(year))
+        years = sorted(set(years), reverse=True)
 
-    trips_data = []
-    for t in trips:
-        days = _json.loads(t[9] or '[]')
-        is_due = bool(t[10] == 1 and today_wd in days and (not t[11] or t[11] < today_str))
-        next_run = _next_run_date(days, t[11]) if t[10] == 1 else None
-        trips_data.append({
-            'id': t[0], 'name': t[1],
-            'customer_name': t[2], 'company_name': t[3],
-            'vehicle_type': t[4], 'vehicle_no': t[5],
-            'driver_name': t[6], 'route_covered': t[7], 'project_code': t[8],
-            'days_raw': days,
-            'days': [DAY_NAMES[d] for d in sorted(days)],
-            'active': t[10], 'last_generated': t[11],
-            'slip_count': t[12],
-            'is_due': is_due,
-            'next_run': next_run,
-        })
-    due_count = sum(1 for t in trips_data if t['is_due'])
-    driver_list, vehicle_rows, customer_rows = _load_ref_data()
-    return render_template('recurring.html',
-                           trips=trips_data, due_count=due_count,
-                           driver_list=driver_list,
-                           vehicle_list=[r[0] for r in vehicle_rows],
-                           vehicle_map={r[0]: r[1] for r in vehicle_rows},
-                           customer_list=[r[0] for r in customer_rows],
-                           day_names=DAY_NAMES, today_wd=today_wd)
+        # Month counts for sidebar
+        where_y, params_y = _slip_mgmt_query(year, None, status, date_type)
+        month_rows = conn.execute(
+            f"SELECT strftime('%m', {col}) AS m, COUNT(*) FROM invoices {where_y} GROUP BY m",
+            params_y
+        ).fetchall()
+        month_counts = {int(r[0]): r[1] for r in month_rows if r[0]}
+
+        # Status tab counts (for selected year + month)
+        where_base, params_base = _slip_mgmt_query(year, month, 'all', date_type)
+        status_counts = {}
+        total = conn.execute(f"SELECT COUNT(*) FROM invoices {where_base}", params_base).fetchone()[0]
+        status_counts['all'] = total
+        for s in ('generated', 'submitted', 'paid', 'signed'):
+            w, p = _slip_mgmt_query(year, month, s, date_type)
+            status_counts[s] = conn.execute(f"SELECT COUNT(*) FROM invoices {w}", p).fetchone()[0]
+
+        # Slips for current view
+        where, params = _slip_mgmt_query(year, month, status, date_type)
+        slips = conn.execute(
+            f"""SELECT id, duty_slip_no, date, created_at, customer_name, company_name,
+                       route_covered, driver_name, vehicle_type, vehicle_no,
+                       COALESCE(bill_status,'Bill Generated'), COALESCE(signature_status,'')
+                FROM invoices {where} ORDER BY {col} DESC, id DESC LIMIT 500""",
+            params
+        ).fetchall()
+
+    return render_template('slip_management.html',
+                           slips=slips, year=year, years=years, month=int(month) if month else 0,
+                           status=status, date_type=date_type,
+                           month_counts=month_counts, status_counts=status_counts)
 
 
-@app.route('/admin/recurring/<int:trip_id>/json')
-def recurring_trip_json(trip_id):
-    """Return JSON for a single recurring trip (used by edit modal)."""
+@app.route('/admin/slips/rows')
+def slip_management_rows():
+    if 'admin' not in session:
+        return '', 401
+    year      = int(request.args.get('year', date.today().year))
+    month     = request.args.get('month', '')
+    status    = request.args.get('status', 'all')
+    date_type = request.args.get('date_type', 'duty')
+    col       = "date" if date_type == 'duty' else "created_at"
+    where, params = _slip_mgmt_query(year, month, status, date_type)
+    with sqlite3.connect(DATABASE) as conn:
+        slips = conn.execute(
+            f"""SELECT id, duty_slip_no, date, created_at, customer_name, company_name,
+                       route_covered, driver_name, vehicle_type, vehicle_no,
+                       COALESCE(bill_status,'Bill Generated'), COALESCE(signature_status,'')
+                FROM invoices {where} ORDER BY {col} DESC, id DESC LIMIT 500""",
+            params
+        ).fetchall()
+    return render_template('_slip_management_rows.html', slips=slips, status=status)
+
+
+@app.route('/admin/slips/month_counts')
+def slip_management_month_counts():
     if 'admin' not in session:
         return jsonify({}), 401
+    year      = int(request.args.get('year', date.today().year))
+    status    = request.args.get('status', 'all')
+    date_type = request.args.get('date_type', 'duty')
+    col       = "date" if date_type == 'duty' else "created_at"
+    where_y, params_y = _slip_mgmt_query(year, None, status, date_type)
     with sqlite3.connect(DATABASE) as conn:
-        t = conn.execute(
-            """SELECT id, name, customer_name, company_name, vehicle_type, vehicle_no,
-                      driver_name, route_covered, project_code, days_of_week
-               FROM recurring_trips WHERE id = ?""", (trip_id,)
-        ).fetchone()
-    if not t:
-        return jsonify({}), 404
-    return jsonify({
-        'id': t[0], 'name': t[1], 'customer_name': t[2], 'company_name': t[3],
-        'vehicle_type': t[4], 'vehicle_no': t[5], 'driver_name': t[6],
-        'route_covered': t[7], 'project_code': t[8],
-        'days': _json.loads(t[9] or '[]'),
-    })
+        month_rows = conn.execute(
+            f"SELECT strftime('%m', {col}) AS m, COUNT(*) FROM invoices {where_y} GROUP BY m",
+            params_y
+        ).fetchall()
+    return jsonify({int(r[0]): r[1] for r in month_rows if r[0]})
 
 
 # --------------------------

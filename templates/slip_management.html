@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slip Management — Osprey Travels</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --blue: #007aff; --green: #34c759; --orange: #ff9500; --red: #ff3b30;
+      --bg: #f2f2f7; --card: #ffffff; --text: #1c1c1e; --muted: #8e8e93;
+      --border: #e5e5ea; --radius: 12px;
+    }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+           background: var(--bg); color: var(--text); font-size: 14px; }
+
+    .sm-layout { display: flex; height: calc(100vh - 56px); overflow: hidden; }
+
+    /* ---- SIDEBAR ---- */
+    .sm-sidebar {
+      width: 200px; flex-shrink: 0;
+      background: var(--card); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; overflow-y: auto;
+    }
+    .sm-sidebar-top { padding: 14px 12px 8px; border-bottom: 1px solid var(--border); }
+    .sm-select {
+      width: 100%; padding: 7px 10px; border: 1.5px solid var(--border);
+      border-radius: 8px; font-size: 13px; font-family: inherit;
+      background: #fff; outline: none; margin-bottom: 8px; font-weight: 600;
+    }
+    .sm-select:focus { border-color: var(--blue); }
+    .sm-toggle {
+      display: flex; border-radius: 8px; border: 1px solid var(--border);
+      overflow: hidden; font-size: 11px; font-weight: 700;
+    }
+    .sm-toggle label {
+      flex: 1; text-align: center; padding: 5px 4px; cursor: pointer;
+      color: var(--muted); user-select: none; transition: background 0.1s, color 0.1s;
+    }
+    .sm-toggle input[type=radio] { display: none; }
+    .sm-toggle input:checked + label { background: var(--blue); color: #fff; }
+
+    .sm-month-list { flex: 1; padding: 8px 0; }
+    .sm-month-btn {
+      display: flex; align-items: center; justify-content: space-between;
+      width: 100%; padding: 9px 14px; border: none; background: none;
+      font-family: inherit; font-size: 13px; font-weight: 500; color: var(--text);
+      cursor: pointer; text-align: left; transition: background 0.1s;
+    }
+    .sm-month-btn:hover { background: #f2f2f7; }
+    .sm-month-btn.active { background: #e8f0fe; color: var(--blue); font-weight: 700; }
+    .sm-month-count {
+      font-size: 11px; font-weight: 700; background: #f2f2f7;
+      padding: 2px 7px; border-radius: 10px; color: var(--muted);
+    }
+    .sm-month-btn.active .sm-month-count { background: #c7dffe; color: var(--blue); }
+
+    /* ---- MAIN ---- */
+    .sm-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    .sm-toolbar {
+      padding: 12px 20px; border-bottom: 1px solid var(--border);
+      background: var(--card); display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .sm-tabs { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; }
+    .sm-tab {
+      padding: 6px 14px; border-radius: 20px; border: 1.5px solid var(--border);
+      background: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
+      font-family: inherit; color: var(--muted); transition: all 0.12s; white-space: nowrap;
+    }
+    .sm-tab:hover { border-color: var(--blue); color: var(--blue); }
+    .sm-tab.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .sm-tab .sm-cnt { margin-left: 5px; opacity: 0.75; }
+
+    .sm-bulk-bar {
+      display: none; align-items: center; gap: 8px;
+      padding: 8px 20px; background: #fff8e1; border-bottom: 1px solid #ffe082;
+      font-size: 13px; font-weight: 600; color: #e65100;
+    }
+    .sm-bulk-bar.show { display: flex; }
+    .sm-bulk-btn {
+      padding: 5px 12px; border-radius: 7px; border: 1px solid #ffe082;
+      background: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
+      font-family: inherit; color: #e65100; transition: background 0.1s;
+    }
+    .sm-bulk-btn:hover { background: #fff3cd; }
+    .sm-bulk-btn.danger { border-color: var(--red); color: var(--red); }
+    .sm-bulk-btn.danger:hover { background: #fdecea; }
+
+    .sm-table-wrap { flex: 1; overflow-y: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      position: sticky; top: 0; z-index: 2;
+      padding: 9px 12px; text-align: left; font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted);
+      background: #f7f7fa; border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #fafafa; }
+    td { padding: 10px 12px; vertical-align: middle; font-size: 13px; }
+
+    .sm-slipno { font-weight: 700; color: var(--blue); font-size: 13px; }
+
+    .sm-badge {
+      display: inline-flex; align-items: center; padding: 3px 8px;
+      border-radius: 20px; font-size: 11px; font-weight: 700; white-space: nowrap;
+    }
+    .smb-generated { background: #f2f2f7; color: var(--muted); }
+    .smb-submitted  { background: #fff8e1; color: #e65100; }
+    .smb-paid       { background: #e8f5e9; color: #2e7d32; }
+    .smb-signed     { background: #e8f5e9; color: #2e7d32; }
+    .smb-sigpend    { background: #fff8e1; color: #e65100; }
+
+    .sm-action-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; border-radius: 7px;
+      border: 1px solid var(--border); background: var(--card);
+      color: var(--muted); cursor: pointer; text-decoration: none;
+      transition: all 0.1s;
+    }
+    .sm-action-btn:hover { background: #f0f6ff; border-color: var(--blue); color: var(--blue); }
+    .sm-action-btn.sm-danger:hover { background: #fdecea; border-color: var(--red); color: var(--red); }
+
+    .sm-spinner {
+      display: none; align-items: center; justify-content: center;
+      padding: 48px; color: var(--muted); font-size: 13px; gap: 10px;
+    }
+    .sm-spinner.show { display: flex; }
+
+    @media (max-width: 768px) {
+      .sm-sidebar { width: 160px; }
+    }
+  </style>
+</head>
+<body>
+{% include 'navbar.html' %}
+
+<div class="sm-layout">
+  <!-- SIDEBAR -->
+  <aside class="sm-sidebar">
+    <div class="sm-sidebar-top">
+      <select class="sm-select" id="yearSelect">
+        {% for y in years %}
+          <option value="{{ y }}" {% if y|int == year %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
+      </select>
+      <div class="sm-toggle">
+        <input type="radio" name="date_type" id="dtDuty" value="duty" {% if date_type == 'duty' %}checked{% endif %}>
+        <label for="dtDuty">Duty Date</label>
+        <input type="radio" name="date_type" id="dtGen" value="generated" {% if date_type == 'generated' %}checked{% endif %}>
+        <label for="dtGen">Gen. Date</label>
+      </div>
+    </div>
+
+    <div class="sm-month-list" id="monthList">
+      <button class="sm-month-btn {% if month == 0 %}active{% endif %}"
+              data-month="" onclick="selectMonth('')">
+        All Months
+        <span class="sm-month-count">{{ month_counts.values()|sum }}</span>
+      </button>
+      {% set MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
+      {% for i in range(1, 13) %}
+      <button class="sm-month-btn {% if month == i %}active{% endif %}"
+              data-month="{{ i }}" onclick="selectMonth('{{ i }}')">
+        {{ MONTH_NAMES[i-1] }}
+        <span class="sm-month-count">{{ month_counts.get(i, 0) }}</span>
+      </button>
+      {% endfor %}
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="sm-main">
+    <div class="sm-toolbar">
+      <div class="sm-tabs" id="statusTabs">
+        {% for tab_key, tab_label in [('all','All'),('generated','Generated'),('signed','Signed'),('submitted','Submitted'),('paid','Paid')] %}
+        <button class="sm-tab {% if status == tab_key %}active{% endif %}"
+                data-status="{{ tab_key }}" onclick="selectStatus('{{ tab_key }}')">
+          {{ tab_label }}<span class="sm-cnt">{{ status_counts.get(tab_key, 0) }}</span>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="sm-bulk-bar" id="bulkBar">
+      <span id="bulkCount">0 selected</span>
+      <button class="sm-bulk-btn" onclick="bulkDownload()">Download ZIPs</button>
+      <button class="sm-bulk-btn danger" onclick="bulkDelete()">Delete</button>
+      <button class="sm-bulk-btn" onclick="clearSelection()" style="margin-left:auto;">Clear</button>
+    </div>
+
+    <div class="sm-table-wrap">
+      <div class="sm-spinner" id="smSpinner">Loading…</div>
+      <table id="smTable">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="smSelectAll"></th>
+            <th>Slip #</th>
+            <th>Date</th>
+            <th>Customer</th>
+            <th>Route</th>
+            <th>Driver</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="smTbody">
+          {% include '_slip_management_rows.html' %}
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script>
+  let _smYear   = {{ year }};
+  let _smMonth  = '{{ month if month else "" }}';
+  let _smStatus = '{{ status }}';
+  let _smDType  = '{{ date_type }}';
+
+  function _buildParams() {
+    const p = new URLSearchParams();
+    p.set('year', _smYear);
+    if (_smMonth) p.set('month', _smMonth);
+    p.set('status', _smStatus);
+    p.set('date_type', _smDType);
+    return p;
+  }
+
+  function loadRows(pushState) {
+    const params = _buildParams();
+    document.getElementById('smSpinner').classList.add('show');
+    document.getElementById('smTbody').style.opacity = '0.4';
+
+    fetch('/admin/slips/rows?' + params)
+      .then(r => r.text())
+      .then(html => {
+        document.getElementById('smTbody').innerHTML = html;
+        document.getElementById('smTbody').style.opacity = '1';
+        document.getElementById('smSpinner').classList.remove('show');
+        rebindChecks();
+        if (pushState) history.pushState({}, '', '/admin/slips?' + params);
+      })
+      .catch(() => {
+        document.getElementById('smSpinner').classList.remove('show');
+        document.getElementById('smTbody').style.opacity = '1';
+      });
+
+    // Update month counts
+    fetch('/admin/slips/month_counts?' + params)
+      .then(r => r.json())
+      .then(counts => {
+        document.querySelectorAll('.sm-month-btn').forEach(btn => {
+          const m = btn.dataset.month ? parseInt(btn.dataset.month) : null;
+          const cnt = m ? (counts[m] || 0) : Object.values(counts).reduce((a,b)=>a+b,0);
+          btn.querySelector('.sm-month-count').textContent = cnt;
+        });
+      });
+  }
+
+  function selectMonth(m) {
+    _smMonth = m;
+    document.querySelectorAll('.sm-month-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.month === m);
+    });
+    loadRows(true);
+  }
+
+  function selectStatus(s) {
+    _smStatus = s;
+    document.querySelectorAll('.sm-tab').forEach(b => {
+      b.classList.toggle('active', b.dataset.status === s);
+    });
+    loadRows(true);
+  }
+
+  document.getElementById('yearSelect').addEventListener('change', function() {
+    _smYear = this.value;
+    loadRows(true);
+  });
+
+  document.querySelectorAll('input[name=date_type]').forEach(r => {
+    r.addEventListener('change', function() {
+      _smDType = this.value;
+      loadRows(true);
+    });
+  });
+
+  // Bulk selection
+  function rebindChecks() {
+    const selectAll = document.getElementById('smSelectAll');
+    if (selectAll) {
+      selectAll.checked = false;
+      selectAll.addEventListener('change', function() {
+        document.querySelectorAll('.sm-check').forEach(c => c.checked = this.checked);
+        updateBulkBar();
+      });
+    }
+    document.querySelectorAll('.sm-check').forEach(c => {
+      c.addEventListener('change', updateBulkBar);
+    });
+  }
+
+  function updateBulkBar() {
+    const checked = document.querySelectorAll('.sm-check:checked');
+    const bar = document.getElementById('bulkBar');
+    if (checked.length > 0) {
+      bar.classList.add('show');
+      document.getElementById('bulkCount').textContent = checked.length + ' selected';
+    } else {
+      bar.classList.remove('show');
+    }
+  }
+
+  function clearSelection() {
+    document.querySelectorAll('.sm-check').forEach(c => c.checked = false);
+    const sa = document.getElementById('smSelectAll');
+    if (sa) sa.checked = false;
+    updateBulkBar();
+  }
+
+  function bulkDownload() {
+    const ids = [...document.querySelectorAll('.sm-check:checked')].map(c => c.value);
+    if (!ids.length) return;
+    ids.forEach(id => {
+      const a = document.createElement('a');
+      a.href = '/invoice/' + id + '/download';
+      a.download = '';
+      a.click();
+    });
+  }
+
+  function bulkDelete() {
+    const ids = [...document.querySelectorAll('.sm-check:checked')].map(c => c.value);
+    if (!ids.length) return;
+    if (!confirm('Delete ' + ids.length + ' slip(s) permanently?')) return;
+    Promise.all(ids.map(id =>
+      fetch('/delete_invoice/' + id, { method: 'POST' })
+    )).then(() => { clearSelection(); loadRows(false); });
+  }
+
+  window.addEventListener('popstate', () => {
+    const p = new URLSearchParams(location.search);
+    _smYear   = p.get('year')      || _smYear;
+    _smMonth  = p.get('month')     || '';
+    _smStatus = p.get('status')    || 'all';
+    _smDType  = p.get('date_type') || 'duty';
+    loadRows(false);
+  });
+
+  rebindChecks();
+</script>
+</body>
+</html>
