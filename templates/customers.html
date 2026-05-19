@@ -10,87 +10,164 @@
     :root {
       --blue: #007aff; --green: #34c759; --orange: #ff9500; --red: #ff3b30;
       --bg: #f2f2f7; --card: #ffffff; --text: #1c1c1e; --muted: #8e8e93;
-      --border: #e5e5ea; --radius: 12px;
+      --border: #e5e5ea; --radius: 14px;
     }
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-           background: var(--bg); color: var(--text); font-size: 14px; padding-bottom: 48px; }
+           background: var(--bg); color: var(--text); font-size: 14px; padding-bottom: 60px; }
 
-    .hero { display: flex; align-items: center; justify-content: space-between; padding: 20px 28px 12px; }
-    .hero h1 { margin: 0; font-size: 22px; font-weight: 700; }
-    .hero p  { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+    .page-header {
+      padding: 20px 28px 0;
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    }
+    .page-header h1 { margin: 0; font-size: 24px; font-weight: 700; }
+    .page-subtitle { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
 
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 14px; padding: 0 28px; }
+    .btn-add {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 9px 16px; border-radius: 10px; border: none;
+      background: var(--blue); color: #fff;
+      font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+      white-space: nowrap;
+    }
+    .btn-add:hover { background: #0066dd; }
+
+    .toolbar {
+      display: flex; align-items: center; gap: 10px; padding: 14px 28px 0; flex-wrap: wrap;
+    }
+    .search-wrap { position: relative; flex: 1; min-width: 200px; max-width: 360px; }
+    .search-wrap svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+    .search-input {
+      width: 100%; padding: 9px 12px 9px 34px;
+      border: 1.5px solid var(--border); border-radius: 10px;
+      font-size: 13px; font-family: inherit; background: #fff; color: var(--text);
+      outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .search-input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0,122,255,0.12); }
+    .search-input::placeholder { color: var(--muted); }
+
+    .sort-sel {
+      padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 10px;
+      font-size: 13px; font-family: inherit; background: #fff; color: var(--text);
+      outline: none; cursor: pointer;
+    }
+    .results-count { font-size: 12px; color: var(--muted); margin-left: auto; white-space: nowrap; }
+
+    .grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 14px; padding: 16px 28px 0;
+    }
 
     .cust-card {
       background: var(--card); border-radius: var(--radius); border: 1px solid var(--border);
-      padding: 18px 20px; display: flex; flex-direction: column; gap: 10px;
+      padding: 20px; display: flex; flex-direction: column; gap: 14px;
+      transition: box-shadow 0.15s;
     }
-    .cust-header { display: flex; align-items: center; gap: 12px; }
-    .cust-avatar {
-      width: 42px; height: 42px; border-radius: 50%;
-      background: #e8f0fe; color: var(--blue);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px; font-weight: 700; flex-shrink: 0;
-    }
-    .cust-name { font-weight: 700; font-size: 15px; }
-    .cust-last { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .cust-card:hover { box-shadow: 0 4px 18px rgba(0,0,0,.07); }
 
-    .stats-row { display: flex; gap: 10px; flex-wrap: wrap; }
-    .stat-chip {
-      display: inline-flex; align-items: center; gap: 4px;
-      padding: 4px 10px; border-radius: 20px;
-      font-size: 12px; font-weight: 600;
+    .card-header { display: flex; align-items: flex-start; gap: 12px; }
+    .cust-avatar {
+      width: 44px; height: 44px; border-radius: 12px;
+      background: linear-gradient(135deg, #e8f0fe 0%, #c7dffe 100%);
+      color: var(--blue);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; font-weight: 800; flex-shrink: 0;
     }
-    .chip-total   { background: #f2f2f7; color: var(--muted); }
+    .card-title { flex: 1; min-width: 0; }
+    .cust-name { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cust-last { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+    .slip-count-badge { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; }
+    .slip-count-num { font-size: 22px; font-weight: 800; color: var(--text); line-height: 1; }
+    .slip-count-label { font-size: 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+
+    .sig-section { display: flex; flex-direction: column; gap: 7px; }
+    .sig-header { display: flex; justify-content: space-between; align-items: center; }
+    .sig-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .sig-counts { font-size: 11px; color: var(--muted); }
+    .sig-bar { height: 5px; border-radius: 3px; background: #e5e5ea; overflow: hidden; }
+    .sig-bar-fill { height: 100%; border-radius: 3px; background: var(--green); }
+    .sig-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .sig-chip {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 3px 9px; border-radius: 20px;
+      font-size: 11px; font-weight: 600;
+    }
+    .chip-all-signed { background: #e8f5e9; color: #2e7d32; }
     .chip-signed  { background: #e8f5e9; color: #2e7d32; }
     .chip-pending { background: #fff8e1; color: #e65100; }
     .chip-unsigned { background: #f5f5f5; color: var(--muted); }
 
-    .cust-actions { display: flex; gap: 8px; margin-top: 2px; }
-    .btn-view {
-      flex: 1; padding: 8px 12px; border-radius: 8px;
-      border: 1px solid var(--border); background: var(--card);
-      font-size: 12px; font-weight: 600; color: var(--blue);
-      cursor: pointer; font-family: inherit; text-decoration: none;
-      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-    }
-    .btn-view:hover { background: #f0f6ff; }
-    .btn-signall {
-      flex: 1; padding: 8px 12px; border-radius: 8px;
-      border: none; background: #25d366; color: #fff;
+    .card-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+    .btn-action {
+      flex: 1; min-width: 0;
+      padding: 8px 10px; border-radius: 9px;
       font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;
       display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+      white-space: nowrap; text-decoration: none;
+      transition: background 0.12s, border-color 0.12s;
     }
-    .btn-signall:hover { background: #1da851; }
-    .btn-signall:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    .btn-portal {
-      flex: 1; padding: 8px 12px; border-radius: 8px;
-      border: 1px solid var(--border); background: var(--card);
-      font-size: 12px; font-weight: 600; color: var(--muted);
-      cursor: pointer; font-family: inherit;
-      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-    }
-    .btn-portal:hover { background: #f2f2f7; color: var(--text); }
-    .btn-portal.has-link { color: var(--blue); border-color: #c7dffe; background: #f0f6ff; }
-    .btn-portal.has-link:hover { background: #dbeeff; }
+    .btn-outline { border: 1.5px solid var(--border); background: var(--card); color: var(--blue); }
+    .btn-outline:hover { background: #f0f6ff; }
+    .btn-green { border: none; background: #25d366; color: #fff; }
+    .btn-green:hover { background: #1da851; }
+    .btn-green:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-ghost { border: 1.5px solid var(--border); background: var(--card); color: var(--muted); flex: none; font-size: 11px; padding: 7px 10px; }
+    .btn-ghost:hover { background: #f2f2f7; color: var(--text); }
+    .btn-portal-active { border: 1.5px solid #c7dffe; background: #f0f6ff; color: var(--blue); }
+    .btn-portal-active:hover { background: #dbeeff; }
 
     .portal-banner {
+      margin: 14px 28px 0;
       background: #e8f5e9; border: 1px solid #a5d6a7;
-      border-radius: 8px; padding: 10px 14px; margin-bottom: 16px;
-      font-size: 13px; display: none;
+      border-radius: 10px; padding: 12px 16px; font-size: 13px;
     }
-    .portal-banner.show { display: block; }
-    .portal-url { font-family: monospace; font-size: 12px; word-break: break-all;
-                  margin: 4px 0 0; color: #2e7d32; }
+    .portal-banner-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .portal-url { font-family: monospace; font-size: 12px; word-break: break-all; margin: 6px 0 0; color: #2e7d32; }
+    .btn-copy-small {
+      padding: 5px 12px; border-radius: 7px; border: 1px solid #a5d6a7;
+      background: #fff; font-size: 12px; font-weight: 600; color: #2e7d32;
+      cursor: pointer; font-family: inherit; flex-shrink: 0;
+    }
 
-    .empty-state { padding: 80px 24px; text-align: center; color: var(--muted); }
-    .empty-state p { font-size: 14px; margin: 8px 0 0; }
+    .alert { margin: 14px 28px 0; padding: 11px 16px; border-radius: 10px; font-size: 13px; }
+    .alert-success { background: #e8f5e9; border: 1px solid #a5d6a7; color: #2e7d32; }
+    .alert-error   { background: #fdecea; border: 1px solid #ffcdd2; color: #c62828; }
 
-    @media (max-width: 600px) {
-      .hero, .grid { padding-left: 14px; padding-right: 14px; }
+    .no-results { display: none; grid-column: 1/-1; padding: 60px 24px; text-align: center; color: var(--muted); }
+    .no-results.show { display: block; }
+    .no-results svg { display: block; margin: 0 auto 12px; }
+    .no-results p { font-size: 14px; margin: 0; }
+
+    dialog {
+      border: none; border-radius: 16px; padding: 0;
+      box-shadow: 0 8px 40px rgba(0,0,0,.18);
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+    }
+    dialog::backdrop { background: rgba(0,0,0,.35); }
+    #addDialog { width: 380px; }
+    #mergeDialog { width: 360px; }
+    .dlg-header { padding: 20px 24px 16px; border-bottom: 1px solid var(--border); }
+    .dlg-header h3 { margin: 0; font-size: 16px; }
+    .dlg-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; }
+    .dlg-footer { padding: 0 24px 20px; display: flex; gap: 8px; justify-content: flex-end; }
+    .dlg-field label { display: block; font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .dlg-field input, .dlg-field select {
+      width: 100%; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 9px;
+      font-size: 13px; font-family: inherit; outline: none; background: #fff;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .dlg-field input:focus, .dlg-field select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0,122,255,.12); }
+    .btn-dlg-cancel { padding: 9px 18px; border-radius: 9px; border: 1.5px solid var(--border); background: #fff; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; color: var(--text); }
+    .btn-dlg-confirm { padding: 9px 18px; border-radius: 9px; border: none; background: var(--blue); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .btn-dlg-danger  { padding: 9px 18px; border-radius: 9px; border: none; background: var(--red);  color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+
+    @media (max-width: 640px) {
+      .page-header, .toolbar, .grid { padding-left: 16px; padding-right: 16px; }
+      .portal-banner, .alert { margin-left: 16px; margin-right: 16px; }
       .grid { grid-template-columns: 1fr; }
+      .page-header { flex-direction: column; align-items: flex-start; }
+      .search-wrap { max-width: 100%; }
+      dialog { width: calc(100vw - 32px) !important; }
     }
   </style>
 </head>
@@ -98,108 +175,130 @@
 {% include 'navbar.html' %}
 
 {% if new_portal %}
-<div class="portal-banner show" style="margin: 12px 28px 0;" id="portalBanner">
-  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-    <strong>Portal link created for {{ new_portal }}:</strong>
-    <button onclick="copyPortalUrl()" style="padding:4px 10px;border-radius:6px;border:1px solid #a5d6a7;background:#fff;font-size:12px;font-weight:600;color:#2e7d32;cursor:pointer;">Copy</button>
+<div class="portal-banner">
+  <div class="portal-banner-row">
+    <strong>Portal link created for {{ new_portal }}</strong>
+    <button class="btn-copy-small" onclick="copyPortalUrl()">Copy URL</button>
   </div>
   <div class="portal-url" id="portalUrlText">{{ request.host_url }}portal/{{ portal_link }}</div>
 </div>
 {% endif %}
 
 {% if merged %}
-<div style="margin:12px 28px 0;padding:10px 14px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;font-size:13px;color:#2e7d32;">
-  Customers merged successfully.
-</div>
+<div class="alert alert-success">Customers merged successfully.</div>
 {% endif %}
 
 {% if add_error %}
-<div style="margin:12px 28px 0;padding:10px 14px;background:#fdecea;border:1px solid #ffcdd2;border-radius:8px;font-size:13px;color:#c62828;">
-  {{ add_error }}
-</div>
+<div class="alert alert-error">{{ add_error }}</div>
 {% endif %}
 
-<div class="hero">
+<div class="page-header">
   <div>
     <h1>Customers</h1>
-    <p>{{ customers|length }} customer{{ 's' if customers|length != 1 else '' }} across all slips</p>
+    <p class="page-subtitle">{{ customers|length }} customer{{ 's' if customers|length != 1 else '' }}</p>
   </div>
-  <form method="post" action="/admin/customers/add" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-    <input type="text" name="name" placeholder="Customer name" required
-           style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;width:160px;outline:none;">
-    <input type="text" name="company" placeholder="Company (optional)"
-           style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;width:160px;outline:none;">
-    <button type="submit"
-            style="padding:8px 14px;border-radius:8px;border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">
-      + Add Customer
-    </button>
-  </form>
+  <button class="btn-add" onclick="document.getElementById('addDialog').showModal()">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    Add Customer
+  </button>
 </div>
 
-<div class="grid">
+<div class="toolbar">
+  <div class="search-wrap">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" class="search-input" id="custSearch" placeholder="Search customers…" oninput="filterCustomers(this.value)">
+  </div>
+  <select class="sort-sel" id="sortSel" onchange="sortCustomers(this.value)">
+    <option value="recent">Most Recent</option>
+    <option value="name">Name A–Z</option>
+    <option value="slips">Most Slips</option>
+  </select>
+  <span class="results-count" id="resultsCount">{{ customers|length }} shown</span>
+</div>
+
+<div class="grid" id="custGrid">
   {% if customers %}
     {% for c in customers %}
-    <div class="cust-card">
-      <div class="cust-header">
+    {% set signed_pct = ((c.signed / c.total * 100)|int) if c.total > 0 else 0 %}
+    <div class="cust-card"
+         data-name="{{ c.name|lower }}"
+         data-total="{{ c.total }}"
+         data-date="{{ c.last_date or '' }}">
+      <div class="card-header">
         <div class="cust-avatar">{{ c.name[0]|upper }}</div>
-        <div>
-          <div class="cust-name">{{ c.name }}</div>
+        <div class="card-title">
+          <div class="cust-name" title="{{ c.name }}">{{ c.name }}</div>
           <div class="cust-last">Last trip: {{ c.last_date or '—' }}</div>
+        </div>
+        <div class="slip-count-badge">
+          <div class="slip-count-num">{{ c.total }}</div>
+          <div class="slip-count-label">slip{{ 's' if c.total != 1 else '' }}</div>
         </div>
       </div>
 
-      <div class="stats-row">
-        <span class="stat-chip chip-total">{{ c.total }} slip{{ 's' if c.total != 1 else '' }}</span>
-        {% if c.signed > 0 %}
-          <span class="stat-chip chip-signed">✓ {{ c.signed }} signed</span>
-        {% endif %}
-        {% if c.pending > 0 %}
-          <span class="stat-chip chip-pending">⏳ {{ c.pending }} pending</span>
-        {% endif %}
-        {% if c.unsigned > 0 %}
-          <span class="stat-chip chip-unsigned">{{ c.unsigned }} unsigned</span>
-        {% endif %}
+      <div class="sig-section">
+        <div class="sig-header">
+          <span class="sig-label">Signatures</span>
+          <span class="sig-counts">{{ c.signed }}/{{ c.total }} signed</span>
+        </div>
+        <div class="sig-bar">
+          <div class="sig-bar-fill" style="width:{{ signed_pct }}%"></div>
+        </div>
+        <div class="sig-chips">
+          {% if c.signed == c.total and c.total > 0 %}
+            <span class="sig-chip chip-all-signed">✓ All signed</span>
+          {% else %}
+            {% if c.signed > 0 %}
+              <span class="sig-chip chip-signed">✓ {{ c.signed }} signed</span>
+            {% endif %}
+            {% if c.pending > 0 %}
+              <span class="sig-chip chip-pending">⏳ {{ c.pending }} pending</span>
+            {% endif %}
+            {% if c.unsigned > 0 %}
+              <span class="sig-chip chip-unsigned">{{ c.unsigned }} unsigned</span>
+            {% endif %}
+          {% endif %}
+        </div>
       </div>
 
-      <div class="cust-actions">
-        <a class="btn-view" href="/admin_portal?customer_name={{ c.name|urlencode }}">
+      <div class="card-actions">
+        <a class="btn-action btn-outline" href="/admin_portal?customer_name={{ c.name|urlencode }}">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           View Slips
         </a>
         {% if c.unsigned > 0 or c.pending > 0 %}
-        <form method="post" action="/admin/signatures/sign_all_customer" style="flex:1; display:contents">
+        <form method="post" action="/admin/signatures/sign_all_customer" style="flex:1;display:contents">
           <input type="hidden" name="customer_name" value="{{ c.name }}">
-          <button type="submit" class="btn-signall"
+          <button type="submit" class="btn-action btn-green"
                   onclick="return confirm('Create a signature link for all {{ c.unsigned + c.pending }} unsigned slip(s) for {{ c.name }}?')">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
             Sign All
           </button>
         </form>
         {% else %}
-        <button class="btn-signall" disabled title="All slips signed">
+        <button class="btn-action btn-green" disabled>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           All Signed
         </button>
         {% endif %}
       </div>
-      <div class="cust-actions" style="margin-top: 6px;">
-        <form method="post" action="/admin/customers/portal_link" style="flex:1; display:contents">
+
+      <div class="card-actions">
+        <form method="post" action="/admin/customers/portal_link" style="flex:1;display:contents">
           <input type="hidden" name="customer_name" value="{{ c.name }}">
-          <button type="submit" class="btn-portal {% if c.portal_token %}has-link{% endif %}"
-                  title="{% if c.portal_token %}Portal link exists — click to regenerate{% else %}Create public portal link{% endif %}">
+          <button type="submit" class="btn-action {% if c.portal_token %}btn-portal-active{% else %}btn-outline{% endif %}"
+                  title="{% if c.portal_token %}Regenerate portal link{% else %}Create a portal link{% endif %}">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
             {% if c.portal_token %}Update Link{% else %}Generate Link{% endif %}
           </button>
         </form>
         {% if c.portal_token %}
-        <a class="btn-view" href="/portal/{{ c.portal_token }}" target="_blank"
-           title="Open portal for {{ c.name }}">
+        <a class="btn-action btn-outline" href="/portal/{{ c.portal_token }}" target="_blank" title="Open customer portal">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
           Open
         </a>
         {% endif %}
-        <button class="btn-view" onclick="openMergeModal('{{ c.name|e }}')" title="Merge into another customer"
-                style="flex:none;color:#8e8e93;border-color:#e5e5ea;">
+        <button class="btn-action btn-ghost" onclick="openMergeModal('{{ c.name|e }}')" title="Merge into another customer">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
           Merge
         </button>
@@ -207,29 +306,53 @@
     </div>
     {% endfor %}
   {% else %}
-  <div class="empty-state" style="grid-column: 1/-1">
-    <p>No customers found. Generate some slips first.</p>
+  <div style="grid-column:1/-1;padding:80px 24px;text-align:center;color:var(--muted);">
+    <p style="font-size:14px;margin:0;">No customers found. Generate some slips first.</p>
   </div>
   {% endif %}
+  <div class="no-results" id="noResults">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <p>No customers match your search.</p>
+  </div>
 </div>
 
+<!-- Add Customer modal -->
+<dialog id="addDialog">
+  <form method="post" action="/admin/customers/add">
+    <div class="dlg-header"><h3>Add Customer</h3></div>
+    <div class="dlg-body">
+      <div class="dlg-field">
+        <label>Customer Name *</label>
+        <input type="text" name="name" placeholder="e.g. Rahul Sharma" required>
+      </div>
+      <div class="dlg-field">
+        <label>Company (optional)</label>
+        <input type="text" name="company" placeholder="e.g. ABC Pvt Ltd">
+      </div>
+    </div>
+    <div class="dlg-footer">
+      <button type="button" class="btn-dlg-cancel" onclick="document.getElementById('addDialog').close()">Cancel</button>
+      <button type="submit" class="btn-dlg-confirm">Add Customer</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- Merge modal -->
-<dialog id="mergeDialog" style="border:none;border-radius:14px;padding:24px;width:340px;box-shadow:0 8px 40px rgba(0,0,0,.18);font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',Arial,sans-serif;">
-  <h3 style="margin:0 0 6px;font-size:16px;">Merge Customer</h3>
-  <p style="margin:0 0 16px;font-size:13px;color:#8e8e93;">Merge <strong id="mergeFromLabel"></strong> into:</p>
+<dialog id="mergeDialog">
+  <div class="dlg-header"><h3>Merge Customer</h3></div>
   <form method="post" action="/admin/customers/merge">
-    <input type="hidden" name="from_name" id="mergeFromInput">
-    <select name="to_name" id="mergeToSelect"
-            style="width:100%;padding:9px 12px;border:1.5px solid #e5e5ea;border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:16px;outline:none;">
-    </select>
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button type="button" onclick="document.getElementById('mergeDialog').close()"
-              style="padding:8px 16px;border-radius:8px;border:1px solid #e5e5ea;background:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">
-        Cancel
-      </button>
-      <button type="submit"
-              style="padding:8px 16px;border-radius:8px;border:none;background:#ff3b30;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;"
-              onclick="return confirm('This will move all slips from ' + document.getElementById('mergeFromLabel').textContent + ' to the selected customer. Continue?')">
+    <div class="dlg-body">
+      <p style="margin:0;font-size:13px;color:var(--muted);">All slips from <strong id="mergeFromLabel"></strong> will be moved to the selected customer.</p>
+      <input type="hidden" name="from_name" id="mergeFromInput">
+      <div class="dlg-field">
+        <label>Merge Into</label>
+        <select name="to_name" id="mergeToSelect"></select>
+      </div>
+    </div>
+    <div class="dlg-footer">
+      <button type="button" class="btn-dlg-cancel" onclick="document.getElementById('mergeDialog').close()">Cancel</button>
+      <button type="submit" class="btn-dlg-danger"
+              onclick="return confirm('Move all slips from ' + document.getElementById('mergeFromLabel').textContent + ' to the selected customer?')">
         Merge
       </button>
     </div>
@@ -238,6 +361,30 @@
 
 <script>
 const ALL_CUSTOMERS = {{ all_names | tojson }};
+
+function filterCustomers(q) {
+  q = q.toLowerCase().trim();
+  const cards = document.querySelectorAll('.cust-card');
+  let visible = 0;
+  cards.forEach(card => {
+    const match = !q || (card.dataset.name || '').includes(q);
+    card.style.display = match ? '' : 'none';
+    if (match) visible++;
+  });
+  document.getElementById('resultsCount').textContent = visible + ' shown';
+  document.getElementById('noResults').classList.toggle('show', visible === 0 && q.length > 0);
+}
+
+function sortCustomers(by) {
+  const grid = document.getElementById('custGrid');
+  const cards = [...grid.querySelectorAll('.cust-card')];
+  cards.sort((a, b) => {
+    if (by === 'name')  return (a.dataset.name || '').localeCompare(b.dataset.name || '');
+    if (by === 'slips') return parseInt(b.dataset.total || 0) - parseInt(a.dataset.total || 0);
+    return (b.dataset.date || '').localeCompare(a.dataset.date || '');
+  });
+  cards.forEach(c => grid.appendChild(c));
+}
 
 function openMergeModal(fromName) {
   document.getElementById('mergeFromLabel').textContent = fromName;
@@ -254,7 +401,9 @@ function openMergeModal(fromName) {
 
 function copyPortalUrl() {
   const txt = document.getElementById('portalUrlText');
-  if (txt) navigator.clipboard.writeText(txt.textContent.trim());
+  if (!txt) return;
+  navigator.clipboard.writeText(txt.textContent.trim());
+  window._showToast && window._showToast('Portal URL copied!');
 }
 </script>
 </body>
