@@ -566,6 +566,18 @@
                  value="{{ next_slip_no }}" placeholder="Auto-suggested">
         </div>
       </div>
+      <div style="display:flex;align-items:center;gap:8px;margin:10px 0 0;">
+        <input type="checkbox" id="multi_day_chk" style="width:15px;height:15px;cursor:pointer;accent-color:var(--primary);">
+        <label for="multi_day_chk" style="font-size:13px;font-weight:600;cursor:pointer;user-select:none;">Multi-day trip</label>
+      </div>
+      <div id="closing_date_row" style="display:none;margin-top:10px;">
+        <div class="form-grid" style="grid-template-columns:1fr 1fr;">
+          <div class="field">
+            <label for="closing_date">Closing Date *</label>
+            <input type="date" id="closing_date" name="closing_date">
+          </div>
+        </div>
+      </div>
 
       <!-- VEHICLE INFO -->
       <div class="section-label"><svg class="icon" width="14" height="14"><use href="#icon-truck"/></svg> Vehicle Information</div>
@@ -970,13 +982,37 @@
       const s = new Date('1970-01-01T' + startTimeEl.value + ':00');
       const e = new Date('1970-01-01T' + closeTimeEl.value + ':00');
       let diff = e - s;
-      if (diff < 0) diff += 86400000;
+      const closingDateEl = document.getElementById('closing_date');
+      const startDateEl   = document.getElementById('date');
+      if (closingDateEl && closingDateEl.value && startDateEl && startDateEl.value) {
+        const days = Math.round((new Date(closingDateEl.value) - new Date(startDateEl.value)) / 86400000);
+        diff += days * 86400000;
+      } else if (diff < 0) {
+        diff += 86400000; // overnight same-day
+      }
+      if (diff <= 0) return;
       const h = Math.floor(diff / 3600000);
       const m = Math.floor((diff % 3600000) / 60000);
       totalTimeEl.value = h + 'h ' + m + 'm';
     }
     startTimeEl.addEventListener('change', calcTime);
     closeTimeEl.addEventListener('change', calcTime);
+
+    // Multi-day checkbox toggle
+    const multiDayChk = document.getElementById('multi_day_chk');
+    const closingDateRow = document.getElementById('closing_date_row');
+    const closingDateInput = document.getElementById('closing_date');
+    multiDayChk.addEventListener('change', function() {
+      closingDateRow.style.display = this.checked ? '' : 'none';
+      if (!this.checked) { closingDateInput.value = ''; calcTime(); }
+      else {
+        // Default closing date to start date if empty
+        const startDate = document.getElementById('date').value;
+        if (!closingDateInput.value && startDate) closingDateInput.value = startDate;
+      }
+    });
+    closingDateInput.addEventListener('change', calcTime);
+    document.getElementById('date').addEventListener('change', calcTime);
 
     // =====================================================================
     // QUICK TEMPLATE APPLY

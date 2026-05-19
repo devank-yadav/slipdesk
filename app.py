@@ -263,9 +263,19 @@ def fill_slip_data(c, data):
     c.setFillColorRGB(*COLOR_TEXT)
     c.setFont('Helvetica', 11)
 
-    # Duty slip no + Date
+    # Duty slip no + Date (range if multi-day trip)
     c.drawString(140, 498, data.get('duty_slip_no', '') or '')
-    c.drawString(140, 472, _format_date(data.get('date', '')))
+    _closing_date = data.get('closing_date', '') or ''
+    if _closing_date:
+        try:
+            _sd = datetime.strptime(data.get('date', ''), '%Y-%m-%d').strftime('%d/%m/%Y')
+            _cd = datetime.strptime(_closing_date, '%Y-%m-%d').strftime('%d/%m/%Y')
+            _date_str = f"{_sd} – {_cd}"
+        except Exception:
+            _date_str = _format_date(data.get('date', ''))
+    else:
+        _date_str = _format_date(data.get('date', ''))
+    c.drawString(140, 472, _date_str)
 
     # Two-column rows
     base_y, row_h = 432, 28
@@ -776,6 +786,8 @@ def init_db():
             conn.execute("ALTER TABLE invoices ADD COLUMN signature_status TEXT")
         if 'signed_at' not in inv_cols:
             conn.execute("ALTER TABLE invoices ADD COLUMN signed_at TEXT")
+        if 'closing_date' not in inv_cols:
+            conn.execute("ALTER TABLE invoices ADD COLUMN closing_date TEXT")
 
         conn.execute('''
             CREATE TABLE IF NOT EXISTS signature_requests (
@@ -1144,7 +1156,8 @@ def bulk_action():
                 f"""SELECT id, duty_slip_no, customer_name, company_name, date,
                            vehicle_type, vehicle_no, starting_km, closing_km, total_km,
                            starting_time, closing_time, total_time,
-                           project_code, mail_approval_date, route_covered, driver_name
+                           project_code, mail_approval_date, route_covered, driver_name,
+                           closing_date
                     FROM invoices WHERE id IN ({placeholders})""",
                 selected_ids
             ).fetchall()
@@ -1158,7 +1171,7 @@ def bulk_action():
                         'starting_km': r[7], 'closing_km': r[8], 'total_km': r[9],
                         'starting_time': r[10], 'closing_time': r[11], 'total_time': r[12],
                         'project_code': r[13], 'mail_approval_date': r[14],
-                        'route_covered': r[15], 'driver_name': r[16],
+                        'route_covered': r[15], 'driver_name': r[16], 'closing_date': r[17] or '',
                     }
                     pdf_buf = _build_pdf(data, signature_data=sig_map.get(r[0]))
                     fname = f"slip_{r[1] or r[2].replace(' ', '_')}.pdf"
@@ -1360,6 +1373,7 @@ def generate_invoice():
     total_time = request.form['total_time']
     project_code = request.form.get('project_code', '')
     mail_approval_date = request.form.get('mail_approval_date', '')
+    closing_date = request.form.get('closing_date', '') or ''
     route_covered = request.form['route_covered']
     driver_name = request.form['driver_name']
 
@@ -1385,6 +1399,7 @@ def generate_invoice():
         'total_time': total_time,
         'project_code': project_code,
         'mail_approval_date': mail_approval_date,
+        'closing_date': closing_date,
         'route_covered': route_covered,
         'driver_name': driver_name,
     }
@@ -1398,15 +1413,15 @@ def generate_invoice():
                 duty_slip_no, vehicle_type, vehicle_no,
                 starting_km, closing_km, total_km,
                 starting_time, closing_time, total_time,
-                project_code, mail_approval_date, route_covered, driver_name,
+                project_code, mail_approval_date, closing_date, route_covered, driver_name,
                 admin_username, created_at, bill_status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Bill Generated')
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Bill Generated')
         """, (
             customer_name, company_name, date_value,
             duty_slip_no, vehicle_type, vehicle_no,
             starting_km, closing_km, total_km,
             starting_time, closing_time, total_time,
-            project_code, mail_approval_date, route_covered, driver_name,
+            project_code, mail_approval_date, closing_date or None, route_covered, driver_name,
             admin_username, created_at
         ))
         # Auto-create customer if not already in the list
@@ -1469,7 +1484,8 @@ def download_invoice(invoice_id):
             """SELECT customer_name, company_name, date, duty_slip_no, vehicle_type,
                       vehicle_no, starting_km, closing_km, total_km,
                       starting_time, closing_time, total_time,
-                      project_code, mail_approval_date, route_covered, driver_name
+                      project_code, mail_approval_date, route_covered, driver_name,
+                      closing_date
                FROM invoices WHERE id = ? AND admin_username = ?""",
             (invoice_id, session['admin'])
         ).fetchone()
@@ -1482,7 +1498,7 @@ def download_invoice(invoice_id):
         'starting_km': row[6], 'closing_km': row[7], 'total_km': row[8],
         'starting_time': row[9], 'closing_time': row[10], 'total_time': row[11],
         'project_code': row[12], 'mail_approval_date': row[13],
-        'route_covered': row[14], 'driver_name': row[15],
+        'route_covered': row[14], 'driver_name': row[15], 'closing_date': row[16] or '',
     }
     buf = _build_pdf(data, signature_data=sig_data)
     filename = f"slip_{row[3] or row[0].replace(' ', '_')}.pdf"
