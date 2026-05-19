@@ -64,6 +64,26 @@
     .btn-signall:hover { background: #1da851; }
     .btn-signall:disabled { opacity: 0.4; cursor: not-allowed; }
 
+    .btn-portal {
+      flex: 1; padding: 8px 12px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--card);
+      font-size: 12px; font-weight: 600; color: var(--muted);
+      cursor: pointer; font-family: inherit;
+      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+    }
+    .btn-portal:hover { background: #f2f2f7; color: var(--text); }
+    .btn-portal.has-link { color: var(--blue); border-color: #c7dffe; background: #f0f6ff; }
+    .btn-portal.has-link:hover { background: #dbeeff; }
+
+    .portal-banner {
+      background: #e8f5e9; border: 1px solid #a5d6a7;
+      border-radius: 8px; padding: 10px 14px; margin-bottom: 16px;
+      font-size: 13px; display: none;
+    }
+    .portal-banner.show { display: block; }
+    .portal-url { font-family: monospace; font-size: 12px; word-break: break-all;
+                  margin: 4px 0 0; color: #2e7d32; }
+
     .empty-state { padding: 80px 24px; text-align: center; color: var(--muted); }
     .empty-state p { font-size: 14px; margin: 8px 0 0; }
 
@@ -75,6 +95,13 @@
 </head>
 <body>
 {% include 'navbar.html' %}
+
+{% if new_portal %}
+<div class="portal-banner show" style="margin: 12px 28px 0;">
+  <strong>Portal link created for {{ new_portal.customer }}:</strong>
+  <div class="portal-url">{{ request.host_url }}portal/{{ new_portal.token }}</div>
+</div>
+{% endif %}
 
 <div class="hero">
   <div>
@@ -127,6 +154,23 @@
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           All Signed
         </button>
+        {% endif %}
+      </div>
+      <div class="cust-actions" style="margin-top: 6px;">
+        <form method="post" action="/admin/customers/portal_link" style="flex:1; display:contents">
+          <input type="hidden" name="customer_name" value="{{ c.name }}">
+          <button type="submit" class="btn-portal {% if c.portal_token %}has-link{% endif %}"
+                  title="{% if c.portal_token %}Portal link exists — click to regenerate{% else %}Create public portal link{% endif %}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            {% if c.portal_token %}Portal Link{% else %}Get Portal Link{% endif %}
+          </button>
+        </form>
+        {% if c.portal_token %}
+        <a class="btn-view" href="/portal/{{ c.portal_token }}" target="_blank"
+           title="Open portal for {{ c.name }}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          Open
+        </a>
         {% endif %}
       </div>
     </div>

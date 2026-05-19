@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if not error %}{{ customer_name }} — Osprey Travels{% else %}Invalid Link{% endif %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --blue: #007aff; --green: #34c759; --bg: #f2f2f7; --card: #fff;
+      --text: #1c1c1e; --muted: #8e8e93; --border: #e5e5ea; --radius: 12px;
+    }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+           background: var(--bg); color: var(--text); font-size: 14px; padding-bottom: 48px; }
+
+    .topbar {
+      background: #fff; border-bottom: 1px solid var(--border);
+      padding: 14px 20px; display: flex; align-items: center; gap: 12px;
+    }
+    .brand { font-size: 16px; font-weight: 800; color: #1c1c1e; }
+    .brand span { color: var(--blue); }
+    .brand-mark {
+      width: 30px; height: 30px; background: var(--blue); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 13px; font-weight: 900; letter-spacing: -1px;
+    }
+
+    .hero { padding: 20px 20px 12px; }
+    .hero h1 { margin: 0; font-size: 20px; font-weight: 700; }
+    .hero p  { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+
+    .card { background: var(--card); border-radius: var(--radius); border: 1px solid var(--border);
+            margin: 0 16px 12px; overflow: hidden; }
+
+    .slip-row {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 14px 16px; border-bottom: 1px solid var(--border);
+    }
+    .slip-row:last-child { border-bottom: none; }
+
+    .slip-num {
+      background: #f0f6ff; color: var(--blue);
+      border-radius: 7px; padding: 4px 8px;
+      font-size: 12px; font-weight: 700; white-space: nowrap; flex-shrink: 0;
+    }
+    .slip-body { flex: 1; min-width: 0; }
+    .slip-date { font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+    .slip-route { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .slip-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+    .slip-badges { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; flex-shrink: 0; }
+    .badge {
+      display: inline-flex; align-items: center; padding: 3px 8px;
+      border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap;
+    }
+    .badge-paid    { background: #e8f5e9; color: #2e7d32; }
+    .badge-sub     { background: #e3f2fd; color: #1565c0; }
+    .badge-gen     { background: #f5f5f5; color: var(--muted); }
+    .badge-signed  { background: #e8f5e9; color: #2e7d32; }
+
+    .btn-dl {
+      margin-top: 6px; padding: 5px 10px; border-radius: 7px;
+      border: 1px solid var(--border); background: #fff;
+      font-size: 11px; font-weight: 600; color: var(--blue);
+      text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
+      white-space: nowrap;
+    }
+    .btn-dl:hover { background: #f0f6ff; }
+
+    .empty { padding: 48px 20px; text-align: center; color: var(--muted); font-size: 14px; }
+
+    .error-box {
+      max-width: 360px; margin: 80px auto; background: var(--card);
+      border-radius: var(--radius); border: 1px solid var(--border);
+      padding: 32px 28px; text-align: center;
+    }
+    .error-box h2 { margin: 0 0 8px; font-size: 18px; }
+    .error-box p  { margin: 0; color: var(--muted); font-size: 13px; }
+
+    .section-label {
+      padding: 10px 16px 4px;
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.5px; color: var(--muted);
+    }
+
+    @media (min-width: 640px) {
+      .hero { padding: 24px 28px 14px; }
+      .card { margin-left: 28px; margin-right: 28px; }
+      .section-label { padding-left: 28px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand-mark">OT</div>
+  <div class="brand">Osprey <span>Travels</span></div>
+</div>
+
+{% if error %}
+<div class="error-box">
+  <h2>Link not found</h2>
+  <p>This portal link is invalid or has been removed. Please contact Osprey Travels for a new link.</p>
+</div>
+
+{% else %}
+<div class="hero">
+  <h1>{{ customer_name }}</h1>
+  <p>{% if company %}{{ company }} · {% endif %}{{ slips|length }} duty slip{{ 's' if slips|length != 1 else '' }}</p>
+</div>
+
+{% if slips %}
+<div class="section-label">Your Duty Slips</div>
+<div class="card">
+  {% for s in slips %}
+  {% set bill_status = s[9] %}
+  <div class="slip-row">
+    <div>
+      <div class="slip-num">#{{ s[1] or s[0] }}</div>
+    </div>
+    <div class="slip-body">
+      <div class="slip-date">{{ s[2] or '—' }}</div>
+      <div class="slip-route">{{ s[7] or '—' }}</div>
+      <div class="slip-meta">
+        {{ s[4] or '' }}{% if s[5] %} · {{ s[5] }}{% endif %}
+        {% if s[6] %} · {{ s[6] }}{% endif %}
+        {% if s[8] %} · {{ s[8] }} km{% endif %}
+      </div>
+    </div>
+    <div class="slip-badges">
+      {% if bill_status == 'Payment Received' %}
+        <span class="badge badge-paid">✓ Paid</span>
+      {% elif bill_status == 'Bill Submitted' %}
+        <span class="badge badge-sub">Submitted</span>
+      {% else %}
+        <span class="badge badge-gen">Generated</span>
+      {% endif %}
+      {% if s[10] == 'signed' %}
+        <span class="badge badge-signed">✓ Signed</span>
+      {% endif %}
+      <a class="btn-dl" href="/portal/{{ token }}/slip/{{ s[0] }}">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        PDF
+      </a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty">No slips found yet.</div>
+{% endif %}
+
+<div style="padding: 24px 16px; text-align:center; font-size:12px; color:var(--muted)">
+  Osprey Travels · 9718305627 · B213, Saraswati Enclave, Gurgaon
+</div>
+{% endif %}
+
+</body>
+</html>

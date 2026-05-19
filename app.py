@@ -1,5 +1,6 @@
 import os
 import io
+import time
 import zipfile
 import sqlite3
 import secrets
@@ -15,6 +16,38 @@ import urllib.error
 import json as _json
 
 stringWidth = None
+
+# ---------- IN-MEMORY REFERENCE DATA CACHE ----------
+_ref_cache: dict = {}
+_REF_TTL = 60  # seconds — busted automatically after TTL
+
+def _cache_get(key):
+    e = _ref_cache.get(key)
+    return e['v'] if (e and time.time() - e['t'] < _REF_TTL) else None
+
+def _cache_set(key, val):
+    _ref_cache[key] = {'v': val, 't': time.time()}
+
+def _cache_bust():
+    _ref_cache.clear()
+
+def _load_ref_data():
+    """Return (driver_list, vehicle_rows, customer_rows) with in-process TTL caching."""
+    dl = _cache_get('drivers')
+    vr = _cache_get('vehicles')
+    cr = _cache_get('customers')
+    if dl is None or vr is None or cr is None:
+        with sqlite3.connect(DATABASE) as conn:
+            if dl is None:
+                dl = [r[0] for r in conn.execute("SELECT name FROM drivers ORDER BY name ASC").fetchall()]
+                _cache_set('drivers', dl)
+            if vr is None:
+                vr = list(conn.execute("SELECT name, COALESCE(vehicle_no,'') FROM vehicles ORDER BY name ASC").fetchall())
+                _cache_set('vehicles', vr)
+            if cr is None:
+                cr = list(conn.execute("SELECT name, COALESCE(company,'') FROM customers ORDER BY name ASC").fetchall())
+                _cache_set('customers', cr)
+    return dl, vr, cr
 
 GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
 
@@ -408,6 +441,31 @@ app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.secret_key = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
 
 
+@app.after_request
+def _gzip_response(response):
+    """Compress HTML/JSON responses when client accepts gzip."""
+    if (response.status_code < 200 or response.status_code >= 300
+            or 'Content-Encoding' in response.headers):
+        return response
+    ct = response.content_type or ''
+    if not (ct.startswith('text/') or 'json' in ct or 'javascript' in ct):
+        return response
+    if 'gzip' not in request.headers.get('Accept-Encoding', ''):
+        return response
+    data = response.get_data()
+    if len(data) < 512:
+        return response
+    import gzip as _gz
+    compressed = _gz.compress(data, compresslevel=6)
+    if len(compressed) >= len(data):
+        return response
+    response.set_data(compressed)
+    response.headers['Content-Encoding'] = 'gzip'
+    response.headers['Content-Length'] = len(compressed)
+    response.headers.add('Vary', 'Accept-Encoding')
+    return response
+
+
 def _hash_pw(pw: str) -> str:
     return hashlib.sha256(pw.encode('utf-8')).hexdigest()
 
@@ -697,6 +755,29 @@ def init_db():
         sig_cols = [col[1] for col in conn.execute("PRAGMA table_info(signature_requests)").fetchall()]
         if 'signer_ua' not in sig_cols:
             conn.execute("ALTER TABLE signature_requests ADD COLUMN signer_ua TEXT")
+
+        # Customer portal token
+        cust_cols = [col[1] for col in conn.execute("PRAGMA table_info(customers)").fetchall()]
+        if 'portal_token' not in cust_cols:
+            conn.execute("ALTER TABLE customers ADD COLUMN portal_token TEXT")
+
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS recurring_trips (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                customer_name TEXT,
+                company_name TEXT,
+                vehicle_type TEXT,
+                vehicle_no TEXT,
+                driver_name TEXT,
+                route_covered TEXT,
+                project_code TEXT,
+                days_of_week TEXT,
+                active INTEGER DEFAULT 1,
+                last_generated TEXT,
+                created_at TEXT
+            )
+        ''')
 
 
 init_db()
@@ -1108,10 +1189,8 @@ def generator_form():
         return redirect(url_for('home'))
     prefill = {}
     template_id = request.args.get('template_id', type=int)
+    driver_list, vehicle_rows, customer_rows = _load_ref_data()
     with sqlite3.connect(DATABASE) as conn:
-        driver_list   = [row[0] for row in conn.execute("SELECT name FROM drivers ORDER BY name ASC").fetchall()]
-        vehicle_rows  = conn.execute("SELECT name, COALESCE(vehicle_no,'') FROM vehicles ORDER BY name ASC").fetchall()
-        customer_rows = conn.execute("SELECT name, COALESCE(company,'') FROM customers ORDER BY name ASC").fetchall()
         quick_templates = conn.execute(
             "SELECT id, template_name FROM slip_templates WHERE admin_username = ? ORDER BY use_count DESC, created_at DESC",
             (session['admin'],)
@@ -1156,14 +1235,12 @@ def generator_form():
 def clone_invoice(invoice_id):
     if 'admin' not in session:
         return redirect(url_for('home'))
+    driver_list, vehicle_rows, customer_rows = _load_ref_data()
     with sqlite3.connect(DATABASE) as conn:
         row = conn.execute(
             "SELECT customer_name, company_name, vehicle_type, vehicle_no, driver_name, project_code, mail_approval_date, route_covered FROM invoices WHERE id = ?",
             (invoice_id,)
         ).fetchone()
-        driver_list   = [r[0] for r in conn.execute("SELECT name FROM drivers ORDER BY name ASC").fetchall()]
-        vehicle_rows  = conn.execute("SELECT name, COALESCE(vehicle_no,'') FROM vehicles ORDER BY name ASC").fetchall()
-        customer_rows = conn.execute("SELECT name, COALESCE(company,'') FROM customers ORDER BY name ASC").fetchall()
     if not row:
         return redirect(url_for('generator_form'))
     vehicle_list  = [r[0] for r in vehicle_rows]
@@ -1416,6 +1493,7 @@ def settings_page():
                 with sqlite3.connect(DATABASE) as conn:
                     conn.execute("DELETE FROM customers WHERE id = ?", (customer_id,))
                 message = "Customer removed."
+        _cache_bust()
 
     with sqlite3.connect(DATABASE) as conn:
         total_invoices = conn.execute("SELECT COUNT(*) FROM invoices").fetchone()[0]
@@ -1615,10 +1693,7 @@ def templates_list():
 def templates_new():
     if 'admin' not in session:
         return redirect(url_for('home'))
-    with sqlite3.connect(DATABASE) as conn:
-        driver_list   = [r[0] for r in conn.execute("SELECT name FROM drivers ORDER BY name ASC").fetchall()]
-        vehicle_rows  = conn.execute("SELECT name, COALESCE(vehicle_no,'') FROM vehicles ORDER BY name ASC").fetchall()
-        customer_rows = conn.execute("SELECT name, COALESCE(company,'') FROM customers ORDER BY name ASC").fetchall()
+    driver_list, vehicle_rows, customer_rows = _load_ref_data()
     vehicle_list  = [r[0] for r in vehicle_rows]
     vehicle_map   = {r[0]: r[1] for r in vehicle_rows}
     customer_list = [r[0] for r in customer_rows]
@@ -1925,33 +2000,151 @@ def submit_signature(token):
 
 
 # --------------------------
+# PERFORMANCE: cache-busting on generate
+# --------------------------
+# generate_invoice already calls _cache_bust via settings; also bust on generate
+# (the auto-create of customer/vehicle could add new entries)
+
+# --------------------------
+# DUPLICATE DETECTION
+# --------------------------
+@app.route('/check_duplicate', methods=['POST'])
+def check_duplicate():
+    if 'admin' not in session:
+        return jsonify({'duplicates': []})
+    customer_name = (request.form.get('customer_name') or '').strip()
+    date_val      = (request.form.get('date') or '').strip()
+    vehicle_no    = (request.form.get('vehicle_no') or '').strip()
+    if not customer_name or not date_val:
+        return jsonify({'duplicates': []})
+    with sqlite3.connect(DATABASE) as conn:
+        params = [customer_name, date_val]
+        extra = ''
+        if vehicle_no:
+            extra = " AND COALESCE(vehicle_no,'') = ?"
+            params.append(vehicle_no)
+        rows = conn.execute(
+            f"SELECT id, duty_slip_no, date, route_covered, driver_name "
+            f"FROM invoices WHERE customer_name = ? AND date = ?{extra} ORDER BY id DESC LIMIT 5",
+            params
+        ).fetchall()
+    return jsonify({'duplicates': [
+        {'id': r[0], 'duty_slip_no': r[1] or '—', 'date': r[2],
+         'route': (r[3] or '')[:60], 'driver': r[4] or ''}
+        for r in rows
+    ]})
+
+
+# --------------------------
 # CUSTOMER HISTORY
 # --------------------------
 @app.route('/admin/customers')
 def customers_page():
     if 'admin' not in session:
         return redirect(url_for('home'))
+    new_portal = request.args.get('new_portal', '')
+    portal_token = request.args.get('portal_token', '')
     with sqlite3.connect(DATABASE) as conn:
         rows = conn.execute("""
-            SELECT customer_name,
+            SELECT i.customer_name,
                    COUNT(*) AS total,
-                   MAX(date) AS last_date,
-                   SUM(CASE WHEN signature_status = 'signed'  THEN 1 ELSE 0 END) AS signed_count,
-                   SUM(CASE WHEN signature_status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
-                   SUM(CASE WHEN COALESCE(signature_status,'') = '' THEN 1 ELSE 0 END) AS unsigned_count
-            FROM invoices
-            WHERE customer_name IS NOT NULL AND customer_name != ''
-            GROUP BY customer_name
-            ORDER BY MAX(date) DESC
+                   MAX(i.date) AS last_date,
+                   SUM(CASE WHEN i.signature_status = 'signed'  THEN 1 ELSE 0 END) AS signed_count,
+                   SUM(CASE WHEN i.signature_status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+                   SUM(CASE WHEN COALESCE(i.signature_status,'') = '' THEN 1 ELSE 0 END) AS unsigned_count,
+                   MAX(c.portal_token) AS portal_token
+            FROM invoices i
+            LEFT JOIN customers c ON LOWER(c.name) = LOWER(i.customer_name)
+            WHERE i.customer_name IS NOT NULL AND i.customer_name != ''
+            GROUP BY i.customer_name
+            ORDER BY MAX(i.date) DESC
         """).fetchall()
     customers_data = [
         {
             'name': r[0], 'total': r[1], 'last_date': r[2],
             'signed': r[3], 'pending': r[4], 'unsigned': r[5],
+            'portal_token': r[6],
         }
         for r in rows
     ]
-    return render_template('customers.html', customers=customers_data)
+    portal_link = ''
+    if new_portal and portal_token:
+        portal_link = portal_token
+    return render_template('customers.html', customers=customers_data,
+                           new_portal=new_portal, portal_link=portal_link)
+
+
+@app.route('/admin/customers/portal_link', methods=['POST'])
+def generate_portal_link():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    customer_name = (request.form.get('customer_name') or '').strip()
+    if not customer_name:
+        return redirect(url_for('customers_page'))
+    token = secrets.token_urlsafe(24)
+    with sqlite3.connect(DATABASE) as conn:
+        exists = conn.execute("SELECT 1 FROM customers WHERE LOWER(name) = LOWER(?)", (customer_name,)).fetchone()
+        if exists:
+            conn.execute("UPDATE customers SET portal_token = ? WHERE LOWER(name) = LOWER(?)", (token, customer_name))
+        else:
+            conn.execute("INSERT INTO customers (name, portal_token) VALUES (?, ?)", (customer_name, token))
+    return redirect(url_for('customers_page', new_portal=customer_name, portal_token=token))
+
+
+# --------------------------
+# CUSTOMER PORTAL (public)
+# --------------------------
+@app.route('/portal/<token>')
+def customer_portal(token):
+    with sqlite3.connect(DATABASE) as conn:
+        cust = conn.execute(
+            "SELECT name, COALESCE(company,'') FROM customers WHERE portal_token = ?", (token,)
+        ).fetchone()
+    if not cust:
+        return render_template('portal.html', error=True)
+    customer_name = cust[0]
+    with sqlite3.connect(DATABASE) as conn:
+        slips = conn.execute("""
+            SELECT id, duty_slip_no, date, company_name, vehicle_type, vehicle_no,
+                   driver_name, route_covered, total_km,
+                   COALESCE(bill_status, 'Bill Generated'),
+                   COALESCE(signature_status, '')
+            FROM invoices WHERE customer_name = ?
+            ORDER BY date DESC, id DESC
+        """, (customer_name,)).fetchall()
+    return render_template('portal.html',
+                           customer_name=customer_name, company=cust[1],
+                           slips=slips, token=token, error=False)
+
+
+@app.route('/portal/<token>/slip/<int:invoice_id>')
+def portal_slip_download(token, invoice_id):
+    with sqlite3.connect(DATABASE) as conn:
+        cust = conn.execute("SELECT name FROM customers WHERE portal_token = ?", (token,)).fetchone()
+        if not cust:
+            return "Invalid portal link", 403
+        row = conn.execute(
+            """SELECT customer_name, company_name, date, duty_slip_no, vehicle_type,
+                      vehicle_no, starting_km, closing_km, total_km,
+                      starting_time, closing_time, total_time,
+                      project_code, mail_approval_date, route_covered, driver_name
+               FROM invoices WHERE id = ? AND customer_name = ?""",
+            (invoice_id, cust[0])
+        ).fetchone()
+        if not row:
+            return "Slip not found", 404
+        sig_data = _get_sig_for_invoice(conn, invoice_id)
+    data = {
+        'customer_name': row[0], 'company_name': row[1], 'date': row[2],
+        'duty_slip_no': row[3], 'vehicle_type': row[4], 'vehicle_no': row[5],
+        'starting_km': row[6], 'closing_km': row[7], 'total_km': row[8],
+        'starting_time': row[9], 'closing_time': row[10], 'total_time': row[11],
+        'project_code': row[12], 'mail_approval_date': row[13],
+        'route_covered': row[14], 'driver_name': row[15],
+    }
+    buf = _build_pdf(data, signature_data=sig_data)
+    filename = f"slip_{row[3] or row[0].replace(' ', '_')}.pdf"
+    return send_file(buf, as_attachment=True, download_name=filename, mimetype='application/pdf')
 
 
 @app.route('/admin/signatures/sign_all_customer', methods=['POST'])
@@ -2084,6 +2277,247 @@ def driver_report(driver_name):
     return send_file(buf, mimetype='application/pdf',
                      download_name=f'driver_report_{safe_name}{stamp}.pdf',
                      as_attachment=True)
+
+
+# --------------------------
+# RECURRING TRIPS
+# --------------------------
+DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+@app.route('/admin/recurring', methods=['GET', 'POST'])
+def recurring_trips_page():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+
+    if request.method == 'POST':
+        action = request.form.get('action', 'new')
+
+        if action == 'new':
+            name = (request.form.get('name') or '').strip()
+            if name:
+                days = [int(d) for d in request.form.getlist('days') if d.isdigit()]
+                fields = {k: (request.form.get(k) or '').strip() for k in (
+                    'customer_name', 'company_name', 'vehicle_type', 'vehicle_no',
+                    'driver_name', 'route_covered', 'project_code')}
+                with sqlite3.connect(DATABASE) as conn:
+                    conn.execute("""
+                        INSERT INTO recurring_trips
+                        (name, customer_name, company_name, vehicle_type, vehicle_no,
+                         driver_name, route_covered, project_code, days_of_week, active, created_at)
+                        VALUES (?,?,?,?,?,?,?,?,?,1,?)
+                    """, (name, fields['customer_name'], fields['company_name'],
+                          fields['vehicle_type'], fields['vehicle_no'],
+                          fields['driver_name'], fields['route_covered'],
+                          fields['project_code'], _json.dumps(sorted(days)),
+                          datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+
+        elif action == 'delete':
+            trip_id = request.form.get('trip_id')
+            if trip_id:
+                with sqlite3.connect(DATABASE) as conn:
+                    conn.execute("DELETE FROM recurring_trips WHERE id = ?", (trip_id,))
+
+        elif action == 'toggle':
+            trip_id = request.form.get('trip_id')
+            if trip_id:
+                with sqlite3.connect(DATABASE) as conn:
+                    conn.execute(
+                        "UPDATE recurring_trips SET active = 1 - COALESCE(active,1) WHERE id = ?", (trip_id,)
+                    )
+
+        elif action == 'generate_due':
+            today = date.today()
+            today_wd = today.weekday()
+            today_str = today.strftime('%Y-%m-%d')
+            with sqlite3.connect(DATABASE) as conn:
+                trips = conn.execute(
+                    """SELECT id, name, customer_name, company_name, vehicle_type, vehicle_no,
+                              driver_name, route_covered, project_code, days_of_week
+                       FROM recurring_trips WHERE active = 1
+                         AND (last_generated IS NULL OR last_generated < ?)""",
+                    (today_str,)
+                ).fetchall()
+                for t in trips:
+                    days = _json.loads(t[9] or '[]')
+                    if today_wd not in days:
+                        continue
+                    next_no = get_next_duty_slip_no()
+                    conn.execute("""
+                        INSERT INTO invoices
+                        (customer_name, company_name, date, duty_slip_no,
+                         vehicle_type, vehicle_no, route_covered, driver_name,
+                         project_code, admin_username, created_at, bill_status)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,'Bill Generated')
+                    """, (t[2], t[3], today_str, next_no,
+                          t[4], t[5], t[7], t[6], t[8],
+                          session['admin'], datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                    conn.execute(
+                        "UPDATE recurring_trips SET last_generated = ? WHERE id = ?", (today_str, t[0])
+                    )
+
+        return redirect(url_for('recurring_trips_page'))
+
+    # GET
+    today_wd = date.today().weekday()
+    today_str = date.today().strftime('%Y-%m-%d')
+    with sqlite3.connect(DATABASE) as conn:
+        trips = conn.execute("""
+            SELECT id, name, customer_name, vehicle_type, driver_name,
+                   days_of_week, active, last_generated
+            FROM recurring_trips ORDER BY active DESC, name ASC
+        """).fetchall()
+
+    driver_list, vehicle_rows, customer_rows = _load_ref_data()
+    trips_data = []
+    for t in trips:
+        days = _json.loads(t[5] or '[]')
+        is_due = bool(t[6] == 1 and today_wd in days and (not t[7] or t[7] < today_str))
+        trips_data.append({
+            'id': t[0], 'name': t[1], 'customer_name': t[2],
+            'vehicle_type': t[3], 'driver_name': t[4],
+            'days': [DAY_NAMES[d] for d in sorted(days)],
+            'active': t[6], 'last_generated': t[7], 'is_due': is_due,
+        })
+    due_count = sum(1 for t in trips_data if t['is_due'])
+    return render_template('recurring.html',
+                           trips=trips_data, due_count=due_count,
+                           driver_list=driver_list,
+                           vehicle_list=[r[0] for r in vehicle_rows],
+                           vehicle_map={r[0]: r[1] for r in vehicle_rows},
+                           customer_list=[r[0] for r in customer_rows],
+                           day_names=DAY_NAMES, today_wd=today_wd)
+
+
+# --------------------------
+# BULK IMPORT
+# --------------------------
+@app.route('/admin/bulk_import', methods=['GET'])
+def bulk_import_page():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    return render_template('bulk_import.html')
+
+
+@app.route('/admin/bulk_import/parse', methods=['POST'])
+def bulk_import_parse():
+    if 'admin' not in session:
+        return jsonify({'ok': False, 'error': 'Not authenticated'})
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'ok': False, 'error': 'No file uploaded'})
+    filename = (f.filename or '').lower()
+    rows = []
+    try:
+        if filename.endswith('.csv'):
+            import csv as _csv
+            content = f.read().decode('utf-8-sig')
+            reader = _csv.DictReader(content.splitlines())
+            for row in reader:
+                rows.append({(k or '').strip().lower().replace(' ', '_'): (v or '').strip() for k, v in row.items()})
+        elif filename.endswith(('.xlsx', '.xls')):
+            from openpyxl import load_workbook
+            wb = load_workbook(io.BytesIO(f.read()), read_only=True, data_only=True)
+            ws = wb.active
+            headers = None
+            for r in ws.iter_rows(values_only=True):
+                if headers is None:
+                    headers = [str(c or '').strip().lower().replace(' ', '_') for c in r]
+                else:
+                    rows.append({headers[i]: str(r[i] or '').strip() for i in range(min(len(headers), len(r)))})
+            wb.close()
+        else:
+            return jsonify({'ok': False, 'error': 'Use a .csv or .xlsx file'})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'Parse error: {e}'})
+
+    ALIASES = {
+        'slip_no': 'duty_slip_no', 'slip#': 'duty_slip_no', 'slip_number': 'duty_slip_no',
+        'customer': 'customer_name', 'company': 'company_name',
+        'vehicle': 'vehicle_type', 'vehicle_number': 'vehicle_no',
+        'driver': 'driver_name', 'route': 'route_covered',
+        'start_km': 'starting_km', 'end_km': 'closing_km',
+        'start_time': 'starting_time', 'end_time': 'closing_time',
+        'project': 'project_code',
+    }
+    FIELDS = {'duty_slip_no', 'customer_name', 'company_name', 'date', 'vehicle_type',
+              'vehicle_no', 'driver_name', 'route_covered', 'starting_km', 'closing_km',
+              'total_km', 'starting_time', 'closing_time', 'project_code'}
+
+    parsed, errors = [], []
+    for i, row in enumerate(rows, 1):
+        norm = {}
+        for k, v in row.items():
+            canonical = ALIASES.get(k, k)
+            if canonical in FIELDS:
+                norm[canonical] = v
+        if not norm.get('customer_name') or not norm.get('date'):
+            errors.append(f'Row {i}: missing customer_name or date — skipped')
+            continue
+        parsed.append(norm)
+    return jsonify({'ok': True, 'rows': parsed, 'errors': errors, 'total': len(parsed)})
+
+
+@app.route('/admin/bulk_import/generate', methods=['POST'])
+def bulk_import_generate():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    try:
+        rows = _json.loads(request.form.get('rows_json', '[]'))
+    except Exception:
+        return redirect(url_for('bulk_import_page'))
+    if not rows:
+        return redirect(url_for('bulk_import_page'))
+
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    slip_data_list = []
+    with sqlite3.connect(DATABASE) as conn:
+        for row in rows:
+            sno = row.get('duty_slip_no') or get_next_duty_slip_no()
+            data = {
+                'customer_name':    row.get('customer_name', ''),
+                'company_name':     row.get('company_name', ''),
+                'date':             row.get('date', ''),
+                'duty_slip_no':     sno,
+                'vehicle_type':     row.get('vehicle_type', ''),
+                'vehicle_no':       row.get('vehicle_no', ''),
+                'starting_km':      row.get('starting_km', ''),
+                'closing_km':       row.get('closing_km', ''),
+                'total_km':         row.get('total_km', ''),
+                'starting_time':    row.get('starting_time', ''),
+                'closing_time':     row.get('closing_time', ''),
+                'total_time':       row.get('total_time', ''),
+                'project_code':     row.get('project_code', ''),
+                'mail_approval_date': '',
+                'route_covered':    row.get('route_covered', ''),
+                'driver_name':      row.get('driver_name', ''),
+            }
+            conn.execute("""
+                INSERT INTO invoices
+                (customer_name, company_name, date, duty_slip_no,
+                 vehicle_type, vehicle_no, starting_km, closing_km, total_km,
+                 starting_time, closing_time, total_time, project_code,
+                 route_covered, driver_name, admin_username, created_at, bill_status)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'Bill Generated')
+            """, (data['customer_name'], data['company_name'], data['date'],
+                  data['duty_slip_no'], data['vehicle_type'], data['vehicle_no'],
+                  data['starting_km'], data['closing_km'], data['total_km'],
+                  data['starting_time'], data['closing_time'], data['total_time'],
+                  data['project_code'], data['route_covered'], data['driver_name'],
+                  session['admin'], now_str))
+            slip_data_list.append(data)
+    _cache_bust()
+
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, 'w') as zipf:
+        for data in slip_data_list:
+            pdf_buf = _build_pdf(data)
+            fname = f"slip_{data['duty_slip_no'] or data['customer_name'].replace(' ', '_')}.pdf"
+            zipf.writestr(fname, pdf_buf.read())
+    zip_buf.seek(0)
+    stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    return send_file(zip_buf, as_attachment=True,
+                     download_name=f'bulk_slips_{stamp}.zip',
+                     mimetype='application/zip')
 
 
 @app.errorhandler(404)

@@ -275,6 +275,14 @@
       <svg class="icon" width="16" height="16"><use href="#icon-truck"/></svg>
       Drivers
     </a>
+    <a href="/admin/recurring" class="nav-link {% if '/admin/recurring' in request.path %}active{% endif %}">
+      <svg class="icon" width="16" height="16"><use href="#icon-refresh"/></svg>
+      Recurring
+    </a>
+    <a href="/admin/bulk_import" class="nav-link {% if '/admin/bulk_import' in request.path %}active{% endif %}">
+      <svg class="icon" width="16" height="16"><use href="#icon-download"/></svg>
+      Bulk Import
+    </a>
     <a href="/settings" class="nav-link {% if '/settings' in request.path %}active{% endif %}">
       <svg class="icon" width="16" height="16"><use href="#icon-cog"/></svg>
       Settings

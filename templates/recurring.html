@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recurring Trips — Osprey Travels</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --blue: #007aff; --green: #34c759; --orange: #ff9500; --red: #ff3b30;
+      --bg: #f2f2f7; --card: #fff; --text: #1c1c1e; --muted: #8e8e93;
+      --border: #e5e5ea; --radius: 12px;
+    }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+           background: var(--bg); color: var(--text); font-size: 14px; padding-bottom: 60px; }
+
+    .hero { display: flex; align-items: flex-start; justify-content: space-between;
+            padding: 20px 28px 12px; gap: 16px; flex-wrap: wrap; }
+    .hero h1 { margin: 0; font-size: 22px; font-weight: 700; }
+    .hero p  { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+
+    .btn-gen-all {
+      padding: 10px 20px; border-radius: 9px; border: none;
+      background: var(--green); color: #fff;
+      font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
+      display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+    }
+    .btn-gen-all:hover { background: #28a745; }
+    .btn-gen-all:disabled { opacity: 0.45; cursor: not-allowed; }
+    .due-badge {
+      background: #fff; color: var(--green); border: 2px solid var(--green);
+      border-radius: 20px; font-size: 12px; font-weight: 800;
+      padding: 1px 7px; margin-left: 2px;
+    }
+
+    /* Trip cards */
+    .trips-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                  gap: 12px; padding: 0 28px 24px; }
+    .trip-card { background: var(--card); border-radius: var(--radius);
+                 border: 1px solid var(--border); padding: 16px 18px; }
+    .trip-card.inactive { opacity: 0.55; }
+    .trip-card.due { border-color: var(--green); box-shadow: 0 0 0 2px rgba(52,199,89,.15); }
+
+    .trip-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .trip-name { font-weight: 700; font-size: 15px; flex: 1; }
+    .trip-due-chip {
+      background: #e8f5e9; color: #2e7d32;
+      border-radius: 20px; font-size: 11px; font-weight: 700;
+      padding: 3px 9px; white-space: nowrap;
+    }
+    .trip-inactive-chip {
+      background: #f5f5f5; color: var(--muted);
+      border-radius: 20px; font-size: 11px; font-weight: 600;
+      padding: 3px 9px;
+    }
+
+    .trip-meta { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+    .trip-meta strong { color: var(--text); font-weight: 600; }
+
+    .day-chips { display: flex; gap: 4px; flex-wrap: wrap; margin: 8px 0; }
+    .day-chip {
+      background: #e8f0fe; color: #1967d2;
+      border-radius: 6px; font-size: 11px; font-weight: 700;
+      padding: 2px 7px;
+    }
+    .day-chip.today { background: var(--blue); color: #fff; }
+
+    .trip-actions { display: flex; gap: 6px; margin-top: 12px; }
+    .btn-toggle {
+      padding: 5px 10px; border-radius: 7px; border: 1px solid var(--border);
+      background: var(--card); font-size: 12px; font-weight: 600;
+      color: var(--muted); cursor: pointer; font-family: inherit;
+    }
+    .btn-toggle:hover { background: #f2f2f7; }
+    .btn-delete {
+      padding: 5px 10px; border-radius: 7px;
+      border: 1px solid #ffd0cd; background: #fff5f5;
+      font-size: 12px; font-weight: 600; color: var(--red);
+      cursor: pointer; font-family: inherit;
+    }
+    .btn-delete:hover { background: #ffe5e4; }
+
+    /* Add form */
+    .add-section { margin: 0 28px 20px; }
+    .add-card { background: var(--card); border-radius: var(--radius);
+                border: 1px solid var(--border); padding: 20px 22px; }
+    .add-card h2 { margin: 0 0 16px; font-size: 16px; font-weight: 700; }
+
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; }
+    .form-grid .full { grid-column: 1/-1; }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field label { font-size: 11px; font-weight: 700; text-transform: uppercase;
+                   letter-spacing: 0.4px; color: var(--muted); }
+    .field input, .field select {
+      padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px;
+      font-size: 14px; font-family: inherit; outline: none; background: #fff;
+    }
+    .field input:focus, .field select:focus { border-color: var(--blue); }
+
+    .days-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .day-label { display: flex; align-items: center; gap: 5px;
+                 background: #f2f2f7; border-radius: 8px; padding: 6px 10px;
+                 font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.1s; }
+    .day-label:hover { background: #e8f0fe; color: var(--blue); }
+    .day-label input { accent-color: var(--blue); }
+
+    .form-footer { margin-top: 16px; }
+    .btn-add {
+      padding: 10px 22px; border-radius: 8px; border: none;
+      background: var(--blue); color: #fff;
+      font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
+    }
+    .btn-add:hover { background: #005ec4; }
+
+    .empty-state { grid-column: 1/-1; padding: 48px 20px; text-align: center; color: var(--muted); }
+
+    @media (max-width: 640px) {
+      .hero, .trips-grid, .add-section { padding-left: 14px; padding-right: 14px; }
+      .form-grid { grid-template-columns: 1fr; }
+      .form-grid .full { grid-column: 1; }
+    }
+  </style>
+</head>
+<body>
+{% include 'navbar.html' %}
+
+<div class="hero">
+  <div>
+    <h1>Recurring Trips</h1>
+    <p>Schedules that auto-fill slips on selected weekdays</p>
+  </div>
+  <form method="post" style="display:inline">
+    <input type="hidden" name="action" value="generate_due">
+    <button type="submit" class="btn-gen-all" {% if due_count == 0 %}disabled{% endif %}
+            onclick="return due_count > 0 || confirm('No trips are due today.')">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      Generate Today's Slips
+      {% if due_count > 0 %}<span class="due-badge">{{ due_count }}</span>{% endif %}
+    </button>
+  </form>
+</div>
+
+<div class="trips-grid">
+  {% if trips %}
+    {% for t in trips %}
+    <div class="trip-card {% if not t.active %}inactive{% endif %} {% if t.is_due %}due{% endif %}">
+      <div class="trip-header">
+        <div class="trip-name">{{ t.name }}</div>
+        {% if t.is_due %}<span class="trip-due-chip">Due today</span>
+        {% elif not t.active %}<span class="trip-inactive-chip">Paused</span>{% endif %}
+      </div>
+      <div class="trip-meta">
+        {% if t.customer_name %}<div><strong>Customer:</strong> {{ t.customer_name }}</div>{% endif %}
+        {% if t.vehicle_type %}<div><strong>Vehicle:</strong> {{ t.vehicle_type }}</div>{% endif %}
+        {% if t.driver_name %}<div><strong>Driver:</strong> {{ t.driver_name }}</div>{% endif %}
+        {% if t.last_generated %}<div><strong>Last generated:</strong> {{ t.last_generated }}</div>{% endif %}
+      </div>
+      <div class="day-chips">
+        {% for d in t.days %}
+          <span class="day-chip {% if loop.index0 == today_wd %}today{% endif %}">{{ d }}</span>
+        {% endfor %}
+      </div>
+      <div class="trip-actions">
+        <form method="post" style="display:inline">
+          <input type="hidden" name="action" value="toggle">
+          <input type="hidden" name="trip_id" value="{{ t.id }}">
+          <button type="submit" class="btn-toggle">{{ 'Pause' if t.active else 'Resume' }}</button>
+        </form>
+        <form method="post" style="display:inline"
+              onsubmit="return confirm('Delete recurring trip \'{{ t.name }}\'? This will not delete already-generated slips.')">
+          <input type="hidden" name="action" value="delete">
+          <input type="hidden" name="trip_id" value="{{ t.id }}">
+          <button type="submit" class="btn-delete">Delete</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="empty-state">No recurring trips yet. Add one below.</div>
+  {% endif %}
+</div>
+
+<!-- Add new recurring trip -->
+<div class="add-section">
+  <div class="add-card">
+    <h2>New Recurring Trip</h2>
+    <form method="post">
+      <input type="hidden" name="action" value="new">
+      <div class="form-grid">
+        <div class="field full">
+          <label>Schedule Name *</label>
+          <input type="text" name="name" placeholder="e.g. Daily Airport Drop — Rahul" required>
+        </div>
+        <div class="field">
+          <label>Customer</label>
+          <input type="text" name="customer_name" list="custOpts" autocomplete="off">
+          <datalist id="custOpts">{% for c in customer_list %}<option value="{{ c }}">{% endfor %}</datalist>
+        </div>
+        <div class="field">
+          <label>Company</label>
+          <input type="text" name="company_name">
+        </div>
+        <div class="field">
+          <label>Vehicle Type</label>
+          <input type="text" name="vehicle_type" list="vehOpts" autocomplete="off">
+          <datalist id="vehOpts">{% for v in vehicle_list %}<option value="{{ v }}">{% endfor %}</datalist>
+        </div>
+        <div class="field">
+          <label>Vehicle No</label>
+          <input type="text" name="vehicle_no" id="vehicleNo">
+        </div>
+        <div class="field">
+          <label>Driver</label>
+          <select name="driver_name">
+            <option value="">— Select —</option>
+            {% for d in driver_list %}
+            <option value="{{ d }}">{{ d }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label>Project Code</label>
+          <input type="text" name="project_code">
+        </div>
+        <div class="field full">
+          <label>Route Covered</label>
+          <input type="text" name="route_covered" placeholder="e.g. Gurgaon → IGI Airport T3">
+        </div>
+        <div class="field full">
+          <label>Repeat on Days *</label>
+          <div class="days-row">
+            {% for i, d in [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}
+            <label class="day-label">
+              <input type="checkbox" name="days" value="{{ i }}" {% if i < 5 %}checked{% endif %}>
+              {{ d }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+      <div class="form-footer">
+        <button type="submit" class="btn-add">Add Schedule</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const vMap = {{ vehicle_map | tojson }};
+document.querySelector('[name="vehicle_type"]').addEventListener('input', function() {
+  const no = vMap[this.value];
+  if (no !== undefined) document.getElementById('vehicleNo').value = no;
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bulk Import — Osprey Travels</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --blue: #007aff; --green: #34c759; --orange: #ff9500; --red: #ff3b30;
+      --bg: #f2f2f7; --card: #fff; --text: #1c1c1e; --muted: #8e8e93;
+      --border: #e5e5ea; --radius: 12px;
+    }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+           background: var(--bg); color: var(--text); font-size: 14px; padding-bottom: 60px; }
+
+    .hero { padding: 20px 28px 12px; }
+    .hero h1 { margin: 0; font-size: 22px; font-weight: 700; }
+    .hero p  { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+
+    .section { margin: 0 28px 20px; }
+    .card { background: var(--card); border-radius: var(--radius); border: 1px solid var(--border); padding: 22px 24px; }
+    .card h2 { margin: 0 0 14px; font-size: 16px; font-weight: 700; }
+
+    /* Drop zone */
+    .drop-zone {
+      border: 2px dashed var(--border); border-radius: 10px;
+      padding: 40px 24px; text-align: center; cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .drop-zone.drag-over { border-color: var(--blue); background: #f0f6ff; }
+    .drop-zone input[type="file"] { display: none; }
+    .drop-icon { font-size: 32px; margin-bottom: 10px; }
+    .drop-label { font-size: 14px; font-weight: 600; color: var(--text); }
+    .drop-hint  { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .drop-btn {
+      display: inline-block; margin-top: 14px; padding: 9px 20px;
+      border-radius: 8px; background: var(--blue); color: #fff;
+      font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; border: none;
+    }
+    .drop-btn:hover { background: #005ec4; }
+
+    /* Template download */
+    .tpl-hint {
+      margin-top: 14px; font-size: 12px; color: var(--muted); text-align: center;
+    }
+    .tpl-hint a { color: var(--blue); text-decoration: none; font-weight: 600; }
+    .tpl-hint a:hover { text-decoration: underline; }
+
+    /* Status banners */
+    .banner {
+      border-radius: 8px; padding: 10px 14px; font-size: 13px; font-weight: 500;
+      margin-bottom: 14px; display: none;
+    }
+    .banner.error   { background: #fff5f5; color: var(--red);   border: 1px solid #ffd0cd; display: block; }
+    .banner.success { background: #e8f5e9; color: #2e7d32;      border: 1px solid #a5d6a7; display: block; }
+    .banner.info    { background: #e3f2fd; color: #1565c0;      border: 1px solid #90caf9; display: block; }
+
+    /* Preview table */
+    #preview-section { display: none; }
+    .tbl-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead th {
+      background: #f7f7f7; padding: 8px 10px; font-weight: 700;
+      text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border);
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--muted);
+    }
+    tbody td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: #f7f9ff; }
+    .row-num { color: var(--muted); font-size: 11px; }
+
+    .warn-cell { color: var(--orange); font-weight: 600; }
+    .miss-cell { color: var(--red);    font-style: italic; }
+
+    /* Stats row */
+    .stats-row {
+      display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+    }
+    .stat-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    }
+    .chip-ok    { background: #e8f5e9; color: #2e7d32; }
+    .chip-warn  { background: #fff8e1; color: #e65100; }
+    .chip-err   { background: #fff5f5; color: var(--red); }
+    .chip-total { background: #f2f2f7; color: var(--muted); }
+
+    /* Action footer */
+    .preview-footer { display: flex; gap: 10px; margin-top: 18px; align-items: center; }
+    .btn-generate {
+      padding: 10px 24px; border-radius: 8px; border: none;
+      background: var(--green); color: #fff;
+      font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
+    }
+    .btn-generate:hover { background: #28a745; }
+    .btn-generate:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-reset {
+      padding: 10px 18px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--card); color: var(--muted);
+      font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .btn-reset:hover { background: #f2f2f7; }
+    .gen-note { font-size: 12px; color: var(--muted); margin-left: 4px; }
+
+    /* Spinner */
+    .spinner { display: none; width: 18px; height: 18px; border: 2px solid #fff;
+               border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Column guide */
+    .col-guide { margin-top: 20px; }
+    .col-guide h3 { font-size: 13px; font-weight: 700; margin: 0 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+    .col-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px; }
+    .col-item {
+      display: flex; flex-direction: column; gap: 2px;
+      background: #f7f7f7; border-radius: 6px; padding: 7px 10px;
+    }
+    .col-name  { font-size: 11px; font-weight: 700; font-family: monospace; color: var(--blue); }
+    .col-note  { font-size: 11px; color: var(--muted); }
+    .col-req   { font-size: 10px; color: var(--red); font-weight: 700; text-transform: uppercase; }
+
+    @media (max-width: 640px) {
+      .hero, .section { padding-left: 14px; padding-right: 14px; }
+    }
+  </style>
+</head>
+<body>
+{% include 'navbar.html' %}
+
+<div class="hero">
+  <h1>Bulk Import</h1>
+  <p>Generate multiple duty slips from a CSV or Excel file</p>
+</div>
+
+<div class="section">
+  <div class="card">
+    <h2>Upload File</h2>
+
+    <div id="uploadBanner" class="banner"></div>
+
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <input type="file" id="fileInput" accept=".csv,.xlsx,.xls">
+      <div class="drop-icon">📂</div>
+      <div class="drop-label">Drop your CSV or Excel file here</div>
+      <div class="drop-hint">Supports .csv, .xlsx, .xls</div>
+      <button type="button" class="drop-btn" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">
+        Choose File
+      </button>
+    </div>
+
+    <p class="tpl-hint">
+      Need a template?
+      <a href="#" onclick="downloadTemplate(); return false;">Download sample CSV</a>
+    </p>
+
+    <div class="col-guide">
+      <h3>Supported Columns</h3>
+      <div class="col-grid">
+        <div class="col-item"><span class="col-name">date</span><span class="col-note">DD/MM/YYYY or YYYY-MM-DD</span><span class="col-req">Required</span></div>
+        <div class="col-item"><span class="col-name">customer_name</span><span class="col-note">Also: customer, client</span><span class="col-req">Required</span></div>
+        <div class="col-item"><span class="col-name">driver_name</span><span class="col-note">Also: driver</span></div>
+        <div class="col-item"><span class="col-name">vehicle_type</span><span class="col-note">Also: vehicle</span></div>
+        <div class="col-item"><span class="col-name">vehicle_no</span><span class="col-note">Registration number</span></div>
+        <div class="col-item"><span class="col-name">route_covered</span><span class="col-note">Also: route</span></div>
+        <div class="col-item"><span class="col-name">company_name</span><span class="col-note">Also: company</span></div>
+        <div class="col-item"><span class="col-name">project_code</span><span class="col-note">Also: project</span></div>
+        <div class="col-item"><span class="col-name">starting_km</span><span class="col-note">Also: start_km</span></div>
+        <div class="col-item"><span class="col-name">total_km</span><span class="col-note">Also: km, distance</span></div>
+        <div class="col-item"><span class="col-name">remarks</span><span class="col-note">Also: notes</span></div>
+        <div class="col-item"><span class="col-name">duty_slip_no</span><span class="col-note">Optional custom number</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Preview section (shown after parse) -->
+<div class="section" id="preview-section">
+  <div class="card">
+    <h2>Preview</h2>
+
+    <div id="previewBanner" class="banner"></div>
+
+    <div class="stats-row" id="statsRow"></div>
+
+    <div class="tbl-wrap">
+      <table id="previewTable">
+        <thead id="previewHead"></thead>
+        <tbody id="previewBody"></tbody>
+      </table>
+    </div>
+
+    <div class="preview-footer">
+      <button type="button" class="btn-generate" id="btnGenerate" onclick="generateSlips()">
+        <span id="genLabel">Generate Slips &amp; Download ZIP</span>
+        <span class="spinner" id="genSpinner"></span>
+      </button>
+      <button type="button" class="btn-reset" onclick="resetUpload()">Upload Different File</button>
+      <span class="gen-note" id="genNote"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+  let parsedRows = [];
+  let parsedCols = [];
+
+  // Drag & drop
+  const dz = document.getElementById('dropZone');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  });
+  document.getElementById('fileInput').addEventListener('change', e => {
+    if (e.target.files[0]) handleFile(e.target.files[0]);
+  });
+
+  function showBanner(id, type, msg) {
+    const el = document.getElementById(id);
+    el.className = 'banner ' + type;
+    el.textContent = msg;
+  }
+  function hideBanner(id) {
+    document.getElementById(id).className = 'banner';
+  }
+
+  function handleFile(file) {
+    hideBanner('uploadBanner');
+    const allowed = ['.csv', '.xlsx', '.xls'];
+    if (!allowed.some(ext => file.name.toLowerCase().endsWith(ext))) {
+      showBanner('uploadBanner', 'error', 'Unsupported file type. Please upload a .csv, .xlsx, or .xls file.');
+      return;
+    }
+
+    const fd = new FormData();
+    fd.append('file', file);
+
+    showBanner('uploadBanner', 'info', 'Parsing file…');
+
+    fetch('/admin/bulk_import/parse', { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(data => {
+        hideBanner('uploadBanner');
+        if (data.error) {
+          showBanner('uploadBanner', 'error', data.error);
+          return;
+        }
+        parsedRows = data.rows;
+        parsedCols = data.columns;
+        renderPreview(data);
+      })
+      .catch(() => showBanner('uploadBanner', 'error', 'Network error — could not parse file.'));
+  }
+
+  function renderPreview(data) {
+    const rows = data.rows;
+    const cols = data.columns;
+
+    // Stats
+    let ok = 0, warn = 0, err = 0;
+    rows.forEach(r => {
+      if (r._errors && r._errors.length) err++;
+      else if (r._warnings && r._warnings.length) warn++;
+      else ok++;
+    });
+    const statsRow = document.getElementById('statsRow');
+    statsRow.innerHTML =
+      `<span class="stat-chip chip-total">${rows.length} row${rows.length !== 1 ? 's' : ''}</span>` +
+      (ok   ? `<span class="stat-chip chip-ok">✓ ${ok} ready</span>` : '') +
+      (warn ? `<span class="stat-chip chip-warn">⚠ ${warn} with warnings</span>` : '') +
+      (err  ? `<span class="stat-chip chip-err">✕ ${err} with errors</span>` : '');
+
+    // Table header
+    const displayCols = cols.filter(c => !c.startsWith('_'));
+    document.getElementById('previewHead').innerHTML =
+      '<tr><th>#</th>' + displayCols.map(c => `<th>${c}</th>`).join('') + '<th>Status</th></tr>';
+
+    // Table body
+    const tbody = document.getElementById('previewBody');
+    tbody.innerHTML = '';
+    rows.forEach((row, i) => {
+      const tr = document.createElement('tr');
+      let cells = `<td class="row-num">${i + 1}</td>`;
+      displayCols.forEach(col => {
+        const val = row[col] != null ? row[col] : '';
+        const missing = !val && ['date', 'customer_name'].includes(col);
+        cells += missing
+          ? `<td class="miss-cell">—</td>`
+          : `<td>${escHtml(String(val))}</td>`;
+      });
+      // Status cell
+      if (row._errors && row._errors.length) {
+        cells += `<td class="warn-cell" style="color:var(--red)">✕ ${row._errors.join('; ')}</td>`;
+      } else if (row._warnings && row._warnings.length) {
+        cells += `<td class="warn-cell">⚠ ${row._warnings.join('; ')}</td>`;
+      } else {
+        cells += `<td style="color:#2e7d32; font-weight:600;">✓ Ready</td>`;
+      }
+      tr.innerHTML = cells;
+      tbody.appendChild(tr);
+    });
+
+    // Show preview
+    document.getElementById('preview-section').style.display = 'block';
+    document.getElementById('preview-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    const validCount = rows.filter(r => !(r._errors && r._errors.length)).length;
+    document.getElementById('genNote').textContent = validCount < rows.length
+      ? `${rows.length - validCount} row(s) with errors will be skipped`
+      : '';
+    document.getElementById('btnGenerate').disabled = validCount === 0;
+  }
+
+  function generateSlips() {
+    const validRows = parsedRows.filter(r => !(r._errors && r._errors.length));
+    if (!validRows.length) return;
+
+    const btn = document.getElementById('btnGenerate');
+    const label = document.getElementById('genLabel');
+    const spinner = document.getElementById('genSpinner');
+    btn.disabled = true;
+    label.textContent = 'Generating…';
+    spinner.style.display = 'inline-block';
+    hideBanner('previewBanner');
+
+    fetch('/admin/bulk_import/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows: validRows })
+    })
+    .then(async res => {
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || `Server error ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const cd = res.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename="?([^"]+)"?/);
+      a.download = match ? match[1] : 'duty_slips.zip';
+      a.click();
+      URL.revokeObjectURL(url);
+      showBanner('previewBanner', 'success', `${validRows.length} slip${validRows.length !== 1 ? 's' : ''} generated — ZIP download started.`);
+    })
+    .catch(e => showBanner('previewBanner', 'error', e.message))
+    .finally(() => {
+      btn.disabled = false;
+      label.textContent = 'Generate Slips & Download ZIP';
+      spinner.style.display = 'none';
+    });
+  }
+
+  function resetUpload() {
+    parsedRows = [];
+    parsedCols = [];
+    document.getElementById('fileInput').value = '';
+    document.getElementById('preview-section').style.display = 'none';
+    hideBanner('uploadBanner');
+    hideBanner('previewBanner');
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function downloadTemplate() {
+    const headers = 'date,customer_name,company_name,driver_name,vehicle_type,vehicle_no,route_covered,project_code,starting_km,total_km,remarks';
+    const sample  = '15/05/2025,Rahul Sharma,Acme Corp,Suresh Kumar,Innova,DL 01 AB 1234,Gurgaon → IGI T3,PRJ001,12300,38,';
+    const blob = new Blob([headers + '\n' + sample], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'duty_slip_template.csv';
+    a.click();
+  }
+</script>
+</body>
+</html>

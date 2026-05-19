@@ -688,8 +688,23 @@
         </div>
       </div>
 
+      <!-- Duplicate warning banner (shown by JS) -->
+      <div id="dupWarning" style="display:none; margin-bottom:14px; padding:12px 14px;
+           background:#fff8e1; border:1px solid #ffe082; border-radius:8px; font-size:13px;">
+        <strong style="color:#e65100;">⚠ Possible duplicate detected</strong>
+        <div id="dupList" style="margin:6px 0 0; color:#5d4037;"></div>
+        <div style="margin-top:10px; display:flex; gap:8px;">
+          <button type="button" onclick="dismissDup()" style="padding:6px 14px; border-radius:7px;
+                  border:1px solid #ffe082; background:#fff; font-size:12px; font-weight:600;
+                  cursor:pointer; color:#e65100;">Dismiss &amp; Continue</button>
+          <a id="dupViewLink" href="/admin_portal" style="padding:6px 14px; border-radius:7px;
+             border:1px solid #e0e0e0; background:#fff; font-size:12px; font-weight:600;
+             color:#1565c0; text-decoration:none;">View Existing</a>
+        </div>
+      </div>
+
       <div class="form-footer">
-        <button type="submit" class="btn-submit">Generate Duty Slip</button>
+        <button type="submit" class="btn-submit" id="btnSubmit">Generate Duty Slip</button>
         <a href="/admin_portal" class="btn-cancel-link">Cancel</a>
         <button type="button" onclick="saveAsTemplate()" class="btn-save-tpl">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4l-2-2z"/><path d="M10 2v4H6V2"/><path d="M6 10h4"/><path d="M8 10v3"/></svg>
@@ -701,6 +716,51 @@
   </div>
 
   <script>
+    // =====================================================================
+    // DUPLICATE DETECTION — check before submit
+    // =====================================================================
+    let _dupDismissed = false;
+
+    document.querySelector('form[action="/generate"]').addEventListener('submit', function(e) {
+      if (_dupDismissed) return; // user already acknowledged
+      const form = this;
+      const customer = (form.elements['customer_name'] || {}).value || '';
+      const date     = (form.elements['dn'] || {}).value || '';
+      const vehicleNo= (form.elements['vehicle_no'] || {}).value || '';
+      if (!customer || !date) return; // nothing to check
+
+      e.preventDefault();
+
+      fetch('/check_duplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer_name: customer, date, vehicle_no: vehicleNo })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.duplicates && data.duplicates.length) {
+          const list = data.duplicates.map(d =>
+            `#${d.duty_slip_no || d.id} · ${d.date} · ${d.route || '—'} (${d.driver || '—'})`
+          ).join('<br>');
+          document.getElementById('dupList').innerHTML = list;
+          // set "View Existing" link to filter dashboard by this customer
+          document.getElementById('dupViewLink').href =
+            `/admin_portal?customer_name=${encodeURIComponent(customer)}`;
+          document.getElementById('dupWarning').style.display = 'block';
+          document.getElementById('dupWarning').scrollIntoView({ behavior:'smooth', block:'nearest' });
+        } else {
+          form.submit();
+        }
+      })
+      .catch(() => form.submit()); // on network error, allow submit
+    });
+
+    function dismissDup() {
+      _dupDismissed = true;
+      document.getElementById('dupWarning').style.display = 'none';
+      document.querySelector('form[action="/generate"]').submit();
+    }
+
     // =====================================================================
     // SAVE AS TEMPLATE — collects form fields and opens /templates pre-filled
     // =====================================================================
