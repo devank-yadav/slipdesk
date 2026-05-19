@@ -14,10 +14,13 @@
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
            background: var(--bg); color: var(--text); font-size: 14px; padding-bottom: 60px; }
 
+    /* Hero */
     .hero { display: flex; align-items: flex-start; justify-content: space-between;
             padding: 20px 28px 12px; gap: 16px; flex-wrap: wrap; }
     .hero h1 { margin: 0; font-size: 22px; font-weight: 700; }
     .hero p  { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+
+    .hero-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
     .btn-gen-all {
       padding: 10px 20px; border-radius: 9px; border: none;
@@ -29,62 +32,97 @@
     .btn-gen-all:disabled { opacity: 0.45; cursor: not-allowed; }
     .due-badge {
       background: #fff; color: var(--green); border: 2px solid var(--green);
-      border-radius: 20px; font-size: 12px; font-weight: 800;
-      padding: 1px 7px; margin-left: 2px;
+      border-radius: 20px; font-size: 12px; font-weight: 800; padding: 1px 7px; margin-left: 2px;
     }
+
+    .btn-new-slip {
+      padding: 10px 18px; border-radius: 9px; border: 1px solid var(--border);
+      background: var(--card); color: var(--blue);
+      font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit;
+      display: inline-flex; align-items: center; gap: 7px; text-decoration: none; white-space: nowrap;
+    }
+    .btn-new-slip:hover { background: #f0f6ff; }
 
     /* Trip cards */
-    .trips-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    .trips-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
                   gap: 12px; padding: 0 28px 24px; }
-    .trip-card { background: var(--card); border-radius: var(--radius);
-                 border: 1px solid var(--border); padding: 16px 18px; }
-    .trip-card.inactive { opacity: 0.55; }
-    .trip-card.due { border-color: var(--green); box-shadow: 0 0 0 2px rgba(52,199,89,.15); }
 
-    .trip-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-    .trip-name { font-weight: 700; font-size: 15px; flex: 1; }
-    .trip-due-chip {
-      background: #e8f5e9; color: #2e7d32;
-      border-radius: 20px; font-size: 11px; font-weight: 700;
-      padding: 3px 9px; white-space: nowrap;
+    .trip-card {
+      background: var(--card); border-radius: var(--radius);
+      border: 1px solid var(--border); padding: 16px 18px;
+      display: flex; flex-direction: column; gap: 10px;
+      transition: box-shadow 0.15s;
     }
-    .trip-inactive-chip {
-      background: #f5f5f5; color: var(--muted);
-      border-radius: 20px; font-size: 11px; font-weight: 600;
-      padding: 3px 9px;
+    .trip-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.07); }
+    .trip-card.inactive { opacity: 0.60; }
+    .trip-card.due { border-color: var(--green); box-shadow: 0 0 0 2px rgba(52,199,89,.18); }
+
+    .trip-header { display: flex; align-items: flex-start; gap: 8px; }
+    .trip-name { font-weight: 700; font-size: 15px; flex: 1; line-height: 1.3; }
+    .trip-chips { display: flex; gap: 5px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+
+    .chip {
+      border-radius: 20px; font-size: 11px; font-weight: 700; padding: 3px 9px; white-space: nowrap;
     }
+    .chip-due      { background: #e8f5e9; color: #2e7d32; }
+    .chip-inactive { background: #f5f5f5; color: var(--muted); }
+    .chip-count    { background: #e8f0fe; color: #1967d2; }
+    .chip-next     { background: #fff8e1; color: #e65100; }
 
     .trip-meta { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
     .trip-meta strong { color: var(--text); font-weight: 600; }
+    .trip-meta .route { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    .day-chips { display: flex; gap: 4px; flex-wrap: wrap; margin: 8px 0; }
+    .day-chips { display: flex; gap: 4px; flex-wrap: wrap; }
     .day-chip {
       background: #e8f0fe; color: #1967d2;
-      border-radius: 6px; font-size: 11px; font-weight: 700;
-      padding: 2px 7px;
+      border-radius: 6px; font-size: 11px; font-weight: 700; padding: 2px 7px;
     }
     .day-chip.today { background: var(--blue); color: #fff; }
 
-    .trip-actions { display: flex; gap: 6px; margin-top: 12px; }
-    .btn-toggle {
-      padding: 5px 10px; border-radius: 7px; border: 1px solid var(--border);
+    .trip-actions { display: flex; gap: 6px; margin-top: 2px; flex-wrap: wrap; }
+    .btn-sm {
+      padding: 5px 11px; border-radius: 7px; border: 1px solid var(--border);
       background: var(--card); font-size: 12px; font-weight: 600;
-      color: var(--muted); cursor: pointer; font-family: inherit;
+      color: var(--muted); cursor: pointer; font-family: inherit; white-space: nowrap;
     }
-    .btn-toggle:hover { background: #f2f2f7; }
+    .btn-sm:hover { background: #f2f2f7; color: var(--text); }
+    .btn-gen-one {
+      padding: 5px 11px; border-radius: 7px; border: none;
+      background: var(--green); color: #fff;
+      font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .btn-gen-one:hover { background: #28a745; }
+    .btn-edit {
+      padding: 5px 11px; border-radius: 7px; border: 1px solid #c7dffe;
+      background: #f0f6ff; color: var(--blue);
+      font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .btn-edit:hover { background: #dbeeff; }
     .btn-delete {
-      padding: 5px 10px; border-radius: 7px;
+      padding: 5px 11px; border-radius: 7px;
       border: 1px solid #ffd0cd; background: #fff5f5;
-      font-size: 12px; font-weight: 600; color: var(--red);
-      cursor: pointer; font-family: inherit;
+      font-size: 12px; font-weight: 600; color: var(--red); cursor: pointer; font-family: inherit;
     }
     .btn-delete:hover { background: #ffe5e4; }
 
-    /* Add form */
-    .add-section { margin: 0 28px 20px; }
-    .add-card { background: var(--card); border-radius: var(--radius);
-                border: 1px solid var(--border); padding: 20px 22px; }
-    .add-card h2 { margin: 0 0 16px; font-size: 16px; font-weight: 700; }
+    .empty-state { grid-column: 1/-1; padding: 60px 20px; text-align: center; color: var(--muted); }
+    .empty-state h3 { margin: 0 0 8px; font-size: 18px; color: var(--text); }
+    .empty-state p  { margin: 0; font-size: 13px; }
+
+    /* Edit modal */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4); z-index: 200;
+      align-items: center; justify-content: center; padding: 20px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--card); border-radius: var(--radius);
+      width: 100%; max-width: 540px; max-height: 90vh; overflow-y: auto;
+      padding: 24px 26px; box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+    }
+    .modal h2 { margin: 0 0 18px; font-size: 17px; font-weight: 700; }
 
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; }
     .form-grid .full { grid-column: 1/-1; }
@@ -98,24 +136,31 @@
     .field input:focus, .field select:focus { border-color: var(--blue); }
 
     .days-row { display: flex; gap: 6px; flex-wrap: wrap; }
-    .day-label { display: flex; align-items: center; gap: 5px;
-                 background: #f2f2f7; border-radius: 8px; padding: 6px 10px;
-                 font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.1s; }
+    .day-label {
+      display: flex; align-items: center; gap: 5px;
+      background: #f2f2f7; border-radius: 8px; padding: 6px 10px;
+      font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.1s;
+      user-select: none;
+    }
     .day-label:hover { background: #e8f0fe; color: var(--blue); }
     .day-label input { accent-color: var(--blue); }
 
-    .form-footer { margin-top: 16px; }
-    .btn-add {
-      padding: 10px 22px; border-radius: 8px; border: none;
+    .modal-footer { display: flex; gap: 8px; margin-top: 20px; }
+    .btn-save {
+      padding: 9px 22px; border-radius: 8px; border: none;
       background: var(--blue); color: #fff;
       font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
     }
-    .btn-add:hover { background: #005ec4; }
-
-    .empty-state { grid-column: 1/-1; padding: 48px 20px; text-align: center; color: var(--muted); }
+    .btn-save:hover { background: #005ec4; }
+    .btn-cancel {
+      padding: 9px 18px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--card); color: var(--muted);
+      font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .btn-cancel:hover { background: #f2f2f7; }
 
     @media (max-width: 640px) {
-      .hero, .trips-grid, .add-section { padding-left: 14px; padding-right: 14px; }
+      .hero, .trips-grid { padding-left: 14px; padding-right: 14px; }
       .form-grid { grid-template-columns: 1fr; }
       .form-grid .full { grid-column: 1; }
     }
@@ -127,17 +172,22 @@
 <div class="hero">
   <div>
     <h1>Recurring Trips</h1>
-    <p>Schedules that auto-fill slips on selected weekdays</p>
+    <p>{{ trips|length }} schedule{{ 's' if trips|length != 1 else '' }} · create new ones from the New Slip form</p>
   </div>
-  <form method="post" style="display:inline">
-    <input type="hidden" name="action" value="generate_due">
-    <button type="submit" class="btn-gen-all" {% if due_count == 0 %}disabled{% endif %}
-            onclick="return due_count > 0 || confirm('No trips are due today.')">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-      Generate Today's Slips
-      {% if due_count > 0 %}<span class="due-badge">{{ due_count }}</span>{% endif %}
-    </button>
-  </form>
+  <div class="hero-actions">
+    <a href="/generator" class="btn-new-slip">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      New Slip
+    </a>
+    <form method="post" style="display:inline">
+      <input type="hidden" name="action" value="generate_due">
+      <button type="submit" class="btn-gen-all" {% if due_count == 0 %}disabled{% endif %}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        Generate All Due
+        {% if due_count > 0 %}<span class="due-badge">{{ due_count }}</span>{% endif %}
+      </button>
+    </form>
+  </div>
 </div>
 
 <div class="trips-grid">
@@ -146,28 +196,54 @@
     <div class="trip-card {% if not t.active %}inactive{% endif %} {% if t.is_due %}due{% endif %}">
       <div class="trip-header">
         <div class="trip-name">{{ t.name }}</div>
-        {% if t.is_due %}<span class="trip-due-chip">Due today</span>
-        {% elif not t.active %}<span class="trip-inactive-chip">Paused</span>{% endif %}
+        <div class="trip-chips">
+          {% if t.is_due %}
+            <span class="chip chip-due">Due today</span>
+          {% elif not t.active %}
+            <span class="chip chip-inactive">Paused</span>
+          {% elif t.next_run %}
+            <span class="chip chip-next">Next: {{ t.next_run }}</span>
+          {% endif %}
+          {% if t.slip_count > 0 %}
+            <span class="chip chip-count">{{ t.slip_count }} slip{{ 's' if t.slip_count != 1 else '' }}</span>
+          {% endif %}
+        </div>
       </div>
+
       <div class="trip-meta">
         {% if t.customer_name %}<div><strong>Customer:</strong> {{ t.customer_name }}</div>{% endif %}
-        {% if t.vehicle_type %}<div><strong>Vehicle:</strong> {{ t.vehicle_type }}</div>{% endif %}
+        {% if t.route_covered %}<div class="route"><strong>Route:</strong> {{ t.route_covered }}</div>{% endif %}
+        {% if t.vehicle_type %}<div><strong>Vehicle:</strong> {{ t.vehicle_type }}{% if t.vehicle_no %} · {{ t.vehicle_no }}{% endif %}</div>{% endif %}
         {% if t.driver_name %}<div><strong>Driver:</strong> {{ t.driver_name }}</div>{% endif %}
         {% if t.last_generated %}<div><strong>Last generated:</strong> {{ t.last_generated }}</div>{% endif %}
       </div>
+
       <div class="day-chips">
-        {% for d in t.days %}
-          <span class="day-chip {% if loop.index0 == today_wd %}today{% endif %}">{{ d }}</span>
+        {% for i, name in [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}
+          {% if i in t.days_raw %}
+            <span class="day-chip {% if i == today_wd %}today{% endif %}">{{ name }}</span>
+          {% endif %}
         {% endfor %}
       </div>
+
       <div class="trip-actions">
+        {% if t.is_due %}
+        <form method="post" style="display:inline"
+              onsubmit="return confirm('Generate today\'s slip for \'{{ t.name }}\'?')">
+          <input type="hidden" name="action" value="generate_one">
+          <input type="hidden" name="trip_id" value="{{ t.id }}">
+          <button type="submit" class="btn-gen-one">Generate Now</button>
+        </form>
+        {% endif %}
+        <button type="button" class="btn-edit"
+                onclick="openEdit({{ t.id }})">Edit</button>
         <form method="post" style="display:inline">
           <input type="hidden" name="action" value="toggle">
           <input type="hidden" name="trip_id" value="{{ t.id }}">
-          <button type="submit" class="btn-toggle">{{ 'Pause' if t.active else 'Resume' }}</button>
+          <button type="submit" class="btn-sm">{{ 'Pause' if t.active else 'Resume' }}</button>
         </form>
         <form method="post" style="display:inline"
-              onsubmit="return confirm('Delete recurring trip \'{{ t.name }}\'? This will not delete already-generated slips.')">
+              onsubmit="return confirm('Delete \'{{ t.name }}\'? Already-generated slips are kept.')">
           <input type="hidden" name="action" value="delete">
           <input type="hidden" name="trip_id" value="{{ t.id }}">
           <button type="submit" class="btn-delete">Delete</button>
@@ -176,42 +252,46 @@
     </div>
     {% endfor %}
   {% else %}
-  <div class="empty-state">No recurring trips yet. Add one below.</div>
+  <div class="empty-state">
+    <h3>No recurring schedules yet</h3>
+    <p>When creating a new slip, toggle <strong>"Make Recurring"</strong> to save it as a schedule.</p>
+  </div>
   {% endif %}
 </div>
 
-<!-- Add new recurring trip -->
-<div class="add-section">
-  <div class="add-card">
-    <h2>New Recurring Trip</h2>
-    <form method="post">
-      <input type="hidden" name="action" value="new">
+<!-- Edit modal -->
+<div class="modal-overlay" id="editOverlay" onclick="closeEditOnBg(event)">
+  <div class="modal">
+    <h2>Edit Schedule</h2>
+    <form method="post" id="editForm">
+      <input type="hidden" name="action" value="edit">
+      <input type="hidden" name="trip_id" id="editId">
       <div class="form-grid">
         <div class="field full">
           <label>Schedule Name *</label>
-          <input type="text" name="name" placeholder="e.g. Daily Airport Drop — Rahul" required>
+          <input type="text" name="name" id="editName" required>
         </div>
         <div class="field">
           <label>Customer</label>
-          <input type="text" name="customer_name" list="custOpts" autocomplete="off">
-          <datalist id="custOpts">{% for c in customer_list %}<option value="{{ c }}">{% endfor %}</datalist>
+          <input type="text" name="customer_name" id="editCustomer" list="editCustOpts" autocomplete="off">
+          <datalist id="editCustOpts">{% for c in customer_list %}<option value="{{ c }}">{% endfor %}</datalist>
         </div>
         <div class="field">
           <label>Company</label>
-          <input type="text" name="company_name">
+          <input type="text" name="company_name" id="editCompany">
         </div>
         <div class="field">
           <label>Vehicle Type</label>
-          <input type="text" name="vehicle_type" list="vehOpts" autocomplete="off">
-          <datalist id="vehOpts">{% for v in vehicle_list %}<option value="{{ v }}">{% endfor %}</datalist>
+          <input type="text" name="vehicle_type" id="editVehicleType" list="editVehOpts" autocomplete="off">
+          <datalist id="editVehOpts">{% for v in vehicle_list %}<option value="{{ v }}">{% endfor %}</datalist>
         </div>
         <div class="field">
           <label>Vehicle No</label>
-          <input type="text" name="vehicle_no" id="vehicleNo">
+          <input type="text" name="vehicle_no" id="editVehicleNo">
         </div>
         <div class="field">
           <label>Driver</label>
-          <select name="driver_name">
+          <select name="driver_name" id="editDriver">
             <option value="">— Select —</option>
             {% for d in driver_list %}
             <option value="{{ d }}">{{ d }}</option>
@@ -220,26 +300,27 @@
         </div>
         <div class="field">
           <label>Project Code</label>
-          <input type="text" name="project_code">
+          <input type="text" name="project_code" id="editProjectCode">
         </div>
         <div class="field full">
           <label>Route Covered</label>
-          <input type="text" name="route_covered" placeholder="e.g. Gurgaon → IGI Airport T3">
+          <input type="text" name="route_covered" id="editRoute">
         </div>
         <div class="field full">
           <label>Repeat on Days *</label>
           <div class="days-row">
             {% for i, d in [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}
             <label class="day-label">
-              <input type="checkbox" name="days" value="{{ i }}" {% if i < 5 %}checked{% endif %}>
+              <input type="checkbox" name="days" value="{{ i }}" class="edit-day-cb" data-day="{{ i }}">
               {{ d }}
             </label>
             {% endfor %}
           </div>
         </div>
       </div>
-      <div class="form-footer">
-        <button type="submit" class="btn-add">Add Schedule</button>
+      <div class="modal-footer">
+        <button type="submit" class="btn-save">Save Changes</button>
+        <button type="button" class="btn-cancel" onclick="closeEdit()">Cancel</button>
       </div>
     </form>
   </div>
@@ -247,9 +328,42 @@
 
 <script>
 const vMap = {{ vehicle_map | tojson }};
-document.querySelector('[name="vehicle_type"]').addEventListener('input', function() {
+
+document.getElementById('editVehicleType').addEventListener('input', function() {
   const no = vMap[this.value];
-  if (no !== undefined) document.getElementById('vehicleNo').value = no;
+  if (no !== undefined) document.getElementById('editVehicleNo').value = no;
+});
+
+function openEdit(id) {
+  fetch(`/admin/recurring/${id}/json`)
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('editId').value = d.id;
+      document.getElementById('editName').value = d.name || '';
+      document.getElementById('editCustomer').value = d.customer_name || '';
+      document.getElementById('editCompany').value = d.company_name || '';
+      document.getElementById('editVehicleType').value = d.vehicle_type || '';
+      document.getElementById('editVehicleNo').value = d.vehicle_no || '';
+      document.getElementById('editDriver').value = d.driver_name || '';
+      document.getElementById('editProjectCode').value = d.project_code || '';
+      document.getElementById('editRoute').value = d.route_covered || '';
+      document.querySelectorAll('.edit-day-cb').forEach(cb => {
+        cb.checked = d.days.includes(parseInt(cb.dataset.day));
+      });
+      document.getElementById('editOverlay').classList.add('open');
+    });
+}
+
+function closeEdit() {
+  document.getElementById('editOverlay').classList.remove('open');
+}
+
+function closeEditOnBg(e) {
+  if (e.target === document.getElementById('editOverlay')) closeEdit();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeEdit();
 });
 </script>
 </body>

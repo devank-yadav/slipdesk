@@ -1,6 +1,7 @@
 import os
 import io
 import time
+import gzip as _gz
 import zipfile
 import sqlite3
 import secrets
@@ -19,7 +20,7 @@ stringWidth = None
 
 # ---------- IN-MEMORY REFERENCE DATA CACHE ----------
 _ref_cache: dict = {}
-_REF_TTL = 60  # seconds — busted automatically after TTL
+_REF_TTL = 300  # seconds — 5-minute TTL, busted on write
 
 def _cache_get(key):
     e = _ref_cache.get(key)
@@ -442,12 +443,20 @@ app.secret_key = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
 
 
 @app.after_request
-def _gzip_response(response):
-    """Compress HTML/JSON responses when client accepts gzip."""
+def _add_perf_headers(response):
+    """Gzip text responses; add Cache-Control headers."""
+    ct = response.content_type or ''
+    # Long-lived cache for fingerprinted static assets
+    if request.path.startswith('/static/') and response.status_code == 200:
+        response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+        return response
+    # No-store for authenticated HTML pages (never serve stale admin data from cache)
+    if ct.startswith('text/html') and response.status_code == 200:
+        response.headers.setdefault('Cache-Control', 'no-store')
+    # Gzip
     if (response.status_code < 200 or response.status_code >= 300
             or 'Content-Encoding' in response.headers):
         return response
-    ct = response.content_type or ''
     if not (ct.startswith('text/') or 'json' in ct or 'javascript' in ct):
         return response
     if 'gzip' not in request.headers.get('Accept-Encoding', ''):
@@ -455,8 +464,7 @@ def _gzip_response(response):
     data = response.get_data()
     if len(data) < 512:
         return response
-    import gzip as _gz
-    compressed = _gz.compress(data, compresslevel=6)
+    compressed = _gz.compress(data, compresslevel=4)
     if len(compressed) >= len(data):
         return response
     response.set_data(compressed)
@@ -1349,6 +1357,44 @@ def generate_invoice():
                     (vehicle_type, vehicle_no or '')
                 )
 
+    # Optional: save as recurring schedule
+    make_recurring = request.form.get('make_recurring') == '1'
+    if make_recurring:
+        rec_name = (request.form.get('recurring_name') or '').strip()
+        if not rec_name:
+            rec_name = f"{customer_name} — {route_covered[:40]}" if route_covered else customer_name
+        rec_days_raw = request.form.getlist('recurring_days')
+        rec_days = sorted({int(d) for d in rec_days_raw if d.isdigit() and 0 <= int(d) <= 6})
+        if not rec_days:
+            rec_days = [0, 1, 2, 3, 4]  # Mon–Fri default
+        today_str = date_value  # use slip date as first "last_generated" so it doesn't re-fire today
+        with sqlite3.connect(DATABASE) as conn:
+            # Upsert: if a schedule with same name exists, update its details
+            existing = conn.execute(
+                "SELECT id FROM recurring_trips WHERE LOWER(name) = LOWER(?)", (rec_name,)
+            ).fetchone()
+            if existing:
+                conn.execute("""
+                    UPDATE recurring_trips
+                    SET customer_name=?, company_name=?, vehicle_type=?, vehicle_no=?,
+                        driver_name=?, route_covered=?, project_code=?,
+                        days_of_week=?, active=1
+                    WHERE id=?
+                """, (customer_name, company_name, vehicle_type, vehicle_no,
+                      driver_name, route_covered, project_code,
+                      _json.dumps(rec_days), existing[0]))
+            else:
+                conn.execute("""
+                    INSERT INTO recurring_trips
+                    (name, customer_name, company_name, vehicle_type, vehicle_no,
+                     driver_name, route_covered, project_code, days_of_week, active,
+                     last_generated, created_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,1,?,?)
+                """, (rec_name, customer_name, company_name, vehicle_type, vehicle_no,
+                      driver_name, route_covered, project_code, _json.dumps(rec_days),
+                      today_str, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+
+    _cache_bust()
     filename = f"slip_{duty_slip_no or customer_name.replace(' ', '_')}.pdf"
     return send_file(buf, as_attachment=True, download_name=filename, mimetype='application/pdf')
 
@@ -2012,9 +2058,10 @@ def submit_signature(token):
 def check_duplicate():
     if 'admin' not in session:
         return jsonify({'duplicates': []})
-    customer_name = (request.form.get('customer_name') or '').strip()
-    date_val      = (request.form.get('date') or '').strip()
-    vehicle_no    = (request.form.get('vehicle_no') or '').strip()
+    body = request.get_json(silent=True) or {}
+    customer_name = (body.get('customer_name') or request.form.get('customer_name') or '').strip()
+    date_val      = (body.get('date') or request.form.get('date') or '').strip()
+    vehicle_no    = (body.get('vehicle_no') or request.form.get('vehicle_no') or '').strip()
     if not customer_name or not date_val:
         return jsonify({'duplicates': []})
     with sqlite3.connect(DATABASE) as conn:
@@ -2284,34 +2331,47 @@ def driver_report(driver_name):
 # --------------------------
 DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
+
+def _next_run_date(days, last_generated):
+    """Return the next ISO date string this schedule is due to run (from today)."""
+    today = date.today()
+    if not days:
+        return None
+    today_str = today.strftime('%Y-%m-%d')
+    # Scan up to 7 days ahead
+    for offset in range(1, 8):
+        d = today + timedelta(days=offset)
+        if d.weekday() in days:
+            return d.strftime('%Y-%m-%d')
+    return None
+
+
+def _generate_one_recurring(conn, trip_row, today_str, admin_username):
+    """Insert an invoice from a recurring_trip row. trip_row is a full SELECT result."""
+    next_no = get_next_duty_slip_no()
+    conn.execute("""
+        INSERT INTO invoices
+        (customer_name, company_name, date, duty_slip_no,
+         vehicle_type, vehicle_no, route_covered, driver_name,
+         project_code, admin_username, created_at, bill_status)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,'Bill Generated')
+    """, (trip_row[2], trip_row[3], today_str, next_no,
+          trip_row[4], trip_row[5], trip_row[7], trip_row[6], trip_row[8],
+          admin_username, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    conn.execute(
+        "UPDATE recurring_trips SET last_generated = ? WHERE id = ?", (today_str, trip_row[0])
+    )
+
+
 @app.route('/admin/recurring', methods=['GET', 'POST'])
 def recurring_trips_page():
     if 'admin' not in session:
         return redirect(url_for('home'))
 
     if request.method == 'POST':
-        action = request.form.get('action', 'new')
+        action = request.form.get('action', '')
 
-        if action == 'new':
-            name = (request.form.get('name') or '').strip()
-            if name:
-                days = [int(d) for d in request.form.getlist('days') if d.isdigit()]
-                fields = {k: (request.form.get(k) or '').strip() for k in (
-                    'customer_name', 'company_name', 'vehicle_type', 'vehicle_no',
-                    'driver_name', 'route_covered', 'project_code')}
-                with sqlite3.connect(DATABASE) as conn:
-                    conn.execute("""
-                        INSERT INTO recurring_trips
-                        (name, customer_name, company_name, vehicle_type, vehicle_no,
-                         driver_name, route_covered, project_code, days_of_week, active, created_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,1,?)
-                    """, (name, fields['customer_name'], fields['company_name'],
-                          fields['vehicle_type'], fields['vehicle_no'],
-                          fields['driver_name'], fields['route_covered'],
-                          fields['project_code'], _json.dumps(sorted(days)),
-                          datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-
-        elif action == 'delete':
+        if action == 'delete':
             trip_id = request.form.get('trip_id')
             if trip_id:
                 with sqlite3.connect(DATABASE) as conn:
@@ -2324,6 +2384,40 @@ def recurring_trips_page():
                     conn.execute(
                         "UPDATE recurring_trips SET active = 1 - COALESCE(active,1) WHERE id = ?", (trip_id,)
                     )
+
+        elif action == 'edit':
+            trip_id = request.form.get('trip_id')
+            if trip_id:
+                days = sorted({int(d) for d in request.form.getlist('days') if d.isdigit() and 0 <= int(d) <= 6})
+                fields = {k: (request.form.get(k) or '').strip() for k in (
+                    'name', 'customer_name', 'company_name', 'vehicle_type', 'vehicle_no',
+                    'driver_name', 'route_covered', 'project_code')}
+                if fields['name']:
+                    with sqlite3.connect(DATABASE) as conn:
+                        conn.execute("""
+                            UPDATE recurring_trips
+                            SET name=?, customer_name=?, company_name=?, vehicle_type=?,
+                                vehicle_no=?, driver_name=?, route_covered=?,
+                                project_code=?, days_of_week=?
+                            WHERE id=?
+                        """, (fields['name'], fields['customer_name'], fields['company_name'],
+                              fields['vehicle_type'], fields['vehicle_no'],
+                              fields['driver_name'], fields['route_covered'],
+                              fields['project_code'], _json.dumps(days), trip_id))
+
+        elif action == 'generate_one':
+            trip_id = request.form.get('trip_id')
+            if trip_id:
+                today = date.today()
+                today_str = today.strftime('%Y-%m-%d')
+                with sqlite3.connect(DATABASE) as conn:
+                    t = conn.execute(
+                        """SELECT id, name, customer_name, company_name, vehicle_type, vehicle_no,
+                                  driver_name, route_covered, project_code, days_of_week
+                           FROM recurring_trips WHERE id = ?""", (trip_id,)
+                    ).fetchone()
+                    if t:
+                        _generate_one_recurring(conn, t, today_str, session['admin'])
 
         elif action == 'generate_due':
             today = date.today()
@@ -2341,44 +2435,47 @@ def recurring_trips_page():
                     days = _json.loads(t[9] or '[]')
                     if today_wd not in days:
                         continue
-                    next_no = get_next_duty_slip_no()
-                    conn.execute("""
-                        INSERT INTO invoices
-                        (customer_name, company_name, date, duty_slip_no,
-                         vehicle_type, vehicle_no, route_covered, driver_name,
-                         project_code, admin_username, created_at, bill_status)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,'Bill Generated')
-                    """, (t[2], t[3], today_str, next_no,
-                          t[4], t[5], t[7], t[6], t[8],
-                          session['admin'], datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-                    conn.execute(
-                        "UPDATE recurring_trips SET last_generated = ? WHERE id = ?", (today_str, t[0])
-                    )
+                    _generate_one_recurring(conn, t, today_str, session['admin'])
 
         return redirect(url_for('recurring_trips_page'))
 
-    # GET
+    # GET — load trips with slip counts
     today_wd = date.today().weekday()
     today_str = date.today().strftime('%Y-%m-%d')
     with sqlite3.connect(DATABASE) as conn:
         trips = conn.execute("""
-            SELECT id, name, customer_name, vehicle_type, driver_name,
-                   days_of_week, active, last_generated
-            FROM recurring_trips ORDER BY active DESC, name ASC
+            SELECT r.id, r.name, r.customer_name, r.company_name, r.vehicle_type,
+                   r.vehicle_no, r.driver_name, r.route_covered, r.project_code,
+                   r.days_of_week, r.active, r.last_generated,
+                   COUNT(i.id) AS slip_count
+            FROM recurring_trips r
+            LEFT JOIN invoices i
+              ON LOWER(i.customer_name) = LOWER(r.customer_name)
+             AND LOWER(COALESCE(i.driver_name,'')) = LOWER(COALESCE(r.driver_name,''))
+             AND LOWER(COALESCE(i.route_covered,'')) = LOWER(COALESCE(r.route_covered,''))
+            GROUP BY r.id
+            ORDER BY r.active DESC, r.name ASC
         """).fetchall()
 
-    driver_list, vehicle_rows, customer_rows = _load_ref_data()
     trips_data = []
     for t in trips:
-        days = _json.loads(t[5] or '[]')
-        is_due = bool(t[6] == 1 and today_wd in days and (not t[7] or t[7] < today_str))
+        days = _json.loads(t[9] or '[]')
+        is_due = bool(t[10] == 1 and today_wd in days and (not t[11] or t[11] < today_str))
+        next_run = _next_run_date(days, t[11]) if t[10] == 1 else None
         trips_data.append({
-            'id': t[0], 'name': t[1], 'customer_name': t[2],
-            'vehicle_type': t[3], 'driver_name': t[4],
+            'id': t[0], 'name': t[1],
+            'customer_name': t[2], 'company_name': t[3],
+            'vehicle_type': t[4], 'vehicle_no': t[5],
+            'driver_name': t[6], 'route_covered': t[7], 'project_code': t[8],
+            'days_raw': days,
             'days': [DAY_NAMES[d] for d in sorted(days)],
-            'active': t[6], 'last_generated': t[7], 'is_due': is_due,
+            'active': t[10], 'last_generated': t[11],
+            'slip_count': t[12],
+            'is_due': is_due,
+            'next_run': next_run,
         })
     due_count = sum(1 for t in trips_data if t['is_due'])
+    driver_list, vehicle_rows, customer_rows = _load_ref_data()
     return render_template('recurring.html',
                            trips=trips_data, due_count=due_count,
                            driver_list=driver_list,
@@ -2386,6 +2483,27 @@ def recurring_trips_page():
                            vehicle_map={r[0]: r[1] for r in vehicle_rows},
                            customer_list=[r[0] for r in customer_rows],
                            day_names=DAY_NAMES, today_wd=today_wd)
+
+
+@app.route('/admin/recurring/<int:trip_id>/json')
+def recurring_trip_json(trip_id):
+    """Return JSON for a single recurring trip (used by edit modal)."""
+    if 'admin' not in session:
+        return jsonify({}), 401
+    with sqlite3.connect(DATABASE) as conn:
+        t = conn.execute(
+            """SELECT id, name, customer_name, company_name, vehicle_type, vehicle_no,
+                      driver_name, route_covered, project_code, days_of_week
+               FROM recurring_trips WHERE id = ?""", (trip_id,)
+        ).fetchone()
+    if not t:
+        return jsonify({}), 404
+    return jsonify({
+        'id': t[0], 'name': t[1], 'customer_name': t[2], 'company_name': t[3],
+        'vehicle_type': t[4], 'vehicle_no': t[5], 'driver_name': t[6],
+        'route_covered': t[7], 'project_code': t[8],
+        'days': _json.loads(t[9] or '[]'),
+    })
 
 
 # --------------------------
