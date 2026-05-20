@@ -39,35 +39,19 @@
     }
     .page-header h1 { margin: 0; font-size: 22px; font-weight: 700; }
     .quick-tpl-bar {
-      max-width: 980px;
-      margin: 0 auto;
-      padding: 6px 40px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
+      max-width: 980px; margin: 4px auto 0; padding: 8px 40px;
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
     }
-    .quick-tpl-label {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-muted);
-      white-space: nowrap;
-      margin-right: 2px;
-    }
+    .quick-tpl-label { font-size: 12px; font-weight: 600; color: var(--text-muted); white-space: nowrap; margin-right: 2px; }
     .quick-tpl-btn {
-      padding: 4px 12px;
-      border-radius: 20px;
-      border: 1px solid #ddd6fe;
-      background: #f5f3ff;
-      color: #6d28d9;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      font-family: inherit;
-      transition: background 0.12s;
-      white-space: nowrap;
+      padding: 5px 13px; border-radius: 20px;
+      border: 1.5px solid #ddd6fe; background: #f5f3ff; color: #6d28d9;
+      font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;
+      transition: background 0.12s, border-color 0.12s; white-space: nowrap;
     }
     .quick-tpl-btn:hover { background: #ede9fe; border-color: #c4b5fd; }
+    .quick-tpl-last { background: #f0fdf4; border-color: #86efac; color: #166534; }
+    .quick-tpl-last:hover { background: #dcfce7; border-color: #4ade80; }
     .quick-tpl-btn.loading { opacity: 0.5; cursor: wait; }
     .clone-badge {
       display: inline-flex;
@@ -85,27 +69,28 @@
     .form-card {
       margin: 0 auto;
       max-width: 980px;
-      background: var(--card);
+      background: #ffffff;
+      border: 1px solid var(--border);
       border-radius: var(--radius);
-      box-shadow: var(--shadow);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
       padding: 32px 40px;
     }
     .section-label {
-      font-size: 13px;
-      font-weight: 700;
-      text-transform: none;
-      letter-spacing: 0;
-      color: var(--text);
-      margin: 32px 0 16px;
-      padding: 0 0 0 10px;
+      margin: 28px -40px 20px;
+      padding: 11px 40px 11px 20px;
+      background: #f8f9fb;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
       border-left: 3px solid var(--primary);
-      border-bottom: none;
-      line-height: 1.4;
-      display: flex;
-      align-items: center;
-      gap: 7px;
+      font-size: 13px; font-weight: 700; color: var(--text);
+      display: flex; align-items: center; gap: 8px;
+      text-transform: none; letter-spacing: 0;
     }
-    .section-label:first-child { margin-top: 0; }
+    .section-label:first-child {
+      margin-top: -32px;
+      border-top: none;
+      border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+    }
     .form-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -125,19 +110,19 @@
     }
     .field { display: flex; flex-direction: column; gap: 6px; }
     .field label {
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
+      color: #555;
+      text-transform: none;
+      letter-spacing: 0;
       line-height: 1.4;
     }
     .field input,
     .field select,
     .field textarea {
       padding: 11px 14px;
-      border: 1.5px solid var(--border);
-      border-radius: 8px;
+      border: 1.5px solid #e0e0e6;
+      border-radius: 10px;
       font-size: 14px;
       outline: none;
       background: #fff;
@@ -199,8 +184,9 @@
       border: none;
       padding: 13px 32px;
       border-radius: 8px;
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 700;
+      letter-spacing: 0.2px;
       cursor: pointer;
       transition: background 0.15s;
       flex: 1;
@@ -479,6 +465,8 @@
       .page-header { padding: 14px 16px 8px; }
       .quick-tpl-bar { padding: 6px 14px; }
       .form-card { margin: 0 10px; padding: 18px 16px; }
+      .section-label { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
+      .section-label:first-child { margin-top: -18px; }
       .form-grid { grid-template-columns: 1fr; gap: 14px; }
       .form-grid .full { grid-column: 1; }
       .three-col { grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -526,14 +514,13 @@
     {% if prefill %}<span class="clone-badge"><svg class="icon" width="14" height="14"><use href="#icon-copy"/></svg> Pre-filled from existing slip</span>{% endif %}
   </div>
 
-  {% if quick_templates %}
   <div class="quick-tpl-bar">
     <span class="quick-tpl-label">Quick fill:</span>
+    <button type="button" class="quick-tpl-btn quick-tpl-last" id="lastSlipBtn" onclick="applyLastSlip(this)">↩ Last Slip</button>
     {% for tpl in quick_templates %}
     <button type="button" class="quick-tpl-btn" onclick="applyQuickTemplate({{ tpl[0] }})">{{ tpl[1] }}</button>
     {% endfor %}
   </div>
-  {% endif %}
 
   <div class="form-card">
     <form action="/generate" method="post">
