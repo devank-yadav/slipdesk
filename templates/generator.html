@@ -33,11 +33,15 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 20px 28px 12px;
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 20px 40px 12px;
     }
     .page-header h1 { margin: 0; font-size: 22px; font-weight: 700; }
     .quick-tpl-bar {
-      padding: 8px 24px;
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 6px 40px;
       display: flex;
       align-items: center;
       gap: 6px;
@@ -148,6 +152,7 @@
       box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
     }
     .field input[readonly] { background: #f9f9fb; color: var(--text-muted); }
+    .ac-wrap input { width: 100%; }
     /* Auto-calculated fields */
     .field input.auto-field {
       background: #f0f6ff;
@@ -561,15 +566,15 @@
           <input type="date" id="date" name="date" value="{{ today }}" required>
           <div style="display:flex;gap:5px;margin-top:5px;flex-wrap:wrap;">
             <button type="button" onclick="setQuickDate(0)"
-              style="padding:3px 9px;font-size:11px;font-weight:600;border:1.5px solid var(--border);border-radius:20px;background:var(--surface);color:var(--text-muted);cursor:pointer;font-family:inherit;transition:background 0.12s,color 0.12s,border-color 0.12s;"
+              style="padding:3px 9px;font-size:11px;font-weight:600;border:1.5px solid var(--border);border-radius:20px;background:#fff;color:var(--text-muted);cursor:pointer;font-family:inherit;transition:background 0.12s,color 0.12s,border-color 0.12s;"
               onmouseover="this.style.borderColor='var(--primary)';this.style.color='var(--primary)'"
               onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Today</button>
             <button type="button" onclick="setQuickDate(-1)"
-              style="padding:3px 9px;font-size:11px;font-weight:600;border:1.5px solid var(--border);border-radius:20px;background:var(--surface);color:var(--text-muted);cursor:pointer;font-family:inherit;transition:background 0.12s,color 0.12s,border-color 0.12s;"
+              style="padding:3px 9px;font-size:11px;font-weight:600;border:1.5px solid var(--border);border-radius:20px;background:#fff;color:var(--text-muted);cursor:pointer;font-family:inherit;transition:background 0.12s,color 0.12s,border-color 0.12s;"
               onmouseover="this.style.borderColor='var(--primary)';this.style.color='var(--primary)'"
               onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Yesterday</button>
             <button type="button" onclick="setQuickDate('monday')"
-              style="padding:3px 9px;font-size:11px;font-weight:600;border:1.5px solid var(--border);border-radius:20px;background:var(--surface);color:var(--text-muted);cursor:pointer;font-family:inherit;transition:background 0.12s,color 0.12s,border-color 0.12s;"
+              style="padding:3px 9px;font-size:11px;font-weight:600;border:1.5px solid var(--border);border-radius:20px;background:#fff;color:var(--text-muted);cursor:pointer;font-family:inherit;transition:background 0.12s,color 0.12s,border-color 0.12s;"
               onmouseover="this.style.borderColor='var(--primary)';this.style.color='var(--primary)'"
               onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Last Monday</button>
           </div>
