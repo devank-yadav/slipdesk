@@ -330,9 +330,9 @@
 <script>
 // ---- Signature Pad (vanilla canvas, no library needed) ----
 const canvas = document.getElementById('sigPad');
+let drawing = false, hasSig = false;
 if (canvas) {
   const ctx = canvas.getContext('2d');
-  let drawing = false, hasSig = false;
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
