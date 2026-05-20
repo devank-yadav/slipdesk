@@ -1045,6 +1045,35 @@
     // =====================================================================
     // QUICK TEMPLATE APPLY
     // =====================================================================
+    function applyLastSlip(btn) {
+      btn.classList.add('loading');
+      fetch('/last_slip/json')
+        .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(d => {
+          const set = (sel, val) => { const el = document.querySelector(sel); if (el && val) el.value = val; };
+          set('#customer_name', d.customer_name);
+          set('#company_name',  d.company_name);
+          set('#vehicle_type',  d.vehicle_type);
+          set('#vehicle_no',    d.vehicle_no);
+          set('#driver_name',   d.driver_name);
+          set('#starting_km',   d.starting_km);
+          set('#starting_time', d.starting_time);
+          set('#closing_time',  d.closing_time);
+          set('#project_code',  d.project_code);
+          set('#mail_approval_date', d.mail_approval_date);
+          if (d.route_covered) document.getElementById('route_covered').value = d.route_covered;
+          if (d.total_km) { totalKmEl.value = d.total_km; recalcCloseFromStartAndTotal(); }
+          calcTime();
+          btn.textContent = '✓ Applied';
+          setTimeout(() => { btn.textContent = '↩ Last Slip'; }, 2000);
+        })
+        .catch(() => {
+          btn.textContent = '✗ No slip found';
+          setTimeout(() => { btn.textContent = '↩ Last Slip'; }, 2000);
+        })
+        .finally(() => btn.classList.remove('loading'));
+    }
+
     function applyQuickTemplate(id) {
       const btn = event.currentTarget;
       btn.classList.add('loading');
@@ -1703,10 +1732,12 @@
         document.addEventListener('change', scheduleSave);
       }
 
-      // Clear draft when form actually submits (not blocked by dup-check)
+      // Clear draft when form actually submits (not blocked by dup-check).
+      // Must run AFTER the dup-check listener (which calls e.preventDefault),
+      // so we use bubble phase (no capture) and check defaultPrevented there.
       document.querySelector('form[action="/generate"]').addEventListener('submit', function(e) {
-        if (!e.defaultPrevented) clearDraft();
-      }, { capture: true, passive: true });
+        setTimeout(() => { if (!e.defaultPrevented) clearDraft(); }, 0);
+      });
     })();
   </script>
 </body>
