@@ -33,37 +33,25 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 20px 28px 12px;
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 20px 40px 12px;
     }
     .page-header h1 { margin: 0; font-size: 22px; font-weight: 700; }
     .quick-tpl-bar {
-      padding: 8px 24px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
+      max-width: 980px; margin: 4px auto 0; padding: 8px 40px;
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
     }
-    .quick-tpl-label {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-muted);
-      white-space: nowrap;
-      margin-right: 2px;
-    }
+    .quick-tpl-label { font-size: 12px; font-weight: 600; color: var(--text-muted); white-space: nowrap; margin-right: 2px; }
     .quick-tpl-btn {
-      padding: 4px 12px;
-      border-radius: 20px;
-      border: 1px solid #ddd6fe;
-      background: #f5f3ff;
-      color: #6d28d9;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      font-family: inherit;
-      transition: background 0.12s;
-      white-space: nowrap;
+      padding: 5px 13px; border-radius: 20px;
+      border: 1.5px solid #ddd6fe; background: #f5f3ff; color: #6d28d9;
+      font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;
+      transition: background 0.12s, border-color 0.12s; white-space: nowrap;
     }
     .quick-tpl-btn:hover { background: #ede9fe; border-color: #c4b5fd; }
+    .quick-tpl-last { background: #f0fdf4; border-color: #86efac; color: #166534; }
+    .quick-tpl-last:hover { background: #dcfce7; border-color: #4ade80; }
     .quick-tpl-btn.loading { opacity: 0.5; cursor: wait; }
     .clone-badge {
       display: inline-flex;
@@ -81,27 +69,28 @@
     .form-card {
       margin: 0 auto;
       max-width: 980px;
-      background: var(--card);
+      background: #ffffff;
+      border: 1px solid var(--border);
       border-radius: var(--radius);
-      box-shadow: var(--shadow);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
       padding: 32px 40px;
     }
     .section-label {
-      font-size: 13px;
-      font-weight: 700;
-      text-transform: none;
-      letter-spacing: 0;
-      color: var(--text);
-      margin: 32px 0 16px;
-      padding: 0 0 0 10px;
+      margin: 28px -40px 20px;
+      padding: 11px 40px 11px 20px;
+      background: #f8f9fb;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
       border-left: 3px solid var(--primary);
-      border-bottom: none;
-      line-height: 1.4;
-      display: flex;
-      align-items: center;
-      gap: 7px;
+      font-size: 13px; font-weight: 700; color: var(--text);
+      display: flex; align-items: center; gap: 8px;
+      text-transform: none; letter-spacing: 0;
     }
-    .section-label:first-child { margin-top: 0; }
+    .section-label:first-child {
+      margin-top: -32px;
+      border-top: none;
+      border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+    }
     .form-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -121,19 +110,19 @@
     }
     .field { display: flex; flex-direction: column; gap: 6px; }
     .field label {
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
+      color: #555;
+      text-transform: none;
+      letter-spacing: 0;
       line-height: 1.4;
     }
     .field input,
     .field select,
     .field textarea {
       padding: 11px 14px;
-      border: 1.5px solid var(--border);
-      border-radius: 8px;
+      border: 1.5px solid #e0e0e6;
+      border-radius: 10px;
       font-size: 14px;
       outline: none;
       background: #fff;
@@ -148,6 +137,7 @@
       box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
     }
     .field input[readonly] { background: #f9f9fb; color: var(--text-muted); }
+    .ac-wrap input { width: 100%; }
     /* Auto-calculated fields */
     .field input.auto-field {
       background: #f0f6ff;
@@ -194,8 +184,9 @@
       border: none;
       padding: 13px 32px;
       border-radius: 8px;
-      font-size: 15px;
+      font-size: 16px;
       font-weight: 700;
+      letter-spacing: 0.2px;
       cursor: pointer;
       transition: background 0.15s;
       flex: 1;
@@ -474,6 +465,8 @@
       .page-header { padding: 14px 16px 8px; }
       .quick-tpl-bar { padding: 6px 14px; }
       .form-card { margin: 0 10px; padding: 18px 16px; }
+      .section-label { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
+      .section-label:first-child { margin-top: -18px; }
       .form-grid { grid-template-columns: 1fr; gap: 14px; }
       .form-grid .full { grid-column: 1; }
       .three-col { grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -519,16 +512,25 @@
   <div class="page-header">
     <h1>{% if prefill %}Clone Duty Slip{% else %}New Duty Slip{% endif %}</h1>
     {% if prefill %}<span class="clone-badge"><svg class="icon" width="14" height="14"><use href="#icon-copy"/></svg> Pre-filled from existing slip</span>{% endif %}
+    <span id="draftSavedIndicator" style="display:none;font-size:12px;color:var(--text-muted);font-weight:500;"></span>
   </div>
 
-  {% if quick_templates %}
+  <div id="draftBanner" style="display:none;max-width:980px;margin:0 auto 0;padding:0 40px;">
+    <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><line x1="8" y1="5" x2="8" y2="8"/><circle cx="8" cy="11" r="0.5" fill="#d97706" stroke="none"/></svg>
+      <span style="flex:1;font-size:13px;color:#92400e;font-weight:500;">You have an unsaved draft from <span id="draftAge"></span>. Restore it?</span>
+      <button type="button" onclick="restoreDraft()" style="padding:5px 14px;background:#d97706;color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;">Restore</button>
+      <button type="button" onclick="discardDraft()" style="padding:5px 12px;background:transparent;color:#92400e;border:1px solid #fcd34d;border-radius:7px;font-size:13px;font-weight:500;cursor:pointer;">Discard</button>
+    </div>
+  </div>
+
   <div class="quick-tpl-bar">
     <span class="quick-tpl-label">Quick fill:</span>
+    <button type="button" class="quick-tpl-btn quick-tpl-last" id="lastSlipBtn" onclick="applyLastSlip(this)">↩ Last Slip</button>
     {% for tpl in quick_templates %}
     <button type="button" class="quick-tpl-btn" onclick="applyQuickTemplate({{ tpl[0] }})">{{ tpl[1] }}</button>
     {% endfor %}
   </div>
-  {% endif %}
 
   <div class="form-card">
     <form action="/generate" method="post">
@@ -559,6 +561,20 @@
         <div class="field">
           <label for="date">Date *</label>
           <input type="date" id="date" name="date" value="{{ today }}" required>
+          <div style="display:flex;gap:5px;margin-top:5px;flex-wrap:wrap;">
+            <button type="button" onclick="setQuickDate(0)"
+              style="padding:3px 9px;font-size:11px;font-weight:600;border:1.5px solid var(--border);border-radius:20px;background:#fff;color:var(--text-muted);cursor:pointer;font-family:inherit;transition:background 0.12s,color 0.12s,border-color 0.12s;"
+              onmouseover="this.style.borderColor='var(--primary)';this.style.color='var(--primary)'"
+              onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Today</button>
+            <button type="button" onclick="setQuickDate(-1)"
+              style="padding:3px 9px;font-size:11px;font-weight:600;border:1.5px solid var(--border);border-radius:20px;background:#fff;color:var(--text-muted);cursor:pointer;font-family:inherit;transition:background 0.12s,color 0.12s,border-color 0.12s;"
+              onmouseover="this.style.borderColor='var(--primary)';this.style.color='var(--primary)'"
+              onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Yesterday</button>
+            <button type="button" onclick="setQuickDate('monday')"
+              style="padding:3px 9px;font-size:11px;font-weight:600;border:1.5px solid var(--border);border-radius:20px;background:#fff;color:var(--text-muted);cursor:pointer;font-family:inherit;transition:background 0.12s,color 0.12s,border-color 0.12s;"
+              onmouseover="this.style.borderColor='var(--primary)';this.style.color='var(--primary)'"
+              onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Last Monday</button>
+          </div>
         </div>
         <div class="field">
           <label for="duty_slip_no">Duty Slip No</label>
@@ -976,6 +992,18 @@
       recalcCloseFromStartAndTotal();
       kmSyncLock = false;
     });
+
+    function setQuickDate(offset) {
+      const d = new Date();
+      if (offset === 'monday') {
+        const day = d.getDay();
+        d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+      } else {
+        d.setDate(d.getDate() + offset);
+      }
+      document.getElementById('date').value = d.toISOString().slice(0, 10);
+      calcTime();
+    }
 
     function calcTime() {
       if (!startTimeEl.value || !closeTimeEl.value) return;
@@ -1564,6 +1592,122 @@
 
       setRouteMode('manual');   // switch back so user can see the filled textarea
     }
+
+    // =====================================================================
+    // AUTO-SAVE DRAFT
+    // =====================================================================
+    (function() {
+      const DRAFT_KEY = 'osprey_slip_draft';
+      const DRAFT_FIELDS = [
+        'customer_name','company_name','dn','duty_slip_no','closing_date',
+        'vehicle_type','vehicle_no','starting_km','closing_km','total_km',
+        'starting_time','closing_time','total_time','project_code',
+        'mail_approval_date','route_covered','driver_name'
+      ];
+      const DRAFT_CHECKS = ['multi_day_chk'];
+
+      // Skip auto-save/restore on clone pages
+      const isClone = /\/clone\//.test(location.pathname);
+
+      function saveDraft() {
+        const fields = {};
+        DRAFT_FIELDS.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) fields[id] = el.value;
+        });
+        DRAFT_CHECKS.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) fields[id] = el.checked;
+        });
+
+        // Only save if there's meaningful content
+        const hasContent = DRAFT_FIELDS.some(id => {
+          const v = fields[id];
+          return v && v.trim && v.trim() !== '';
+        });
+        if (!hasContent) return;
+
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ ts: Date.now(), fields }));
+
+        // Show subtle "Draft saved" indicator
+        const ind = document.getElementById('draftSavedIndicator');
+        if (ind) {
+          ind.textContent = 'Draft saved';
+          ind.style.display = '';
+          clearTimeout(ind._t);
+          ind._t = setTimeout(() => { ind.style.display = 'none'; }, 2000);
+        }
+      }
+
+      function clearDraft() {
+        localStorage.removeItem(DRAFT_KEY);
+        const ind = document.getElementById('draftSavedIndicator');
+        if (ind) ind.style.display = 'none';
+      }
+
+      function relativeTime(ts) {
+        const secs = Math.floor((Date.now() - ts) / 1000);
+        if (secs < 60) return 'just now';
+        if (secs < 3600) return `${Math.floor(secs / 60)} min ago`;
+        if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+        return `${Math.floor(secs / 86400)}d ago`;
+      }
+
+      window.restoreDraft = function() {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (!raw) return;
+        try {
+          const { fields } = JSON.parse(raw);
+          DRAFT_FIELDS.forEach(id => {
+            const el = document.getElementById(id);
+            if (el && fields[id] !== undefined) el.value = fields[id];
+          });
+          DRAFT_CHECKS.forEach(id => {
+            const el = document.getElementById(id);
+            if (el && fields[id] !== undefined) {
+              el.checked = fields[id];
+              el.dispatchEvent(new Event('change'));
+            }
+          });
+          // Recalculate derived fields
+          if (typeof calcTime === 'function') calcTime();
+          document.getElementById('draftBanner').style.display = 'none';
+        } catch(e) {}
+      };
+
+      window.discardDraft = function() {
+        clearDraft();
+        document.getElementById('draftBanner').style.display = 'none';
+      };
+
+      // On page load: show restore banner if draft exists
+      if (!isClone) {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (raw) {
+          try {
+            const { ts } = JSON.parse(raw);
+            document.getElementById('draftAge').textContent = relativeTime(ts);
+            document.getElementById('draftBanner').style.display = '';
+          } catch(e) { clearDraft(); }
+        }
+      }
+
+      // Debounced auto-save on any input/change
+      let _saveTimer = null;
+      function scheduleSave() {
+        clearTimeout(_saveTimer);
+        _saveTimer = setTimeout(saveDraft, 800);
+      }
+      if (!isClone) {
+        document.addEventListener('input', scheduleSave);
+        document.addEventListener('change', scheduleSave);
+      }
+
+      // Clear draft when form actually submits (not blocked by dup-check)
+      document.querySelector('form[action="/generate"]').addEventListener('submit', function(e) {
+        if (!e.defaultPrevented) clearDraft();
+      }, { capture: true, passive: true });
+    })();
   </script>
 </body>
 </html>
