@@ -79,11 +79,12 @@
 
     /* ---- FORM CARD ---- */
     .form-card {
-      margin: 0 28px;
+      margin: 0 auto;
+      max-width: 980px;
       background: var(--card);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      padding: 28px 32px;
+      padding: 32px 40px;
     }
     .section-label {
       font-size: 13px;
@@ -91,7 +92,7 @@
       text-transform: none;
       letter-spacing: 0;
       color: var(--text);
-      margin: 28px 0 14px;
+      margin: 32px 0 16px;
       padding: 0 0 0 10px;
       border-left: 3px solid var(--primary);
       border-bottom: none;
@@ -104,21 +105,21 @@
     .form-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 14px 20px;
+      gap: 18px 28px;
     }
     .form-grid .full { grid-column: 1 / -1; }
     .three-col {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
-      gap: 14px 20px;
+      gap: 18px 28px;
     }
     /* Odometer / Timing: 3-col with styled auto-calculated column */
     .calc-row {
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
-      gap: 14px 20px;
+      gap: 18px 28px;
     }
-    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field { display: flex; flex-direction: column; gap: 6px; }
     .field label {
       font-size: 12px;
       font-weight: 600;
@@ -130,7 +131,7 @@
     .field input,
     .field select,
     .field textarea {
-      padding: 10px 13px;
+      padding: 11px 14px;
       border: 1.5px solid var(--border);
       border-radius: 8px;
       font-size: 14px;
@@ -472,11 +473,11 @@
     @media (max-width: 640px) {
       .page-header { padding: 14px 16px 8px; }
       .quick-tpl-bar { padding: 6px 14px; }
-      .form-card { margin: 0 12px; padding: 16px 14px; }
-      .form-grid { grid-template-columns: 1fr; }
+      .form-card { margin: 0 10px; padding: 18px 16px; }
+      .form-grid { grid-template-columns: 1fr; gap: 14px; }
       .form-grid .full { grid-column: 1; }
-      .three-col { grid-template-columns: 1fr 1fr; }
-      .calc-row { grid-template-columns: 1fr 1fr; }
+      .three-col { grid-template-columns: 1fr 1fr; gap: 14px; }
+      .calc-row { grid-template-columns: 1fr 1fr; gap: 14px; }
       .calc-row .auto-col { grid-column: 1 / -1; }
       .form-footer { flex-wrap: wrap; gap: 10px; }
       .btn-save-tpl { margin-left: 0; width: 100%; justify-content: center; }
@@ -520,18 +521,17 @@
     {% if prefill %}<span class="clone-badge"><svg class="icon" width="14" height="14"><use href="#icon-copy"/></svg> Pre-filled from existing slip</span>{% endif %}
   </div>
 
+  {% if quick_templates %}
   <div class="quick-tpl-bar">
     <span class="quick-tpl-label">Quick fill:</span>
-    <button type="button" class="quick-tpl-btn" id="lastSlipBtn"
-            style="background:#f0fdf4;border-color:#86efac;color:#166534;"
-            onclick="applyLastSlip(this)">↩ Last Slip</button>
     {% for tpl in quick_templates %}
-    <button type="button" class="quick-tpl-btn" onclick="applyQuickTemplate({{ tpl[0] }}, this)">{{ tpl[1] }}</button>
+    <button type="button" class="quick-tpl-btn" onclick="applyQuickTemplate({{ tpl[0] }})">{{ tpl[1] }}</button>
     {% endfor %}
   </div>
+  {% endif %}
 
   <div class="form-card">
-    <form action="/generate" method="post" target="_blank">
+    <form action="/generate" method="post">
 
       <!-- PARTY INFO -->
       <div class="section-label"><svg class="icon" width="14" height="14"><use href="#icon-user"/></svg> Party Information</div>
@@ -559,6 +559,20 @@
         <div class="field">
           <label for="date">Date *</label>
           <input type="date" id="date" name="date" value="{{ today }}" required>
+          <div style="display:flex;gap:5px;margin-top:5px;flex-wrap:wrap;">
+            <button type="button" onclick="setQuickDate(0)"
+              style="padding:3px 9px;font-size:11px;font-weight:600;border:1.5px solid var(--border);border-radius:20px;background:var(--surface);color:var(--text-muted);cursor:pointer;font-family:inherit;transition:background 0.12s,color 0.12s,border-color 0.12s;"
+              onmouseover="this.style.borderColor='var(--primary)';this.style.color='var(--primary)'"
+              onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Today</button>
+            <button type="button" onclick="setQuickDate(-1)"
+              style="padding:3px 9px;font-size:11px;font-weight:600;border:1.5px solid var(--border);border-radius:20px;background:var(--surface);color:var(--text-muted);cursor:pointer;font-family:inherit;transition:background 0.12s,color 0.12s,border-color 0.12s;"
+              onmouseover="this.style.borderColor='var(--primary)';this.style.color='var(--primary)'"
+              onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Yesterday</button>
+            <button type="button" onclick="setQuickDate('monday')"
+              style="padding:3px 9px;font-size:11px;font-weight:600;border:1.5px solid var(--border);border-radius:20px;background:var(--surface);color:var(--text-muted);cursor:pointer;font-family:inherit;transition:background 0.12s,color 0.12s,border-color 0.12s;"
+              onmouseover="this.style.borderColor='var(--primary)';this.style.color='var(--primary)'"
+              onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Last Monday</button>
+          </div>
         </div>
         <div class="field">
           <label for="duty_slip_no">Duty Slip No</label>
@@ -768,16 +782,12 @@
     // DUPLICATE DETECTION — check before submit
     // =====================================================================
     let _dupDismissed = false;
-    const _genForm = document.querySelector('form[action="/generate"]');
 
-    _genForm.addEventListener('submit', function(e) {
-      if (_dupDismissed) {
-        _dupDismissed = false; // reset so next submission checks again
-        return; // let the form submit naturally
-      }
+    document.querySelector('form[action="/generate"]').addEventListener('submit', function(e) {
+      if (_dupDismissed) return; // user already acknowledged
       const form = this;
       const customer = (form.elements['customer_name'] || {}).value || '';
-      const date     = (form.elements['date'] || {}).value || '';
+      const date     = (form.elements['dn'] || {}).value || '';
       const vehicleNo= (form.elements['vehicle_no'] || {}).value || '';
       if (!customer || !date) return; // nothing to check
 
@@ -795,6 +805,7 @@
             `#${d.duty_slip_no || d.id} · ${d.date} · ${d.route || '—'} (${d.driver || '—'})`
           ).join('<br>');
           document.getElementById('dupList').innerHTML = list;
+          // set "View Existing" link to filter dashboard by this customer
           document.getElementById('dupViewLink').href =
             `/admin_portal?customer_name=${encodeURIComponent(customer)}`;
           document.getElementById('dupWarning').style.display = 'block';
@@ -809,7 +820,7 @@
     function dismissDup() {
       _dupDismissed = true;
       document.getElementById('dupWarning').style.display = 'none';
-      _genForm.requestSubmit();
+      document.querySelector('form[action="/generate"]').submit();
     }
 
     // =====================================================================
@@ -818,7 +829,7 @@
     function saveAsTemplate() {
       const form = document.querySelector('form[action="/generate"]');
       const fields = ['customer_name','company_name','driver_name','vehicle_type',
-                      'vehicle_no','starting_km','total_km',
+                      'vehicle_no','dn','starting_km','total_km','remarks',
                       'project_code','mail_approval_date'];
       const params = new URLSearchParams();
       fields.forEach(f => {
@@ -980,6 +991,18 @@
       kmSyncLock = false;
     });
 
+    function setQuickDate(offset) {
+      const d = new Date();
+      if (offset === 'monday') {
+        const day = d.getDay();
+        d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+      } else {
+        d.setDate(d.getDate() + offset);
+      }
+      document.getElementById('date').value = d.toISOString().slice(0, 10);
+      calcTime();
+    }
+
     function calcTime() {
       if (!startTimeEl.value || !closeTimeEl.value) return;
       const s = new Date('1970-01-01T' + startTimeEl.value + ':00');
@@ -1020,34 +1043,8 @@
     // =====================================================================
     // QUICK TEMPLATE APPLY
     // =====================================================================
-    function applyLastSlip(btn) {
-      btn.classList.add('loading');
-      fetch('/last_slip/json')
-        .then(r => { if (!r.ok) throw new Error('no slip'); return r.json(); })
-        .then(d => {
-          const set = (sel, val) => { const el = document.querySelector(sel); if (el && val !== undefined) el.value = val; };
-          set('#customer_name', d.customer_name);
-          set('#company_name',  d.company_name);
-          set('#vehicle_type',  d.vehicle_type);
-          set('#vehicle_no',    d.vehicle_no);
-          set('#driver_name',   d.driver_name);
-          set('#starting_km',   d.starting_km);
-          set('#project_code',  d.project_code);
-          set('#starting_time', d.starting_time);
-          set('#closing_time',  d.closing_time);
-          if (d.total_km) { totalKmEl.value = d.total_km; recalcCloseFromStartAndTotal(); }
-          if (d.route_covered) document.getElementById('route_covered').value = d.route_covered;
-          // trigger autocomplete fills
-          const custEl = document.getElementById('customer_name');
-          if (custEl) custEl.dispatchEvent(new Event('input'));
-          const vtEl = document.getElementById('vehicle_type');
-          if (vtEl) vtEl.dispatchEvent(new Event('input'));
-        })
-        .catch(() => { if (window._showToast) window._showToast('No previous slip found', true); })
-        .finally(() => btn.classList.remove('loading'));
-    }
-
-    function applyQuickTemplate(id, btn) {
+    function applyQuickTemplate(id) {
+      const btn = event.currentTarget;
       btn.classList.add('loading');
       fetch('/templates/' + id + '/json')
         .then(r => r.json())
