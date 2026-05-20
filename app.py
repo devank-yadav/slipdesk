@@ -111,6 +111,16 @@ def _format_date(d):
         return d or ''
 
 
+def _format_time(t):
+    """Convert HH:MM (24h) to H:MM AM/PM. Returns as-is if already formatted or invalid."""
+    try:
+        dt = datetime.strptime((t or '').strip(), '%H:%M')
+        h = dt.hour % 12 or 12
+        return f'{h}:{dt.minute:02d} {"AM" if dt.hour < 12 else "PM"}'
+    except Exception:
+        return t or ''
+
+
 def _parse_ua(ua: str) -> str:
     """Return a short human-readable device label from a User-Agent string."""
     if not ua:
@@ -292,8 +302,8 @@ def fill_slip_data(c, data):
     right_values = [
         data.get('customer_name', ''),
         data.get('vehicle_no', ''),
-        data.get('starting_time', ''),
-        data.get('closing_time', ''),
+        _format_time(data.get('starting_time', '')),
+        _format_time(data.get('closing_time', '')),
         data.get('total_time', ''),
         _format_date(data.get('mail_approval_date', '')),
     ]
