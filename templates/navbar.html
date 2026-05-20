@@ -197,6 +197,10 @@
   @media (max-width: 1100px) {
     .nav-label { display: none; }
     .nav-link { padding: 7px 9px; gap: 0; }
+    .user-name { display: none; }
+    .user-pill { padding: 5px; }
+    .logout-label { display: none; }
+    .nav-logout { padding: 7px 9px; }
   }
 
   /* ---- Responsive: hamburger at mobile ---- */
@@ -236,6 +240,7 @@
     align-items: center;
     gap: 8px;
     margin-left: auto;
+    flex-shrink: 0;
   }
 
   .user-pill {
@@ -248,6 +253,7 @@
     font-size: 13px;
     font-weight: 600;
     color: #3c3c43;
+    white-space: nowrap;
   }
   .user-avatar {
     width: 26px;
@@ -262,6 +268,7 @@
     font-weight: 700;
     flex-shrink: 0;
   }
+  .user-name { display: inline; }
 
   .nav-logout {
     display: inline-flex;
@@ -274,10 +281,12 @@
     border-radius: 8px;
     font-size: 14px;
     transition: background 0.12s, color 0.12s;
+    white-space: nowrap;
   }
   .nav-logout svg { opacity: 0.8; flex-shrink: 0; }
   .nav-logout:hover { background: #fdecea; color: #c62828; }
   .nav-logout:hover svg { opacity: 1; }
+  .logout-label { display: inline; }
 
   /* Shared icon sizing */
   .icon { display: inline-block; vertical-align: middle; flex-shrink: 0; }
@@ -353,12 +362,12 @@
     {% if session.get('admin') %}
     <div class="user-pill">
       <div class="user-avatar">{{ session['admin'][0]|upper }}</div>
-      {{ session['admin'] }}
+      <span class="user-name">{{ session['admin'] }}</span>
     </div>
     {% endif %}
     <a href="/logout" class="nav-logout">
       <svg class="icon" width="15" height="15"><use href="#icon-logout"/></svg>
-      Logout
+      <span class="logout-label">Logout</span>
     </a>
   </div>
 </nav>
