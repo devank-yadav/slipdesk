@@ -512,6 +512,16 @@
   <div class="page-header">
     <h1>{% if prefill %}Clone Duty Slip{% else %}New Duty Slip{% endif %}</h1>
     {% if prefill %}<span class="clone-badge"><svg class="icon" width="14" height="14"><use href="#icon-copy"/></svg> Pre-filled from existing slip</span>{% endif %}
+    <span id="draftSavedIndicator" style="display:none;font-size:12px;color:var(--text-muted);font-weight:500;"></span>
+  </div>
+
+  <div id="draftBanner" style="display:none;max-width:980px;margin:0 auto 0;padding:0 40px;">
+    <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><line x1="8" y1="5" x2="8" y2="8"/><circle cx="8" cy="11" r="0.5" fill="#d97706" stroke="none"/></svg>
+      <span style="flex:1;font-size:13px;color:#92400e;font-weight:500;">You have an unsaved draft from <span id="draftAge"></span>. Restore it?</span>
+      <button type="button" onclick="restoreDraft()" style="padding:5px 14px;background:#d97706;color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;">Restore</button>
+      <button type="button" onclick="discardDraft()" style="padding:5px 12px;background:transparent;color:#92400e;border:1px solid #fcd34d;border-radius:7px;font-size:13px;font-weight:500;cursor:pointer;">Discard</button>
+    </div>
   </div>
 
   <div class="quick-tpl-bar">
@@ -1035,6 +1045,35 @@
     // =====================================================================
     // QUICK TEMPLATE APPLY
     // =====================================================================
+    function applyLastSlip(btn) {
+      btn.classList.add('loading');
+      fetch('/last_slip/json')
+        .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(d => {
+          const set = (sel, val) => { const el = document.querySelector(sel); if (el && val) el.value = val; };
+          set('#customer_name', d.customer_name);
+          set('#company_name',  d.company_name);
+          set('#vehicle_type',  d.vehicle_type);
+          set('#vehicle_no',    d.vehicle_no);
+          set('#driver_name',   d.driver_name);
+          set('#starting_km',   d.starting_km);
+          set('#starting_time', d.starting_time);
+          set('#closing_time',  d.closing_time);
+          set('#project_code',  d.project_code);
+          set('#mail_approval_date', d.mail_approval_date);
+          if (d.route_covered) document.getElementById('route_covered').value = d.route_covered;
+          if (d.total_km) { totalKmEl.value = d.total_km; recalcCloseFromStartAndTotal(); }
+          calcTime();
+          btn.textContent = '✓ Applied';
+          setTimeout(() => { btn.textContent = '↩ Last Slip'; }, 2000);
+        })
+        .catch(() => {
+          btn.textContent = '✗ No slip found';
+          setTimeout(() => { btn.textContent = '↩ Last Slip'; }, 2000);
+        })
+        .finally(() => btn.classList.remove('loading'));
+    }
+
     function applyQuickTemplate(id) {
       const btn = event.currentTarget;
       btn.classList.add('loading');
@@ -1582,6 +1621,124 @@
 
       setRouteMode('manual');   // switch back so user can see the filled textarea
     }
+
+    // =====================================================================
+    // AUTO-SAVE DRAFT
+    // =====================================================================
+    (function() {
+      const DRAFT_KEY = 'osprey_slip_draft';
+      const DRAFT_FIELDS = [
+        'customer_name','company_name','dn','duty_slip_no','closing_date',
+        'vehicle_type','vehicle_no','starting_km','closing_km','total_km',
+        'starting_time','closing_time','total_time','project_code',
+        'mail_approval_date','route_covered','driver_name'
+      ];
+      const DRAFT_CHECKS = ['multi_day_chk'];
+
+      // Skip auto-save/restore on clone pages
+      const isClone = /\/clone\//.test(location.pathname);
+
+      function saveDraft() {
+        const fields = {};
+        DRAFT_FIELDS.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) fields[id] = el.value;
+        });
+        DRAFT_CHECKS.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) fields[id] = el.checked;
+        });
+
+        // Only save if there's meaningful content
+        const hasContent = DRAFT_FIELDS.some(id => {
+          const v = fields[id];
+          return v && v.trim && v.trim() !== '';
+        });
+        if (!hasContent) return;
+
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ ts: Date.now(), fields }));
+
+        // Show subtle "Draft saved" indicator
+        const ind = document.getElementById('draftSavedIndicator');
+        if (ind) {
+          ind.textContent = 'Draft saved';
+          ind.style.display = '';
+          clearTimeout(ind._t);
+          ind._t = setTimeout(() => { ind.style.display = 'none'; }, 2000);
+        }
+      }
+
+      function clearDraft() {
+        localStorage.removeItem(DRAFT_KEY);
+        const ind = document.getElementById('draftSavedIndicator');
+        if (ind) ind.style.display = 'none';
+      }
+
+      function relativeTime(ts) {
+        const secs = Math.floor((Date.now() - ts) / 1000);
+        if (secs < 60) return 'just now';
+        if (secs < 3600) return `${Math.floor(secs / 60)} min ago`;
+        if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+        return `${Math.floor(secs / 86400)}d ago`;
+      }
+
+      window.restoreDraft = function() {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (!raw) return;
+        try {
+          const { fields } = JSON.parse(raw);
+          DRAFT_FIELDS.forEach(id => {
+            const el = document.getElementById(id);
+            if (el && fields[id] !== undefined) el.value = fields[id];
+          });
+          DRAFT_CHECKS.forEach(id => {
+            const el = document.getElementById(id);
+            if (el && fields[id] !== undefined) {
+              el.checked = fields[id];
+              el.dispatchEvent(new Event('change'));
+            }
+          });
+          // Recalculate derived fields
+          if (typeof calcTime === 'function') calcTime();
+          document.getElementById('draftBanner').style.display = 'none';
+        } catch(e) {}
+      };
+
+      window.discardDraft = function() {
+        clearDraft();
+        document.getElementById('draftBanner').style.display = 'none';
+      };
+
+      // On page load: show restore banner if draft exists
+      if (!isClone) {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (raw) {
+          try {
+            const { ts } = JSON.parse(raw);
+            document.getElementById('draftAge').textContent = relativeTime(ts);
+            document.getElementById('draftBanner').style.display = '';
+          } catch(e) { clearDraft(); }
+        }
+      }
+
+      // Debounced auto-save on any input/change
+      let _saveTimer = null;
+      function scheduleSave() {
+        clearTimeout(_saveTimer);
+        _saveTimer = setTimeout(saveDraft, 800);
+      }
+      if (!isClone) {
+        document.addEventListener('input', scheduleSave);
+        document.addEventListener('change', scheduleSave);
+      }
+
+      // Clear draft when form actually submits (not blocked by dup-check).
+      // Must run AFTER the dup-check listener (which calls e.preventDefault),
+      // so we use bubble phase (no capture) and check defaultPrevented there.
+      document.querySelector('form[action="/generate"]').addEventListener('submit', function(e) {
+        setTimeout(() => { if (!e.defaultPrevented) clearDraft(); }, 0);
+      });
+    })();
   </script>
 </body>
 </html>
