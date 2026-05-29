@@ -1652,7 +1652,8 @@
           debouncedCalc();
         }
       } else if (mode === 'manual') {
-        // Just switch the view — the map never auto-writes the form. Use "Apply" to commit.
+        // Auto-apply the route TEXT from the builder (Total KM stays — set only via Apply).
+        syncMapToText(false);
         routeTextDirty = false;
       }
     }
@@ -1677,7 +1678,9 @@
     }
 
     // Rebuild manual textarea (+ total km + hidden json) from current map builder state
-    function syncMapToText() {
+    // includeKm=false → auto-sync route text + structure only (Total KM untouched).
+    // includeKm=true  → also write Total KM (only via the explicit "Apply km" button).
+    function syncMapToText(includeKm) {
       const originEl = document.getElementById('originInput');
       const hasMap = originEl.value.trim() || document.querySelector('#waypointsList > .waypoint-row');
       if (!hasMap) return;   // builder empty → don't wipe manual text
@@ -1693,7 +1696,7 @@
         text = parts.join(' → ');
       }
       if (text.trim()) document.getElementById('route_covered').value = applyAliases(text);
-      if (currentRoute && currentRoute.distance_km) {
+      if (includeKm && currentRoute && currentRoute.distance_km) {
         kmSyncLock = true; totalKmEl.value = currentRoute.distance_km; recalcCloseFromStartAndTotal(); kmSyncLock = false;
       }
       const rsj = document.getElementById('route_stops_json');
@@ -2031,7 +2034,9 @@
           if (returnChecked) stops.push(originShort);
           currentRoute = { distance_km: totalKm, stops };
 
-          // Show as a non-destructive ESTIMATE — never auto-write Total KM / route text.
+          // Auto-apply the route TEXT + structure (so the manual view always reflects the
+          // map), but leave Total KM as a non-destructive estimate until the user clicks Apply.
+          syncMapToText(false);
           distEl.textContent  = 'Maps estimate: ' + totalKm + ' km';
           distEl.className    = 'distance-display ready';
           applyEl.disabled    = false;
@@ -2133,7 +2138,7 @@
     function applyRoute() {
       // The ONLY place the map writes the form. Explicit, user-triggered.
       if (!currentRoute) return;
-      syncMapToText();   // writes route_covered + total_km + route_stops_json
+      syncMapToText(true);   // writes route_covered + total_km + route_stops_json
       const btn = document.getElementById('btnApply');
       if (btn) {
         const prev = btn.textContent;
