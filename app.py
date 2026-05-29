@@ -1478,6 +1478,22 @@ def generate_invoice():
     _cache_bust()
     new_invoice_id = getattr(cursors[-1], 'lastrowid', None)
 
+    # AJAX submit (from the generator) → return JSON so the page shows a modal without
+    # navigating. Non-AJAX (no-JS fallback) keeps the redirect to the success page.
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    if is_ajax and new_invoice_id:
+        return jsonify({
+            'ok': True,
+            'invoice_id': new_invoice_id,
+            'customer_name': customer_name,
+            'duty_slip_no': duty_slip_no,
+            'slip_date': date_value,
+            'vehicle_type': vehicle_type,
+            'driver_name': driver_name,
+            'signature_status': '',
+            'next_slip_no': get_next_duty_slip_no(),
+        })
+
     if new_invoice_id:
         return redirect(url_for('generator_success', invoice_id=new_invoice_id))
     # fallback: direct PDF download if the id lookup somehow fails

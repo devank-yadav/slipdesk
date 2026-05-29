@@ -510,6 +510,79 @@
     .pac-item-query { font-weight: 600 !important; color: #1c1c1e !important; }
     .pac-matched { font-weight: 700 !important; color: #007aff !important; }
     .pac-icon { display: none !important; }
+
+    /* ── Success modal (mirrors the success page, shown over the form) ── */
+    #successModal {
+      position: fixed; inset: 0; z-index: 4000;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.34); padding: 20px;
+      animation: smFade 0.16s ease;
+    }
+    #successModal.show { display: flex; }
+    @keyframes smFade { from { opacity: 0; } to { opacity: 1; } }
+    .sm-card {
+      position: relative; width: 100%; max-width: 460px;
+      background: #fff; border-radius: 16px; border: 1px solid var(--border);
+      box-shadow: 0 18px 50px rgba(0,0,0,0.22);
+      padding: 26px 24px 22px; max-height: 90vh; overflow-y: auto;
+      animation: smPop 0.18s cubic-bezier(.2,.8,.3,1.1);
+    }
+    @keyframes smPop { from { transform: translateY(10px) scale(.97); opacity: 0; } to { transform: none; opacity: 1; } }
+    .sm-close {
+      position: absolute; top: 12px; right: 12px; width: 30px; height: 30px;
+      border: none; background: #f2f2f7; color: #8e8e93; border-radius: 8px;
+      font-size: 17px; line-height: 1; cursor: pointer; display: flex;
+      align-items: center; justify-content: center;
+    }
+    .sm-close:hover { background: #e5e5ea; color: var(--text); }
+    .sm-head { text-align: center; margin-bottom: 18px; }
+    .sm-check {
+      width: 56px; height: 56px; border-radius: 50%; background: #e8f5e9;
+      display: inline-flex; align-items: center; justify-content: center; margin-bottom: 10px;
+    }
+    .sm-check svg { color: #34c759; }
+    .sm-head h2 { margin: 0 0 4px; font-size: 19px; font-weight: 700; }
+    .sm-head p { margin: 0; font-size: 13px; color: var(--text-muted); }
+    .sm-slip {
+      display: flex; align-items: center; gap: 12px;
+      background: #f9f9fb; border: 1px solid var(--border); border-radius: 12px;
+      padding: 13px 15px; margin-bottom: 14px;
+    }
+    .sm-avatar {
+      width: 42px; height: 42px; border-radius: 11px; flex-shrink: 0;
+      background: linear-gradient(135deg, #e8f0fe, #c7dffe); color: var(--primary);
+      display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800;
+    }
+    .sm-slip-name { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sm-slip-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .sm-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      width: 100%; padding: 11px 16px; border-radius: 10px; font-size: 13px; font-weight: 600;
+      cursor: pointer; font-family: inherit; text-decoration: none; border: none;
+      transition: background 0.12s, opacity 0.12s;
+    }
+    .sm-btn + .sm-btn { margin-top: 8px; }
+    .sm-btn-blue { background: var(--primary); color: #fff; }
+    .sm-btn-blue:hover { background: var(--primary-hover); }
+    .sm-btn-outline { background: #fff; color: var(--primary); border: 1.5px solid var(--border); }
+    .sm-btn-outline:hover { background: #f0f6ff; }
+    .sm-btn-green { background: #25d366; color: #fff; }
+    .sm-btn-green:hover { background: #1da851; }
+    .sm-btn-ghost { background: #fff; color: var(--text-muted); border: 1.5px solid var(--border); }
+    .sm-btn-ghost:hover { background: #f2f2f7; color: var(--text); }
+    .sm-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .sm-section { margin-top: 14px; }
+    .sm-section-title { font-size: 12px; font-weight: 700; color: var(--text-muted); margin: 0 0 8px; }
+    .sm-sign-result { display: none; margin-top: 10px; }
+    .sm-sign-result.show { display: block; }
+    .sm-url {
+      background: #f9f9fb; border: 1.5px solid var(--border); border-radius: 9px;
+      padding: 9px 11px; font-family: monospace; font-size: 12px; word-break: break-all; margin-bottom: 9px;
+    }
+    .sm-row { display: flex; gap: 8px; }
+    .sm-row .sm-btn { flex: 1; margin-top: 0; }
+    .sm-nav { display: flex; gap: 9px; margin-top: 16px; }
+    .sm-nav .sm-btn { flex: 1; margin-top: 0; }
   </style>
 </head>
 <body>
@@ -809,6 +882,70 @@
     </form>
   </div>
 
+  <!-- ── Success modal (shown over the form after Generate; auto-closes in 10s) ── -->
+  <div id="successModal" onclick="if(event.target===this)closeSuccessModal()">
+    <div class="sm-card" role="dialog" aria-modal="true">
+      <button type="button" class="sm-close" onclick="closeSuccessModal()" aria-label="Close">✕</button>
+
+      <div class="sm-head">
+        <div class="sm-check">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <h2>Slip Generated!</h2>
+        <p>Saved and ready to share.</p>
+      </div>
+
+      <div class="sm-slip">
+        <div class="sm-avatar" id="smAvatar">?</div>
+        <div style="flex:1;min-width:0;">
+          <div class="sm-slip-name" id="smName">—</div>
+          <div class="sm-slip-meta" id="smMeta"></div>
+        </div>
+      </div>
+
+      <button class="sm-btn sm-btn-blue" id="smDownloadBtn" onclick="downloadPdf(this)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Download PDF
+      </button>
+
+      <div class="sm-section" id="smSignSection">
+        <p class="sm-section-title">Signature</p>
+        <button class="sm-btn sm-btn-outline" id="smCreateLinkBtn" onclick="createSignLink()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+          Create Signing Link
+        </button>
+        <div class="sm-sign-result" id="smSignResult">
+          <div class="sm-url" id="smSignUrl"></div>
+          <div class="sm-row">
+            <button class="sm-btn sm-btn-outline" onclick="copyLink()">Copy Link</button>
+            <button class="sm-btn sm-btn-green" onclick="sendWhatsApp()">WhatsApp</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="sm-nav">
+        <button type="button" class="sm-btn sm-btn-ghost" onclick="newSlip()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Slip
+        </button>
+        <a class="sm-btn sm-btn-ghost" href="/admin_portal">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          View All Slips
+        </a>
+      </div>
+    </div>
+  </div>
+
   <script>
     // =====================================================================
     // DUPLICATE DETECTION — check before submit
@@ -823,14 +960,13 @@
     }
 
     document.querySelector('form[action="/generate"]').addEventListener('submit', function(e) {
-      if (_dupDismissed) { _lockSubmit(); return; } // user already acknowledged
+      e.preventDefault();
       const form = this;
+      if (_dupDismissed) { submitGenerate(form); return; } // user already acknowledged
       const customer = (form.elements['customer_name'] || {}).value || '';
       const date     = (form.elements['dn'] || {}).value || '';
       const vehicleNo= (form.elements['vehicle_no'] || {}).value || '';
-      if (!customer || !date) { _lockSubmit(); return; } // nothing to check — submit natively
-
-      e.preventDefault();
+      if (!customer || !date) { submitGenerate(form); return; } // nothing to check
 
       fetch('/check_duplicate', {
         method: 'POST',
@@ -844,24 +980,169 @@
             `#${d.duty_slip_no || d.id} · ${d.date} · ${d.route || '—'} (${d.driver || '—'})`
           ).join('<br>');
           document.getElementById('dupList').innerHTML = list;
-          // set "View Existing" link to filter dashboard by this customer
           document.getElementById('dupViewLink').href =
             `/admin_portal?customer_name=${encodeURIComponent(customer)}`;
           document.getElementById('dupWarning').style.display = 'block';
           document.getElementById('dupWarning').scrollIntoView({ behavior:'smooth', block:'nearest' });
         } else {
-          _lockSubmit();
-          form.submit();
+          submitGenerate(form);
         }
       })
-      .catch(() => { _lockSubmit(); form.submit(); }); // on network error, allow submit
+      .catch(() => submitGenerate(form)); // on network error, still try
     });
 
     function dismissDup() {
       _dupDismissed = true;
       document.getElementById('dupWarning').style.display = 'none';
+      submitGenerate(document.querySelector('form[action="/generate"]'));
+    }
+
+    // =====================================================================
+    // AJAX GENERATE → success modal (no page navigation; form preserved)
+    // =====================================================================
+    let MODAL_INVOICE = null, MODAL_CUSTOMER = '', MODAL_SLIPNO = '', MODAL_DATE = '';
+    let NEXT_SLIP_NO = '', _signUrl = '', _modalTimer = null;
+
+    function submitGenerate(form) {
       _lockSubmit();
-      document.querySelector('form[action="/generate"]').submit();
+      fetch('/generate', {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: new FormData(form)
+      })
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(data => {
+        if (!data || !data.ok) throw new Error('bad response');
+        if (window._clearSlipDraft) window._clearSlipDraft();
+        openSuccessModal(data);
+        const b = document.getElementById('btnSubmit');
+        if (b) { b.disabled = false; b.textContent = 'Generate Duty Slip'; }
+      })
+      .catch(() => { form.submit(); }); // fallback: native submit → success page
+    }
+
+    function openSuccessModal(d) {
+      MODAL_INVOICE  = d.invoice_id;
+      MODAL_CUSTOMER = d.customer_name || '';
+      MODAL_SLIPNO   = d.duty_slip_no || '';
+      MODAL_DATE     = d.slip_date || '';
+      NEXT_SLIP_NO   = d.next_slip_no || '';
+      _signUrl = '';
+
+      document.getElementById('smAvatar').textContent = (MODAL_CUSTOMER[0] || '?').toUpperCase();
+      document.getElementById('smName').textContent = MODAL_CUSTOMER || '—';
+      const meta = [];
+      if (MODAL_SLIPNO) meta.push('Slip #' + MODAL_SLIPNO);
+      if (MODAL_DATE) meta.push(MODAL_DATE);
+      if (d.vehicle_type) meta.push(d.vehicle_type);
+      if (d.driver_name) meta.push(d.driver_name);
+      document.getElementById('smMeta').textContent = meta.join(' · ');
+
+      // Reset signature/download button states each open
+      const sr = document.getElementById('smSignResult'); sr.classList.remove('show');
+      const clb = document.getElementById('smCreateLinkBtn');
+      const sec = document.getElementById('smSignSection');
+      if (d.signature_status === 'signed') { sec.style.display = 'none'; }
+      else { sec.style.display = ''; clb.style.display = ''; clb.disabled = false; clb.textContent = 'Create Signing Link'; }
+      const db = document.getElementById('smDownloadBtn'); db.disabled = false; db.textContent = 'Download PDF';
+
+      document.getElementById('successModal').classList.add('show');
+      clearTimeout(_modalTimer);
+      _modalTimer = setTimeout(closeSuccessModal, 10000); // strict 10s auto-close
+    }
+
+    function closeSuccessModal() {
+      clearTimeout(_modalTimer);
+      document.getElementById('successModal').classList.remove('show');
+    }
+
+    function newSlip() {
+      clearGeneratorForm(NEXT_SLIP_NO);
+      closeSuccessModal();
+    }
+
+    // Download the PDF in the background (blob) so nothing freezes.
+    function downloadPdf(btn) {
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Preparing…';
+      fetch('/invoice/' + MODAL_INVOICE + '/download')
+        .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = 'slip_' + (MODAL_SLIPNO || MODAL_CUSTOMER || MODAL_INVOICE) + '.pdf';
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+        })
+        .catch(() => { if (window._showToast) window._showToast('Download failed — please retry.', true); })
+        .finally(() => { btn.disabled = false; btn.textContent = orig; });
+    }
+
+    function createSignLink() {
+      const btn = document.getElementById('smCreateLinkBtn');
+      btn.disabled = true; btn.textContent = 'Creating…';
+      fetch('/invoice/' + MODAL_INVOICE + '/create_sign_link', { method: 'POST' })
+        .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(data => {
+          if (!data.ok) throw new Error(data.error || 'Failed');
+          _signUrl = location.origin + '/sign/' + data.token;
+          document.getElementById('smSignUrl').textContent = _signUrl;
+          document.getElementById('smSignResult').classList.add('show');
+          btn.style.display = 'none';
+        })
+        .catch(err => {
+          btn.disabled = false; btn.textContent = 'Create Signing Link';
+          if (window._showToast) window._showToast('Could not create link.', true);
+        });
+    }
+
+    function copyLink() {
+      if (!_signUrl) return;
+      navigator.clipboard.writeText(_signUrl).then(() => {
+        if (window._showToast) window._showToast('Signing link copied!');
+      });
+    }
+
+    function sendWhatsApp() {
+      if (!_signUrl) return;
+      const slipRef = MODAL_SLIPNO ? 'slip #' + MODAL_SLIPNO : 'your slip';
+      const dateStr = MODAL_DATE ? ' for ' + MODAL_DATE : '';
+      const msg = 'Hi ' + MODAL_CUSTOMER + ', ' + slipRef + dateStr
+                + ' from Osprey Travels is ready for your signature. Please sign here: ' + _signUrl;
+      window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+    }
+
+    // Clear the whole form in place (instant), keeping the suggested next slip number.
+    function clearGeneratorForm(nextNo) {
+      const form = document.querySelector('form[action="/generate"]');
+      form.reset();
+      // Map builder reset
+      const originEl = document.getElementById('originInput');
+      if (originEl) { originEl.value = ''; delete originEl.dataset.shortName; }
+      const wl = document.getElementById('waypointsList'); if (wl) wl.innerHTML = '';
+      const ret = document.getElementById('returnToOrigin'); if (ret) ret.checked = true;
+      currentRoute = null;
+      const dd = document.getElementById('distanceDisplay');
+      if (dd) { dd.textContent = 'Add stops to calculate distance'; dd.className = 'distance-display'; }
+      const ba = document.getElementById('btnApply'); if (ba) ba.disabled = true;
+      if (dirRenderer) { try { dirRenderer.set('directions', null); } catch(e) {} }
+      if (typeof setRouteMode === 'function') setRouteMode('manual');
+      const rsj = document.getElementById('route_stops_json'); if (rsj) rsj.value = '';
+      // AI fill bar reset (if present)
+      const ai = document.getElementById('aiText'); if (ai) ai.value = '';
+      const aw = document.getElementById('aiWarn'); if (aw) aw.style.display = 'none';
+      const ast = document.getElementById('aiStatus'); if (ast) ast.textContent = '';
+      // Derived displays
+      ['total_km','total_time'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      // Suggested next slip number + today's date
+      const ds = document.getElementById('duty_slip_no'); if (ds && nextNo) ds.value = nextNo;
+      const dt = document.getElementById('date'); if (dt) dt.value = {{ today | tojson }};
+      // Clear saved draft so no restore banner later
+      if (window._clearSlipDraft) window._clearSlipDraft();
+      _dupDismissed = false;
+      const b = document.getElementById('btnSubmit'); if (b) { b.disabled = false; b.textContent = 'Generate Duty Slip'; }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      const cust = document.getElementById('customer_name'); if (cust) cust.focus();
     }
 
     // =====================================================================
@@ -1876,6 +2157,7 @@
         const ind = document.getElementById('draftSavedIndicator');
         if (ind) ind.style.display = 'none';
       }
+      window._clearSlipDraft = clearDraft;
 
       function relativeTime(ts) {
         const secs = Math.floor((Date.now() - ts) / 1000);
