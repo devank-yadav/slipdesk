@@ -798,12 +798,14 @@ def init_db():
             ('project_code', 'TEXT'),
             ('mail_approval_date', 'TEXT'),
             ('route_stops_json', 'TEXT'),
+            ('deleted_at', 'TEXT'),
         ]
         for col_name, col_type in required_columns:
             if col_name not in columns:
                 conn.execute(f"ALTER TABLE invoices ADD COLUMN {col_name} {col_type}")
         # Backfill status for existing rows
         conn.execute("UPDATE invoices SET bill_status = 'Bill Generated' WHERE bill_status IS NULL")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_deleted_at ON invoices(deleted_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(date)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_created_at ON invoices(created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_invoices_bill_status ON invoices(bill_status)")
@@ -957,8 +959,18 @@ init_db()
 
 
 def delete_invoice_file(invoice_id):
+    # Soft delete → moves the slip to Trash (restorable, auto-purged after 30 days).
     with sqlite3.connect(DATABASE) as conn:
-        conn.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
+        conn.execute(
+            "UPDATE invoices SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
+            (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), invoice_id)
+        )
+
+
+def _purge_old_trash(conn):
+    """Permanently remove slips trashed more than 30 days ago."""
+    cutoff = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
+    conn.execute("DELETE FROM invoices WHERE deleted_at IS NOT NULL AND deleted_at < ?", (cutoff,))
 
 
 def _canonical_name(conn, table, name):
@@ -987,7 +999,7 @@ def _canonical_cached(kind, name):
 def get_next_duty_slip_no():
     with sqlite3.connect(DATABASE) as conn:
         rows = conn.execute(
-            "SELECT duty_slip_no FROM invoices WHERE duty_slip_no IS NOT NULL AND duty_slip_no != '' ORDER BY id DESC LIMIT 200",
+            "SELECT duty_slip_no FROM invoices WHERE duty_slip_no IS NOT NULL AND duty_slip_no != '' AND deleted_at IS NULL ORDER BY id DESC LIMIT 200",
         ).fetchall()
     max_num = 0
     for (s,) in rows:
@@ -1076,7 +1088,7 @@ def admin_portal(_partial=False):
     base_args.pop('page_size', None)
     base_query = urlencode({k: v for k, v in base_args.items() if v not in (None, '')})
 
-    where_clause = "WHERE 1=1"
+    where_clause = "WHERE deleted_at IS NULL"
     params = []
 
     # Date quick filter
@@ -1164,14 +1176,14 @@ def admin_portal(_partial=False):
           SUM(CASE WHEN COALESCE(bill_status,'Bill Generated') = 'Bill Generated' THEN 1 ELSE 0 END) AS pending_bill,
           SUM(CASE WHEN bill_status = 'Bill Submitted' THEN 1 ELSE 0 END) AS pending_pay,
           SUM(CASE WHEN bill_status = 'Payment Received' AND strftime('%Y-%m', payment_date) = ? THEN 1 ELSE 0 END) AS paid_month
-        FROM invoices
+        FROM invoices WHERE deleted_at IS NULL
     """
     # Batch all 5 queries → 1 HTTP round-trip on Turso
     _curs = _db_multi_exec([
         (f"SELECT COUNT(*) FROM invoices {where_clause}", tuple(params)),
         (query, tuple(params + [page_size, offset])),
-        ("SELECT DISTINCT driver_name FROM invoices WHERE driver_name IS NOT NULL AND driver_name != '' ORDER BY driver_name ASC", ()),
-        ("SELECT DISTINCT vehicle_type FROM invoices WHERE vehicle_type IS NOT NULL AND vehicle_type != '' ORDER BY vehicle_type ASC", ()),
+        ("SELECT DISTINCT driver_name FROM invoices WHERE driver_name IS NOT NULL AND driver_name != '' AND deleted_at IS NULL ORDER BY driver_name ASC", ()),
+        ("SELECT DISTINCT vehicle_type FROM invoices WHERE vehicle_type IS NOT NULL AND vehicle_type != '' AND deleted_at IS NULL ORDER BY vehicle_type ASC", ()),
         (_stats_sql, (_ym, _ym)),
     ])
     total_results  = (_curs[0].fetchone() or (0,))[0]
@@ -1284,8 +1296,12 @@ def bulk_action():
         placeholders = ','.join('?' for _ in selected_ids)
 
         if action == 'delete':
-            conn.execute(f"DELETE FROM invoices WHERE id IN ({placeholders})", selected_ids)
-            return redirect(url_for('admin_portal') + f'?flash={len(selected_ids)}+slip(s)+deleted')
+            # Soft delete → Trash (restorable)
+            conn.execute(
+                f"UPDATE invoices SET deleted_at = ? WHERE id IN ({placeholders}) AND deleted_at IS NULL",
+                [datetime.now().strftime('%Y-%m-%d %H:%M:%S')] + selected_ids
+            )
+            return redirect(url_for('admin_portal') + f'?flash={len(selected_ids)}+slip(s)+moved+to+Trash')
 
         elif action == 'download':
             rows = conn.execute(
@@ -1671,7 +1687,7 @@ def last_slip_json():
                       driver_name, starting_km, total_km, project_code,
                       mail_approval_date, starting_time, closing_time, route_covered,
                       COALESCE(route_stops_json,'')
-               FROM invoices WHERE admin_username = ?
+               FROM invoices WHERE admin_username = ? AND deleted_at IS NULL
                ORDER BY id DESC LIMIT 1""",
             (session['admin'],)
         ).fetchone()
@@ -1820,7 +1836,7 @@ def customer_autocomplete():
     with sqlite3.connect(DATABASE) as conn:
         results = [row[0] for row in conn.execute("""
             SELECT DISTINCT customer_name FROM invoices
-            WHERE customer_name LIKE ?
+            WHERE customer_name LIKE ? AND deleted_at IS NULL
             ORDER BY customer_name ASC LIMIT 10
         """, (f"%{query}%",)).fetchall()]
     return jsonify(results)
@@ -1893,26 +1909,26 @@ def settings_page():
 
     # Batch all settings queries → 1 HTTP round-trip on Turso
     _sc = _db_multi_exec([
-        ("SELECT COUNT(*) FROM invoices", ()),
-        ("SELECT COUNT(*) FROM invoices WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m','now')", ()),
+        ("SELECT COUNT(*) FROM invoices WHERE deleted_at IS NULL", ()),
+        ("SELECT COUNT(*) FROM invoices WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m','now') AND deleted_at IS NULL", ()),
         ("SELECT id, name FROM drivers ORDER BY name ASC", ()),
         ("SELECT id, name, COALESCE(vehicle_no,'') FROM vehicles ORDER BY name ASC", ()),
         ("SELECT id, name, COALESCE(company,'') FROM customers ORDER BY name ASC", ()),
-        ("SELECT COUNT(*) FROM invoices WHERE COALESCE(bill_status,'Bill Generated') = 'Bill Generated'", ()),
-        ("SELECT COUNT(*) FROM invoices WHERE bill_status = 'Bill Submitted'", ()),
-        ("SELECT COUNT(*) FROM invoices WHERE bill_status = 'Payment Received'", ()),
+        ("SELECT COUNT(*) FROM invoices WHERE COALESCE(bill_status,'Bill Generated') = 'Bill Generated' AND deleted_at IS NULL", ()),
+        ("SELECT COUNT(*) FROM invoices WHERE bill_status = 'Bill Submitted' AND deleted_at IS NULL", ()),
+        ("SELECT COUNT(*) FROM invoices WHERE bill_status = 'Payment Received' AND deleted_at IS NULL", ()),
         ("""SELECT vehicle_type, strftime('%Y-%m', date) as month,
                    ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)), 1) as km
             FROM invoices
             WHERE vehicle_type IS NOT NULL AND vehicle_type != ''
-              AND date IS NOT NULL AND date != ''
+              AND date IS NOT NULL AND date != '' AND deleted_at IS NULL
             GROUP BY vehicle_type, month ORDER BY month DESC, vehicle_type ASC""", ()),
         ("""SELECT strftime('%Y-%m', date) AS month, COUNT(*) AS slips,
                    SUM(CASE WHEN COALESCE(bill_status,'Bill Generated')='Bill Generated' THEN 1 ELSE 0 END) AS not_submitted,
                    SUM(CASE WHEN bill_status='Bill Submitted' THEN 1 ELSE 0 END) AS submitted,
                    SUM(CASE WHEN bill_status='Payment Received' THEN 1 ELSE 0 END) AS paid,
                    ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)),1) AS km
-            FROM invoices WHERE date IS NOT NULL AND date != ''
+            FROM invoices WHERE date IS NOT NULL AND date != '' AND deleted_at IS NULL
             GROUP BY month ORDER BY month DESC""", ()),
     ])
     total_invoices       = (_sc[0].fetchone() or (0,))[0]
@@ -1962,7 +1978,7 @@ def export_monthly_report():
                        SUM(CASE WHEN bill_status='Bill Submitted' THEN 1 ELSE 0 END),
                        SUM(CASE WHEN bill_status='Payment Received' THEN 1 ELSE 0 END),
                        ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)),1)
-                FROM invoices WHERE date IS NOT NULL AND date != ''
+                FROM invoices WHERE date IS NOT NULL AND date != '' AND deleted_at IS NULL
                   AND strftime('%Y-%m', date) IN ({ph})
                 GROUP BY m ORDER BY m DESC
             """, month_list).fetchall()
@@ -1971,7 +1987,7 @@ def export_monthly_report():
                        ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)),1)
                 FROM invoices
                 WHERE vehicle_type IS NOT NULL AND vehicle_type != ''
-                  AND date IS NOT NULL AND date != ''
+                  AND date IS NOT NULL AND date != '' AND deleted_at IS NULL
                   AND strftime('%Y-%m', date) IN ({ph})
                 GROUP BY vehicle_type, strftime('%Y-%m', date)
                 ORDER BY strftime('%Y-%m', date) DESC, vehicle_type ASC
@@ -1984,7 +2000,7 @@ def export_monthly_report():
                        SUM(CASE WHEN bill_status='Bill Submitted' THEN 1 ELSE 0 END),
                        SUM(CASE WHEN bill_status='Payment Received' THEN 1 ELSE 0 END),
                        ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)),1)
-                FROM invoices WHERE date IS NOT NULL AND date != ''
+                FROM invoices WHERE date IS NOT NULL AND date != '' AND deleted_at IS NULL
                   AND strftime('%Y-%m', date) >= strftime('%Y-%m', date('now','-5 months'))
                 GROUP BY m ORDER BY m DESC
             """).fetchall()
@@ -1993,7 +2009,7 @@ def export_monthly_report():
                        ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)),1)
                 FROM invoices
                 WHERE vehicle_type IS NOT NULL AND vehicle_type != ''
-                  AND date IS NOT NULL AND date != ''
+                  AND date IS NOT NULL AND date != '' AND deleted_at IS NULL
                   AND strftime('%Y-%m', date) >= strftime('%Y-%m', date('now','-5 months'))
                 GROUP BY vehicle_type, strftime('%Y-%m', date)
                 ORDER BY strftime('%Y-%m', date) DESC, vehicle_type ASC
@@ -2516,7 +2532,7 @@ def check_duplicate():
             params.append(vehicle_no)
         rows = conn.execute(
             f"SELECT id, duty_slip_no, date, route_covered, driver_name "
-            f"FROM invoices WHERE customer_name = ? AND date = ?{extra} ORDER BY id DESC LIMIT 5",
+            f"FROM invoices WHERE customer_name = ? AND date = ?{extra} AND deleted_at IS NULL ORDER BY id DESC LIMIT 5",
             params
         ).fetchall()
     return jsonify({'duplicates': [
@@ -2548,14 +2564,14 @@ def customers_page():
                    MAX(c.portal_token) AS portal_token
             FROM invoices i
             LEFT JOIN customers c ON LOWER(c.name) = LOWER(i.customer_name)
-            WHERE i.customer_name IS NOT NULL AND i.customer_name != ''
+            WHERE i.customer_name IS NOT NULL AND i.customer_name != '' AND i.deleted_at IS NULL
             GROUP BY LOWER(i.customer_name)
             ORDER BY MAX(i.date) DESC
         """).fetchall()
         all_customer_names = [r[0] for r in conn.execute(
             "SELECT COALESCE(c.name, MIN(i.customer_name)) FROM invoices i "
             "LEFT JOIN customers c ON LOWER(c.name) = LOWER(i.customer_name) "
-            "WHERE i.customer_name IS NOT NULL AND i.customer_name != '' "
+            "WHERE i.customer_name IS NOT NULL AND i.customer_name != '' AND i.deleted_at IS NULL "
             "GROUP BY LOWER(i.customer_name) ORDER BY 1 ASC"
         ).fetchall()]
     customers_data = [
@@ -2610,7 +2626,7 @@ def customer_portal(token):
                    driver_name, route_covered, total_km,
                    COALESCE(bill_status, 'Bill Generated'),
                    COALESCE(signature_status, '')
-            FROM invoices WHERE customer_name = ?
+            FROM invoices WHERE customer_name = ? AND deleted_at IS NULL
             ORDER BY date DESC, id DESC
         """, (customer_name,)).fetchall()
     return render_template('portal.html',
@@ -2629,7 +2645,7 @@ def portal_slip_download(token, invoice_id):
                       vehicle_no, starting_km, closing_km, total_km,
                       starting_time, closing_time, total_time,
                       project_code, mail_approval_date, route_covered, driver_name
-               FROM invoices WHERE id = ? AND customer_name = ?""",
+               FROM invoices WHERE id = ? AND customer_name = ? AND deleted_at IS NULL""",
             (invoice_id, cust[0])
         ).fetchone()
         if not row:
@@ -2658,7 +2674,7 @@ def sign_all_customer():
     with sqlite3.connect(DATABASE) as conn:
         rows = conn.execute(
             """SELECT id FROM invoices
-               WHERE customer_name = ? AND COALESCE(signature_status,'') != 'signed'""",
+               WHERE customer_name = ? AND COALESCE(signature_status,'') != 'signed' AND deleted_at IS NULL""",
             (customer_name,)
         ).fetchall()
     ids = [r[0] for r in rows]
@@ -2733,7 +2749,7 @@ def drivers_page():
                    MIN(date) AS first_date,
                    ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)), 1) AS total_km
             FROM invoices
-            WHERE driver_name IS NOT NULL AND driver_name != ''
+            WHERE driver_name IS NOT NULL AND driver_name != '' AND deleted_at IS NULL
             GROUP BY driver_name
             ORDER BY MAX(date) DESC
         """).fetchall()
@@ -2772,7 +2788,7 @@ def driver_report(driver_name):
         return redirect(url_for('login_page'))
     date_from = request.args.get('date_from', '')
     date_to   = request.args.get('date_to', '')
-    where = "WHERE driver_name = ?"
+    where = "WHERE driver_name = ? AND deleted_at IS NULL"
     params = [driver_name]
     if date_from:
         where += " AND date >= ?"
@@ -2841,10 +2857,36 @@ def driver_report(driver_name):
 # --------------------------
 # SLIP MANAGEMENT
 # --------------------------
-def _slip_mgmt_query(year, month, status, date_type, q=None):
+SLIP_SORT_MAP = {
+    'date': 'date',
+    'created_at': 'created_at',
+    'duty_slip_no': 'duty_slip_no',
+    'customer_name': 'customer_name',
+    'total_km': "CAST(NULLIF(total_km,'') AS REAL)",
+    'bill_status': "COALESCE(bill_status,'Bill Generated')",
+}
+SLIP_GROUP_LIMIT = 2000  # hard cap when grouping (no offset pagination)
+
+
+def _slip_order(sort, direction, default_col):
+    expr = SLIP_SORT_MAP.get(sort)
+    d = 'ASC' if str(direction).lower() == 'asc' else 'DESC'
+    if not expr:
+        return f"ORDER BY {default_col} DESC, id DESC"
+    return f"ORDER BY {expr} {d}, id DESC"
+
+
+def _slip_mgmt_query(year, month, status, date_type, q=None,
+                     date_from=None, date_to=None, driver=None,
+                     vehicle=None, customer=None, trashed=False):
+    """Build (where, params) for the All Files page. Excludes trashed slips unless
+    trashed=True (Trash view) — the single source for soft-delete filtering here."""
     col = "date" if date_type == 'duty' else "created_at"
-    where = f"WHERE strftime('%Y', {col}) = ?"
-    params = [str(year)]
+    where = "WHERE deleted_at IS NOT NULL" if trashed else "WHERE deleted_at IS NULL"
+    params = []
+    if year:
+        where += f" AND strftime('%Y', {col}) = ?"
+        params.append(str(year))
     if month:
         where += f" AND strftime('%m', {col}) = ?"
         params.append(f"{int(month):02d}")
@@ -2856,6 +2898,16 @@ def _slip_mgmt_query(year, month, status, date_type, q=None):
     }
     if status and status in STATUS_MAP:
         where += f" AND {STATUS_MAP[status]}"
+    if date_from:
+        where += f" AND {col} >= ?"; params.append(date_from)
+    if date_to:
+        where += f" AND {col} <= ?"; params.append(date_to)
+    if driver:
+        where += " AND driver_name = ?"; params.append(driver)
+    if vehicle:
+        where += " AND vehicle_type = ?"; params.append(vehicle)
+    if customer:
+        where += " AND customer_name LIKE ?"; params.append(f"%{customer}%")
     if q:
         like = f"%{q}%"
         where += (" AND (customer_name LIKE ? OR duty_slip_no LIKE ?"
@@ -2864,95 +2916,241 @@ def _slip_mgmt_query(year, month, status, date_type, q=None):
     return where, params
 
 
+_SLIP_COLS = ("id, duty_slip_no, date, created_at, customer_name, company_name, "
+              "route_covered, driver_name, vehicle_type, vehicle_no, "
+              "COALESCE(bill_status,'Bill Generated'), COALESCE(signature_status,''), total_km")
+
+
+def _slip_args():
+    """Read all All Files filter/sort/group/pagination args from the request."""
+    return {
+        'year':      int(request.args.get('year', date.today().year)),
+        'month':     request.args.get('month', ''),
+        'status':    request.args.get('status', 'all'),
+        'date_type': request.args.get('date_type', 'duty'),
+        'q':         (request.args.get('q') or '').strip(),
+        'date_from': (request.args.get('date_from') or '').strip(),
+        'date_to':   (request.args.get('date_to') or '').strip(),
+        'driver':    (request.args.get('driver') or '').strip(),
+        'vehicle':   (request.args.get('vehicle') or '').strip(),
+        'customer':  (request.args.get('customer') or '').strip(),
+        'sort':      request.args.get('sort', 'date'),
+        'dir':       request.args.get('dir', 'desc'),
+        'group':     request.args.get('group', 'none'),
+        'trashed':   request.args.get('trashed', '0') == '1',
+        'page':      max(1, int(request.args.get('page', 1) or 1)),
+        'page_size': min(200, max(10, int(request.args.get('page_size', 50) or 50))),
+    }
+
+
+def _slip_rows_context(conn, a):
+    """Shared fetch for the rows partial: flat+paginated or grouped, plus filter totals."""
+    col = "date" if a['date_type'] == 'duty' else "created_at"
+    where, params = _slip_mgmt_query(
+        a['year'], a['month'], a['status'], a['date_type'], a['q'],
+        a['date_from'], a['date_to'], a['driver'], a['vehicle'], a['customer'], a['trashed'])
+
+    # Totals for the WHOLE filter (independent of pagination/group)
+    totals_row = conn.execute(
+        f"""SELECT COUNT(*),
+                   ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)), 1),
+                   SUM(CASE WHEN COALESCE(bill_status,'Bill Generated')='Bill Generated' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN bill_status='Bill Submitted' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN bill_status='Payment Received' THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN signature_status='signed' THEN 1 ELSE 0 END)
+            FROM invoices {where}""", params).fetchone()
+    total_results = totals_row[0] or 0
+    totals = {
+        'count': total_results, 'km': totals_row[1] or 0,
+        'generated': totals_row[2] or 0, 'submitted': totals_row[3] or 0,
+        'paid': totals_row[4] or 0, 'signed': totals_row[5] or 0,
+    }
+
+    ctx = {'status': a['status'], 'sort': a['sort'], 'dir': a['dir'],
+           'group': a['group'], 'trashed': a['trashed'], 'totals': totals,
+           'page': a['page'], 'page_size': a['page_size'], 'total_results': total_results,
+           'groups': None, 'slips': [], 'group_capped': False}
+
+    if a['group'] in ('month', 'customer', 'driver'):
+        order = _slip_order(a['sort'], a['dir'], col)
+        rows = conn.execute(
+            f"SELECT {_SLIP_COLS} FROM invoices {where} {order} LIMIT {SLIP_GROUP_LIMIT}", params
+        ).fetchall()
+        ctx['group_capped'] = len(rows) >= SLIP_GROUP_LIMIT
+        groups = []
+        index = {}
+        for r in rows:
+            if a['group'] == 'month':
+                d = (r[2] if a['date_type'] == 'duty' else r[3]) or ''
+                key = d[:7] if len(d) >= 7 else 'Unknown'
+            elif a['group'] == 'customer':
+                key = r[4] or '—'
+            else:
+                key = r[7] or '—'
+            if key not in index:
+                index[key] = {'label': key, 'rows': [], 'km': 0.0}
+                groups.append(index[key])
+            index[key]['rows'].append(r)
+            try:
+                index[key]['km'] += float(r[12]) if r[12] not in (None, '') else 0.0
+            except (ValueError, TypeError):
+                pass
+        for g in groups:
+            g['km'] = round(g['km'], 1)
+            g['count'] = len(g['rows'])
+        ctx['groups'] = groups
+    else:
+        order = _slip_order(a['sort'], a['dir'], col)
+        offset = (a['page'] - 1) * a['page_size']
+        ctx['slips'] = conn.execute(
+            f"SELECT {_SLIP_COLS} FROM invoices {where} {order} LIMIT ? OFFSET ?",
+            params + [a['page_size'], offset]
+        ).fetchall()
+    return ctx
+
+
 @app.route('/admin/slips')
 def slip_management():
     if 'admin' not in session:
         return redirect(url_for('home'))
-    year      = int(request.args.get('year', date.today().year))
-    month     = request.args.get('month', '')
-    status    = request.args.get('status', 'all')
-    date_type = request.args.get('date_type', 'duty')
-    col       = "date" if date_type == 'duty' else "created_at"
-
+    a = _slip_args()
+    col = "date" if a['date_type'] == 'duty' else "created_at"
     with sqlite3.connect(DATABASE) as conn:
-        # Available years
+        _purge_old_trash(conn)  # lazy cleanup of >30-day trash
         years = [r[0] for r in conn.execute(
-            "SELECT DISTINCT strftime('%Y', date) FROM invoices WHERE date IS NOT NULL ORDER BY 1 DESC"
+            "SELECT DISTINCT strftime('%Y', date) FROM invoices WHERE date IS NOT NULL AND deleted_at IS NULL ORDER BY 1 DESC"
         ).fetchall() if r[0]]
-        if str(year) not in years and years:
-            years.insert(0, str(year))
+        if str(a['year']) not in years and years:
+            years.insert(0, str(a['year']))
         years = sorted(set(years), reverse=True)
 
-        # Month counts for sidebar
-        where_y, params_y = _slip_mgmt_query(year, None, status, date_type)
-        month_rows = conn.execute(
-            f"SELECT strftime('%m', {col}) AS m, COUNT(*) FROM invoices {where_y} GROUP BY m",
-            params_y
-        ).fetchall()
-        month_counts = {int(r[0]): r[1] for r in month_rows if r[0]}
+        # Sidebar month counts (live only)
+        where_y, params_y = _slip_mgmt_query(a['year'], None, a['status'], a['date_type'])
+        month_counts = {int(r[0]): r[1] for r in conn.execute(
+            f"SELECT strftime('%m', {col}) AS m, COUNT(*) FROM invoices {where_y} GROUP BY m", params_y
+        ).fetchall() if r[0]}
 
-        # Status tab counts (for selected year + month)
-        where_base, params_base = _slip_mgmt_query(year, month, 'all', date_type)
+        # Status tab counts + Trash count
         status_counts = {}
-        total = conn.execute(f"SELECT COUNT(*) FROM invoices {where_base}", params_base).fetchone()[0]
-        status_counts['all'] = total
-        for s in ('generated', 'submitted', 'paid', 'signed'):
-            w, p = _slip_mgmt_query(year, month, s, date_type)
+        for s in ('all', 'generated', 'submitted', 'paid', 'signed'):
+            w, p = _slip_mgmt_query(a['year'], a['month'], s, a['date_type'])
             status_counts[s] = conn.execute(f"SELECT COUNT(*) FROM invoices {w}", p).fetchone()[0]
+        wt, pt = _slip_mgmt_query(a['year'], '', 'all', a['date_type'], trashed=True)
+        status_counts['trash'] = conn.execute(f"SELECT COUNT(*) FROM invoices {wt}", pt).fetchone()[0]
 
-        # Slips for current view
-        where, params = _slip_mgmt_query(year, month, status, date_type)
-        slips = conn.execute(
-            f"""SELECT id, duty_slip_no, date, created_at, customer_name, company_name,
-                       route_covered, driver_name, vehicle_type, vehicle_no,
-                       COALESCE(bill_status,'Bill Generated'), COALESCE(signature_status,'')
-                FROM invoices {where} ORDER BY {col} DESC, id DESC LIMIT 500""",
-            params
-        ).fetchall()
+        # Filter dropdown options (live only)
+        driver_names = [r[0] for r in conn.execute(
+            "SELECT DISTINCT driver_name FROM invoices WHERE driver_name IS NOT NULL AND driver_name != '' AND deleted_at IS NULL ORDER BY driver_name ASC"
+        ).fetchall() if r[0]]
+        vehicle_names = [r[0] for r in conn.execute(
+            "SELECT DISTINCT vehicle_type FROM invoices WHERE vehicle_type IS NOT NULL AND vehicle_type != '' AND deleted_at IS NULL ORDER BY vehicle_type ASC"
+        ).fetchall() if r[0]]
+
+        ctx = _slip_rows_context(conn, a)
 
     return render_template('slip_management.html',
-                           slips=slips, year=year, years=years, month=int(month) if month else 0,
-                           status=status, date_type=date_type,
-                           month_counts=month_counts, status_counts=status_counts)
+                           year=a['year'], years=years, month=int(a['month']) if a['month'] else 0,
+                           date_type=a['date_type'],
+                           month_counts=month_counts, status_counts=status_counts,
+                           driver_names=driver_names, vehicle_names=vehicle_names,
+                           date_from=a['date_from'], date_to=a['date_to'],
+                           driver=a['driver'], vehicle=a['vehicle'], customer=a['customer'],
+                           **ctx)
 
 
 @app.route('/admin/slips/rows')
 def slip_management_rows():
     if 'admin' not in session:
         return '', 401
-    year      = int(request.args.get('year', date.today().year))
-    month     = request.args.get('month', '')
-    status    = request.args.get('status', 'all')
-    date_type = request.args.get('date_type', 'duty')
-    q         = (request.args.get('q') or '').strip()
-    col       = "date" if date_type == 'duty' else "created_at"
-    where, params = _slip_mgmt_query(year, month, status, date_type, q)
+    a = _slip_args()
     with sqlite3.connect(DATABASE) as conn:
-        slips = conn.execute(
-            f"""SELECT id, duty_slip_no, date, created_at, customer_name, company_name,
-                       route_covered, driver_name, vehicle_type, vehicle_no,
-                       COALESCE(bill_status,'Bill Generated'), COALESCE(signature_status,'')
-                FROM invoices {where} ORDER BY {col} DESC, id DESC LIMIT 500""",
-            params
-        ).fetchall()
-    return render_template('_slip_management_rows.html', slips=slips, status=status)
+        ctx = _slip_rows_context(conn, a)
+    return render_template('_slip_management_rows.html', date_type=a['date_type'], **ctx)
 
 
 @app.route('/admin/slips/month_counts')
 def slip_management_month_counts():
     if 'admin' not in session:
         return jsonify({}), 401
-    year      = int(request.args.get('year', date.today().year))
-    status    = request.args.get('status', 'all')
-    date_type = request.args.get('date_type', 'duty')
-    col       = "date" if date_type == 'duty' else "created_at"
-    where_y, params_y = _slip_mgmt_query(year, None, status, date_type)
+    a = _slip_args()
+    col = "date" if a['date_type'] == 'duty' else "created_at"
+    where_y, params_y = _slip_mgmt_query(
+        a['year'], None, a['status'], a['date_type'], a['q'],
+        a['date_from'], a['date_to'], a['driver'], a['vehicle'], a['customer'])
     with sqlite3.connect(DATABASE) as conn:
         month_rows = conn.execute(
             f"SELECT strftime('%m', {col}) AS m, COUNT(*) FROM invoices {where_y} GROUP BY m",
             params_y
         ).fetchall()
     return jsonify({int(r[0]): r[1] for r in month_rows if r[0]})
+
+
+@app.route('/admin/slips/ids')
+def slip_management_ids():
+    """All matching invoice ids for the current filter — powers select-all-across-filter."""
+    if 'admin' not in session:
+        return jsonify({'ids': [], 'count': 0}), 401
+    a = _slip_args()
+    where, params = _slip_mgmt_query(
+        a['year'], a['month'], a['status'], a['date_type'], a['q'],
+        a['date_from'], a['date_to'], a['driver'], a['vehicle'], a['customer'], a['trashed'])
+    with sqlite3.connect(DATABASE) as conn:
+        ids = [r[0] for r in conn.execute(f"SELECT id FROM invoices {where}", params).fetchall()]
+    return jsonify({'ids': ids, 'count': len(ids)})
+
+
+@app.route('/admin/slips/<int:invoice_id>/detail')
+def slip_detail(invoice_id):
+    """Full slip details (+ signature if signed) for the read-only preview panel.
+    Works for live and trashed slips."""
+    if 'admin' not in session:
+        return jsonify({}), 401
+    with sqlite3.connect(DATABASE) as conn:
+        row = conn.execute(
+            """SELECT id, customer_name, company_name, date, created_at, duty_slip_no,
+                      vehicle_type, vehicle_no, starting_km, closing_km, total_km,
+                      starting_time, closing_time, total_time, route_covered,
+                      project_code, mail_approval_date, dn, remarks, driver_name,
+                      COALESCE(bill_status,'Bill Generated'), COALESCE(signature_status,''),
+                      closing_date, deleted_at, payment_date
+               FROM invoices WHERE id = ?""", (invoice_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({}), 404
+        sig = _get_sig_for_invoice(conn, invoice_id) if row[21] == 'signed' else None
+    keys = ['id', 'customer_name', 'company_name', 'date', 'created_at', 'duty_slip_no',
+            'vehicle_type', 'vehicle_no', 'starting_km', 'closing_km', 'total_km',
+            'starting_time', 'closing_time', 'total_time', 'route_covered',
+            'project_code', 'mail_approval_date', 'dn', 'remarks', 'driver_name',
+            'bill_status', 'signature_status', 'closing_date', 'deleted_at', 'payment_date']
+    data = {k: (row[i] if row[i] is not None else '') for i, k in enumerate(keys)}
+    data['signature_data'] = sig or ''
+    return jsonify(data)
+
+
+@app.route('/admin/slips/restore', methods=['POST'])
+def slips_restore():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    ids = request.form.getlist('selected_invoices')
+    if ids:
+        with sqlite3.connect(DATABASE) as conn:
+            ph = ','.join('?' for _ in ids)
+            conn.execute(f"UPDATE invoices SET deleted_at = NULL WHERE id IN ({ph})", ids)
+    return redirect(url_for('slip_management', trashed=1))
+
+
+@app.route('/admin/slips/purge', methods=['POST'])
+def slips_purge():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    ids = request.form.getlist('selected_invoices')
+    if ids:
+        with sqlite3.connect(DATABASE) as conn:
+            ph = ','.join('?' for _ in ids)
+            # Guard: only ever hard-delete rows already in Trash
+            conn.execute(f"DELETE FROM invoices WHERE id IN ({ph}) AND deleted_at IS NOT NULL", ids)
+    return redirect(url_for('slip_management', trashed=1))
 
 
 # --------------------------

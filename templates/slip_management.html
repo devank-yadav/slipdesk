@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Slip Management — Osprey Travels</title>
+  <title>All Files — Osprey Travels</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     :root {
@@ -18,144 +18,180 @@
     .sm-layout { display: flex; height: calc(100vh - 56px); overflow: hidden; }
 
     /* ---- SIDEBAR ---- */
-    .sm-sidebar {
-      width: 200px; flex-shrink: 0;
-      background: var(--card); border-right: 1px solid var(--border);
-      display: flex; flex-direction: column; overflow-y: auto;
-    }
+    .sm-sidebar { width: 200px; flex-shrink: 0; background: var(--card);
+      border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
     .sm-sidebar-top { padding: 14px 12px 8px; border-bottom: 1px solid var(--border); }
-    .sm-select {
-      width: 100%; padding: 7px 10px; border: 1.5px solid var(--border);
-      border-radius: 8px; font-size: 13px; font-family: inherit;
-      background: #fff; outline: none; margin-bottom: 8px; font-weight: 600;
-    }
+    .sm-select { width: 100%; padding: 7px 10px; border: 1.5px solid var(--border);
+      border-radius: 8px; font-size: 13px; font-family: inherit; background: #fff;
+      outline: none; margin-bottom: 8px; font-weight: 600; }
     .sm-select:focus { border-color: var(--blue); }
-    .sm-toggle {
-      display: flex; border-radius: 8px; border: 1px solid var(--border);
-      overflow: hidden; font-size: 11px; font-weight: 700;
-    }
-    .sm-toggle label {
-      flex: 1; text-align: center; padding: 5px 4px; cursor: pointer;
-      color: var(--muted); user-select: none; transition: background 0.1s, color 0.1s;
-    }
+    .sm-toggle { display: flex; border-radius: 8px; border: 1px solid var(--border);
+      overflow: hidden; font-size: 11px; font-weight: 700; }
+    .sm-toggle label { flex: 1; text-align: center; padding: 5px 4px; cursor: pointer;
+      color: var(--muted); user-select: none; transition: background 0.1s, color 0.1s; }
     .sm-toggle input[type=radio] { display: none; }
     .sm-toggle input:checked + label { background: var(--blue); color: #fff; }
 
     .sm-month-list { flex: 1; padding: 8px 0; }
-    .sm-month-btn {
-      display: flex; align-items: center; justify-content: space-between;
-      width: 100%; padding: 9px 14px; border: none; background: none;
-      font-family: inherit; font-size: 13px; font-weight: 500; color: var(--text);
-      cursor: pointer; text-align: left; transition: background 0.1s;
-    }
+    .sm-month-btn { display: flex; align-items: center; justify-content: space-between;
+      width: 100%; padding: 9px 14px; border: none; background: none; font-family: inherit;
+      font-size: 13px; font-weight: 500; color: var(--text); cursor: pointer; text-align: left; transition: background 0.1s; }
     .sm-month-btn:hover { background: #f2f2f7; }
     .sm-month-btn.active { background: #e8f0fe; color: var(--blue); font-weight: 700; }
-    .sm-month-count {
-      font-size: 11px; font-weight: 700; background: #f2f2f7;
-      padding: 2px 7px; border-radius: 10px; color: var(--muted);
-    }
+    .sm-month-count { font-size: 11px; font-weight: 700; background: #f2f2f7;
+      padding: 2px 7px; border-radius: 10px; color: var(--muted); }
     .sm-month-btn.active .sm-month-count { background: #c7dffe; color: var(--blue); }
+    .sm-trash-link { margin: 6px 10px 12px; }
+    .sm-trash-btn { display: flex; align-items: center; justify-content: space-between; width: 100%;
+      padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; background: #fff;
+      font-family: inherit; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; }
+    .sm-trash-btn:hover { border-color: var(--red); color: var(--red); }
+    .sm-trash-btn.active { background: #fdecea; border-color: var(--red); color: var(--red); }
 
     /* ---- MAIN ---- */
     .sm-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-
-    .sm-toolbar {
-      padding: 12px 20px; border-bottom: 1px solid var(--border);
-      background: var(--card); display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    }
-    .sm-tabs { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; }
-    .sm-tab {
-      padding: 6px 14px; border-radius: 20px; border: 1.5px solid var(--border);
-      background: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
-      font-family: inherit; color: var(--muted); transition: all 0.12s; white-space: nowrap;
-    }
+    .sm-toolbar { padding: 12px 20px; border-bottom: 1px solid var(--border);
+      background: var(--card); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .sm-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+    .sm-tab { padding: 6px 14px; border-radius: 20px; border: 1.5px solid var(--border);
+      background: #fff; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit;
+      color: var(--muted); transition: all 0.12s; white-space: nowrap; }
     .sm-tab:hover { border-color: var(--blue); color: var(--blue); }
     .sm-tab.active { background: var(--blue); border-color: var(--blue); color: #fff; }
     .sm-tab .sm-cnt { margin-left: 5px; opacity: 0.75; }
+    .sm-tool-spacer { flex: 1; }
+    .sm-mini-select { padding: 6px 10px; border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: 12px; font-weight: 600; font-family: inherit; background: #fff; outline: none; cursor: pointer; }
+    .sm-mini-select:focus { border-color: var(--blue); }
+    .sm-filter-toggle { padding: 6px 12px; border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: 12px; font-weight: 700; font-family: inherit; background: #fff; color: var(--text); cursor: pointer; }
+    .sm-filter-toggle.on { border-color: var(--blue); color: var(--blue); background: #f0f6ff; }
 
-    .sm-bulk-bar {
-      display: none; align-items: center; gap: 8px;
-      padding: 8px 20px; background: #fff8e1; border-bottom: 1px solid #ffe082;
-      font-size: 13px; font-weight: 600; color: #e65100;
-    }
+    /* Advanced filters */
+    .sm-filters { display: none; padding: 10px 20px; border-bottom: 1px solid var(--border);
+      background: #fafafe; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .sm-filters.show { display: flex; }
+    .sm-field { display: flex; flex-direction: column; gap: 3px; }
+    .sm-field label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
+    .sm-field input, .sm-field select { padding: 6px 9px; border: 1.5px solid var(--border);
+      border-radius: 7px; font-size: 12px; font-family: inherit; background: #fff; outline: none; min-width: 130px; }
+    .sm-field input:focus, .sm-field select:focus { border-color: var(--blue); }
+    .sm-clear-filters { padding: 6px 11px; border: 1px solid var(--border); border-radius: 7px;
+      background: #fff; font-size: 12px; font-weight: 600; color: var(--red); cursor: pointer; font-family: inherit; }
+
+    /* Search bar */
+    .sm-search-wrap { padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--card); }
+    .sm-search-input { width: 100%; padding: 8px 12px 8px 34px; border: 1.5px solid var(--border);
+      border-radius: 8px; font-size: 13px; font-family: inherit; outline: none;
+      background: #f7f7fa url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 10px center;
+      transition: border-color 0.15s, background 0.15s; }
+    .sm-search-input:focus { border-color: var(--blue); background-color: #fff; }
+
+    /* Bulk bar */
+    .sm-bulk-bar { display: none; align-items: center; gap: 8px; padding: 8px 20px;
+      background: #eef4ff; border-bottom: 1px solid #cfe0ff; font-size: 13px; font-weight: 600; color: var(--blue); }
     .sm-bulk-bar.show { display: flex; }
-    .sm-bulk-btn {
-      padding: 5px 12px; border-radius: 7px; border: 1px solid #ffe082;
-      background: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
-      font-family: inherit; color: #e65100; transition: background 0.1s;
-    }
-    .sm-bulk-btn:hover { background: #fff3cd; }
+    .sm-bulk-btn { padding: 5px 12px; border-radius: 7px; border: 1px solid var(--border);
+      background: #fff; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; color: var(--text); }
+    .sm-bulk-btn:hover { background: #f2f2f7; }
     .sm-bulk-btn.danger { border-color: var(--red); color: var(--red); }
     .sm-bulk-btn.danger:hover { background: #fdecea; }
+    .sm-bulk-btn.green { border-color: #a5d6a7; color: #2e7d32; }
+    .sm-selall-banner { display: none; align-items: center; gap: 10px; padding: 7px 20px;
+      background: #fff8e1; border-bottom: 1px solid #ffe082; font-size: 12px; color: #e65100; }
+    .sm-selall-banner.show { display: flex; }
+    .sm-selall-banner a { color: var(--blue); font-weight: 700; cursor: pointer; text-decoration: underline; }
 
-    .sm-table-wrap { flex: 1; overflow-y: auto; }
+    /* Table */
+    .sm-table-wrap { flex: 1; overflow-y: auto; position: relative; }
     table { width: 100%; border-collapse: collapse; }
-    thead th {
-      position: sticky; top: 0; z-index: 2;
-      padding: 9px 12px; text-align: left; font-size: 11px; font-weight: 700;
-      text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted);
-      background: #f7f7fa; border-bottom: 1px solid var(--border); white-space: nowrap;
-    }
+    thead th { position: sticky; top: 0; z-index: 2; padding: 9px 12px; text-align: left;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+      color: var(--muted); background: #f7f7fa; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    th.sm-sortable { cursor: pointer; user-select: none; }
+    th.sm-sortable:hover { color: var(--blue); }
     tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
     tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover { background: #fafafa; }
+    tbody tr.sm-row { cursor: pointer; }
+    tbody tr.sm-row:hover { background: #fafafa; }
     td { padding: 10px 12px; vertical-align: middle; font-size: 13px; }
-
     .sm-slipno { font-weight: 700; color: var(--blue); font-size: 13px; }
+    .sm-group-hdr { background: #f2f2f7; cursor: pointer; }
+    .sm-group-hdr td { font-weight: 700; font-size: 12px; }
+    .sm-group-hdr .sm-grp-meta { font-weight: 600; color: var(--muted); margin-left: 8px; }
+    .sm-group-hdr.collapsed .sm-grp-caret { display: inline-block; transform: rotate(-90deg); }
 
-    .sm-badge {
-      display: inline-flex; align-items: center; padding: 3px 8px;
-      border-radius: 20px; font-size: 11px; font-weight: 700; white-space: nowrap;
-    }
+    .sm-badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 20px;
+      font-size: 11px; font-weight: 700; white-space: nowrap; }
     .smb-generated { background: #f2f2f7; color: var(--muted); }
-    .smb-submitted  { background: #fff8e1; color: #e65100; }
-    .smb-paid       { background: #e8f5e9; color: #2e7d32; }
-    .smb-signed     { background: #e8f5e9; color: #2e7d32; }
-    .smb-sigpend    { background: #fff8e1; color: #e65100; }
+    .smb-submitted { background: #fff8e1; color: #e65100; }
+    .smb-paid, .smb-signed { background: #e8f5e9; color: #2e7d32; }
+    .smb-sigpend { background: #fff8e1; color: #e65100; }
 
-    .sm-action-btn {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 28px; height: 28px; border-radius: 7px;
-      border: 1px solid var(--border); background: var(--card);
-      color: var(--muted); cursor: pointer; text-decoration: none;
-      transition: all 0.1s;
-    }
+    .sm-action-btn { display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; border-radius: 7px; border: 1px solid var(--border);
+      background: var(--card); color: var(--muted); cursor: pointer; text-decoration: none; transition: all 0.1s; }
     .sm-action-btn:hover { background: #f0f6ff; border-color: var(--blue); color: var(--blue); }
     .sm-action-btn.sm-danger:hover { background: #fdecea; border-color: var(--red); color: var(--red); }
 
-    .sm-spinner {
-      display: none; align-items: center; justify-content: center;
-      padding: 48px; color: var(--muted); font-size: 13px; gap: 10px;
-    }
-    .sm-spinner.show { display: flex; }
-
-    /* Search bar */
-    .sm-search-wrap {
-      padding: 10px 20px; border-bottom: 1px solid var(--border);
-      background: var(--card);
-    }
-    .sm-search-input {
-      width: 100%; padding: 8px 12px 8px 34px; border: 1.5px solid var(--border);
-      border-radius: 8px; font-size: 13px; font-family: inherit; outline: none;
-      background: #f7f7fa url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 10px center;
-      transition: border-color 0.15s, background 0.15s;
-    }
-    .sm-search-input:focus { border-color: var(--blue); background-color: #fff; }
-    .sm-search-input::placeholder { color: var(--muted); }
-
-    /* Inline status select */
-    .sm-status-sel {
-      padding: 3px 6px; border: 1px solid var(--border); border-radius: 6px;
-      font-size: 11px; font-weight: 700; font-family: inherit;
-      background: #f7f7fa; color: var(--text); cursor: pointer; outline: none;
-      transition: border-color 0.1s;
-    }
+    .sm-status-sel { padding: 3px 6px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 11px; font-weight: 700; font-family: inherit; background: #f7f7fa; color: var(--text);
+      cursor: pointer; outline: none; }
     .sm-status-sel:focus { border-color: var(--blue); }
     .sm-status-sel.saving { opacity: 0.5; pointer-events: none; }
 
-    @media (max-width: 768px) {
-      .sm-sidebar { width: 160px; }
-    }
+    .sm-totals { padding: 9px 20px; font-size: 12px; color: var(--muted);
+      background: #fbfbfd; border-bottom: 1px solid var(--border); }
+    .sm-totals strong { color: var(--text); }
+    .sm-pager { display: flex; align-items: center; gap: 12px; padding: 12px 20px; justify-content: center; }
+    .sm-page-btn { padding: 6px 14px; border: 1px solid var(--border); border-radius: 8px; background: #fff;
+      font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .sm-page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .sm-page-info { font-size: 12px; color: var(--muted); }
+    .sm-page-size { padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px; font-size: 12px; font-family: inherit; }
+
+    .sm-spinner { display: none; align-items: center; justify-content: center; padding: 48px; color: var(--muted); font-size: 13px; }
+    .sm-spinner.show { display: flex; }
+
+    /* Preview panel */
+    .sm-preview-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.28); z-index: 3000; display: none; }
+    .sm-preview-backdrop.open { display: block; }
+    .sm-preview { position: fixed; top: 0; right: 0; height: 100vh; width: 420px; max-width: 92vw;
+      background: #fff; z-index: 3001; box-shadow: -8px 0 30px rgba(0,0,0,.18);
+      transform: translateX(100%); transition: transform .22s cubic-bezier(.2,.8,.3,1); display: flex; flex-direction: column; }
+    .sm-preview.open { transform: none; }
+    .sm-pv-head { padding: 18px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; justify-content: space-between; }
+    .sm-pv-title { font-size: 17px; font-weight: 700; }
+    .sm-pv-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+    .sm-pv-close { width: 30px; height: 30px; border: none; background: #f2f2f7; border-radius: 8px;
+      font-size: 17px; color: var(--muted); cursor: pointer; flex-shrink: 0; }
+    .sm-pv-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+    .sm-pv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+    .sm-pv-item { display: flex; flex-direction: column; gap: 2px; }
+    .sm-pv-item.full { grid-column: 1 / -1; }
+    .sm-pv-item .k { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
+    .sm-pv-item .v { font-size: 13px; color: var(--text); font-weight: 500; word-break: break-word; }
+    .sm-pv-sig { margin-top: 16px; }
+    .sm-pv-sig img { max-width: 100%; max-height: 90px; border: 1px solid var(--border); border-radius: 8px; padding: 6px; background: #fff; }
+    .sm-pv-actions { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-wrap: wrap; }
+    .sm-pv-btn { flex: 1; min-width: 120px; padding: 9px; border-radius: 9px; border: 1px solid var(--border);
+      background: #fff; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; text-align: center; text-decoration: none; color: var(--text); }
+    .sm-pv-btn.blue { background: var(--blue); color: #fff; border: none; }
+    .sm-pv-btn.danger { color: var(--red); border-color: #ffd0cd; }
+
+    /* Modals */
+    .sm-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 4000;
+      align-items: center; justify-content: center; }
+    .sm-modal.open { display: flex; }
+    .sm-modal-box { background: #fff; border-radius: 14px; padding: 22px; width: 340px; max-width: 92vw; box-shadow: 0 18px 50px rgba(0,0,0,.2); }
+    .sm-modal-box h3 { margin: 0 0 14px; font-size: 16px; }
+    .sm-modal-box select { width: 100%; padding: 9px 10px; border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: 14px; font-family: inherit; margin-bottom: 12px; }
+    .sm-modal-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+    .sm-modal-row button { padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; border: 1px solid var(--border); background: #fff; }
+    .sm-modal-row button.primary { background: var(--blue); color: #fff; border: none; }
+
+    @media (max-width: 768px) { .sm-sidebar { width: 160px; } .sm-preview { width: 100vw; } }
   </style>
 </head>
 <body>
@@ -179,69 +215,141 @@
     </div>
 
     <div class="sm-month-list" id="monthList">
-      <button class="sm-month-btn {% if month == 0 %}active{% endif %}"
-              data-month="" onclick="selectMonth('')">
-        All Months
-        <span class="sm-month-count">{{ month_counts.values()|sum }}</span>
+      <button class="sm-month-btn {% if month == 0 %}active{% endif %}" data-month="" onclick="selectMonth('')">
+        All Months <span class="sm-month-count">{{ month_counts.values()|sum }}</span>
       </button>
       {% set MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
       {% for i in range(1, 13) %}
-      <button class="sm-month-btn {% if month == i %}active{% endif %}"
-              data-month="{{ i }}" onclick="selectMonth('{{ i }}')">
-        {{ MONTH_NAMES[i-1] }}
-        <span class="sm-month-count">{{ month_counts.get(i, 0) }}</span>
+      <button class="sm-month-btn {% if month == i %}active{% endif %}" data-month="{{ i }}" onclick="selectMonth('{{ i }}')">
+        {{ MONTH_NAMES[i-1] }} <span class="sm-month-count">{{ month_counts.get(i, 0) }}</span>
       </button>
       {% endfor %}
     </div>
+
+    <div class="sm-trash-link">
+      <button class="sm-trash-btn" id="trashBtn" onclick="selectTrash()">
+        🗑 Trash <span class="sm-month-count" id="trashCount">{{ status_counts.get('trash', 0) }}</span>
+      </button>
+    </div>
   </aside>
 
-  <!-- MAIN CONTENT -->
+  <!-- MAIN -->
   <main class="sm-main">
     <div class="sm-toolbar">
       <div class="sm-tabs" id="statusTabs">
         {% for tab_key, tab_label in [('all','All'),('generated','Generated'),('signed','Signed'),('submitted','Submitted'),('paid','Paid')] %}
-        <button class="sm-tab {% if status == tab_key %}active{% endif %}"
-                data-status="{{ tab_key }}" onclick="selectStatus('{{ tab_key }}')">
+        <button class="sm-tab {% if status == tab_key %}active{% endif %}" data-status="{{ tab_key }}" onclick="selectStatus('{{ tab_key }}')">
           {{ tab_label }}<span class="sm-cnt">{{ status_counts.get(tab_key, 0) }}</span>
         </button>
         {% endfor %}
       </div>
+      <div class="sm-tool-spacer"></div>
+      <label style="font-size:12px;color:var(--muted);font-weight:600;">Group
+        <select class="sm-mini-select" id="groupSelect" onchange="setGroup(this.value)">
+          <option value="none">None</option>
+          <option value="month">Month</option>
+          <option value="customer">Customer</option>
+          <option value="driver">Driver</option>
+        </select>
+      </label>
+      <button class="sm-filter-toggle" id="filterToggle" onclick="toggleFilters()">Filters</button>
+    </div>
+
+    <div class="sm-filters" id="advFilters">
+      <div class="sm-field"><label>Date from</label><input type="date" id="fDateFrom" onchange="onFilterChange()"></div>
+      <div class="sm-field"><label>Date to</label><input type="date" id="fDateTo" onchange="onFilterChange()"></div>
+      <div class="sm-field"><label>Driver</label>
+        <select id="fDriver" onchange="onFilterChange()"><option value="">All drivers</option>
+          {% for d in driver_names %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+        </select></div>
+      <div class="sm-field"><label>Vehicle</label>
+        <select id="fVehicle" onchange="onFilterChange()"><option value="">All vehicles</option>
+          {% for v in vehicle_names %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+        </select></div>
+      <div class="sm-field"><label>Customer</label><input type="text" id="fCustomer" placeholder="Customer…" oninput="onFilterChangeDebounced()"></div>
+      <button class="sm-clear-filters" onclick="clearAdvFilters()">Clear</button>
     </div>
 
     <div class="sm-search-wrap">
-      <input type="text" class="sm-search-input" id="smSearch"
-             placeholder="Search by customer, slip #, driver, route…"
-             oninput="onSearchInput(this.value)">
+      <input type="text" class="sm-search-input" id="smSearch" placeholder="Search by customer, slip #, driver, route…" oninput="onSearchInput(this.value)">
     </div>
 
+    <div class="sm-selall-banner" id="selAllBanner">
+      <span id="selAllText"></span>
+      <a id="selAllLink" onclick="selectAllMatching()"></a>
+      <a id="selAllClear" onclick="clearSelectAllAcross()" style="color:var(--muted)">Clear</a>
+    </div>
+
+    <!-- Normal bulk bar -->
     <div class="sm-bulk-bar" id="bulkBar">
       <span id="bulkCount">0 selected</span>
-      <button class="sm-bulk-btn" onclick="bulkDownload()">Download ZIPs</button>
-      <button class="sm-bulk-btn danger" onclick="bulkDelete()">Delete</button>
+      <button class="sm-bulk-btn" onclick="submitBulk('print')">Print</button>
+      <button class="sm-bulk-btn" onclick="submitBulk('download')">Download ZIP</button>
+      <button class="sm-bulk-btn" onclick="submitBulk('excel')">Excel</button>
+      <button class="sm-bulk-btn" onclick="openBulkStatusModal()">Change Status</button>
+      <button class="sm-bulk-btn green" onclick="openSignModal()">Request Signature</button>
+      <button class="sm-bulk-btn danger" onclick="submitBulk('delete')">Delete</button>
+      <button class="sm-bulk-btn" onclick="clearSelection()" style="margin-left:auto;">Clear</button>
+    </div>
+    <!-- Trash bulk bar -->
+    <div class="sm-bulk-bar" id="bulkBarTrash">
+      <span id="bulkCountTrash">0 selected</span>
+      <button class="sm-bulk-btn green" onclick="bulkTrashAction('restore')">Restore</button>
+      <button class="sm-bulk-btn danger" onclick="bulkTrashAction('purge')">Delete permanently</button>
       <button class="sm-bulk-btn" onclick="clearSelection()" style="margin-left:auto;">Clear</button>
     </div>
 
     <div class="sm-table-wrap">
       <div class="sm-spinner" id="smSpinner">Loading…</div>
-      <table id="smTable">
-        <thead>
-          <tr>
-            <th><input type="checkbox" id="smSelectAll"></th>
-            <th>Slip #</th>
-            <th>Date</th>
-            <th>Customer</th>
-            <th>Route</th>
-            <th>Driver</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="smTbody">
-          {% include '_slip_management_rows.html' %}
-        </tbody>
-      </table>
+      <div id="smContent">
+        {% include '_slip_management_rows.html' %}
+      </div>
     </div>
   </main>
+</div>
+
+<!-- Preview panel -->
+<div class="sm-preview-backdrop" id="pvBackdrop" onclick="closePreview()"></div>
+<aside class="sm-preview" id="smPreview">
+  <div class="sm-pv-head">
+    <div><div class="sm-pv-title" id="pvTitle">—</div><div class="sm-pv-sub" id="pvSub"></div></div>
+    <button class="sm-pv-close" onclick="closePreview()">✕</button>
+  </div>
+  <div class="sm-pv-body" id="pvBody"></div>
+  <div class="sm-pv-actions" id="pvActions"></div>
+</aside>
+
+<!-- Bulk status modal -->
+<div class="sm-modal" id="bulkStatusModal">
+  <div class="sm-modal-box">
+    <h3>Change status — <span id="bsCount">0</span> slip(s)</h3>
+    <select id="bsStatus" onchange="toggleBsPayDate()">
+      <option value="Bill Generated">Bill Generated</option>
+      <option value="Bill Submitted">Bill Submitted</option>
+      <option value="Payment Received">Payment Received</option>
+    </select>
+    <div id="bsPayRow" style="display:none;">
+      <label style="font-size:12px;color:var(--muted);">Payment date</label>
+      <input type="date" id="bsPayDate" style="width:100%;padding:9px;border:1.5px solid var(--border);border-radius:8px;font-family:inherit;margin-bottom:8px;">
+    </div>
+    <div class="sm-modal-row">
+      <button onclick="closeModal('bulkStatusModal')">Cancel</button>
+      <button class="primary" onclick="saveBulkStatus()">Update all</button>
+    </div>
+  </div>
+</div>
+
+<!-- Request signature modal -->
+<div class="sm-modal" id="signModal">
+  <div class="sm-modal-box">
+    <h3>Request signature — <span id="sgCount">0</span> slip(s)</h3>
+    <label style="font-size:12px;color:var(--muted);">Link valid for</label>
+    <select id="sgDays"><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option></select>
+    <div class="sm-modal-row">
+      <button onclick="closeModal('signModal')">Cancel</button>
+      <button class="primary" onclick="confirmSign()">Create link</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -249,8 +357,12 @@
   let _smMonth  = '{{ month if month else "" }}';
   let _smStatus = '{{ status }}';
   let _smDType  = '{{ date_type }}';
-  let _smQ      = '';
-  let _smSearchTimer = null;
+  let _smQ = '', _smDateFrom = '', _smDateTo = '', _smDriver = '', _smVehicle = '', _smCustomer = '';
+  let _smSort = '{{ sort }}', _smDir = '{{ dir }}', _smGroup = '{{ group }}';
+  let _smTrashed = {{ 1 if trashed else 0 }};
+  let _smPage = {{ page }}, _smPageSize = {{ page_size }};
+  let _smSelectedAcross = null;       // array of ids when "select all matching" is active
+  let _smSearchTimer = null, _smFilterTimer = null;
 
   function _buildParams() {
     const p = new URLSearchParams();
@@ -259,179 +371,264 @@
     p.set('status', _smStatus);
     p.set('date_type', _smDType);
     if (_smQ) p.set('q', _smQ);
+    if (_smDateFrom) p.set('date_from', _smDateFrom);
+    if (_smDateTo) p.set('date_to', _smDateTo);
+    if (_smDriver) p.set('driver', _smDriver);
+    if (_smVehicle) p.set('vehicle', _smVehicle);
+    if (_smCustomer) p.set('customer', _smCustomer);
+    p.set('sort', _smSort); p.set('dir', _smDir); p.set('group', _smGroup);
+    if (_smTrashed) p.set('trashed', '1');
+    p.set('page', _smPage); p.set('page_size', _smPageSize);
     return p;
   }
 
   function loadRows(pushState) {
     const params = _buildParams();
+    clearSelectAllAcross();
     document.getElementById('smSpinner').classList.add('show');
-    document.getElementById('smTbody').style.opacity = '0.4';
-
+    document.getElementById('smContent').style.opacity = '0.4';
     fetch('/admin/slips/rows?' + params)
       .then(r => r.text())
       .then(html => {
-        document.getElementById('smTbody').innerHTML = html;
-        document.getElementById('smTbody').style.opacity = '1';
+        document.getElementById('smContent').innerHTML = html;
+        document.getElementById('smContent').style.opacity = '1';
         document.getElementById('smSpinner').classList.remove('show');
-        rebindChecks();
+        rebindAfterLoad();
         if (pushState) history.pushState({}, '', '/admin/slips?' + params);
       })
-      .catch(() => {
-        document.getElementById('smSpinner').classList.remove('show');
-        document.getElementById('smTbody').style.opacity = '1';
-      });
+      .catch(() => { document.getElementById('smSpinner').classList.remove('show'); document.getElementById('smContent').style.opacity = '1'; });
 
-    // Update month counts (skip when searching — counts would reflect query, not full month)
-    if (!_smQ) {
+    if (!_smQ && !_smTrashed) {
       fetch('/admin/slips/month_counts?' + params)
-        .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(r => r.ok ? r.json() : {})
         .then(counts => {
           document.querySelectorAll('.sm-month-btn').forEach(btn => {
             const m = btn.dataset.month ? parseInt(btn.dataset.month) : null;
             const cnt = m ? (counts[m] || 0) : Object.values(counts).reduce((a,b)=>a+b,0);
-            btn.querySelector('.sm-month-count').textContent = cnt;
+            const el = btn.querySelector('.sm-month-count'); if (el) el.textContent = cnt;
           });
-        })
-        .catch(() => {}); // non-critical, counts just won't update
+        }).catch(() => {});
     }
   }
 
-  function onSearchInput(val) {
-    clearTimeout(_smSearchTimer);
-    _smSearchTimer = setTimeout(() => {
-      _smQ = val.trim();
-      loadRows(false);
-    }, 280);
+  function onSearchInput(val) { clearTimeout(_smSearchTimer); _smSearchTimer = setTimeout(() => { _smQ = val.trim(); _smPage = 1; loadRows(false); }, 280); }
+  function onFilterChange() {
+    _smDateFrom = document.getElementById('fDateFrom').value;
+    _smDateTo   = document.getElementById('fDateTo').value;
+    _smDriver   = document.getElementById('fDriver').value;
+    _smVehicle  = document.getElementById('fVehicle').value;
+    _smCustomer = document.getElementById('fCustomer').value.trim();
+    _smPage = 1; loadRows(true);
+  }
+  function onFilterChangeDebounced() { clearTimeout(_smFilterTimer); _smFilterTimer = setTimeout(onFilterChange, 320); }
+  function clearAdvFilters() {
+    ['fDateFrom','fDateTo','fCustomer'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('fDriver').value = ''; document.getElementById('fVehicle').value = '';
+    onFilterChange();
+  }
+  function toggleFilters() {
+    const f = document.getElementById('advFilters'); const on = f.classList.toggle('show');
+    document.getElementById('filterToggle').classList.toggle('on', on);
   }
 
-  function selectMonth(m) {
-    _smMonth = m;
-    document.querySelectorAll('.sm-month-btn').forEach(b => {
-      b.classList.toggle('active', b.dataset.month === m);
-    });
+  function selectMonth(m) { _smMonth = m; _smPage = 1;
+    document.querySelectorAll('.sm-month-btn').forEach(b => b.classList.toggle('active', b.dataset.month === m));
     loadRows(true);
   }
-
-  function selectStatus(s) {
-    _smStatus = s;
-    document.querySelectorAll('.sm-tab').forEach(b => {
-      b.classList.toggle('active', b.dataset.status === s);
-    });
-    loadRows(true);
+  function selectStatus(s) { _smStatus = s; _smTrashed = 0; _smPage = 1;
+    document.getElementById('trashBtn').classList.remove('active');
+    document.querySelectorAll('.sm-tab').forEach(b => b.classList.toggle('active', b.dataset.status === s));
+    loadRows(true); updateBulkBars();
   }
+  function selectTrash() { _smTrashed = 1; _smStatus = 'all'; _smGroup = 'none'; _smPage = 1;
+    document.getElementById('trashBtn').classList.add('active');
+    document.querySelectorAll('.sm-tab').forEach(b => b.classList.remove('active'));
+    document.getElementById('groupSelect').value = 'none';
+    loadRows(true); updateBulkBars();
+  }
+  function setSort(col) {
+    if (_smSort === col) { _smDir = (_smDir === 'asc') ? 'desc' : 'asc'; }
+    else { _smSort = col; _smDir = 'desc'; }
+    _smPage = 1; loadRows(true);
+  }
+  function setGroup(v) { _smGroup = v; _smPage = 1; loadRows(true); }
+  function gotoPage(p) { if (p < 1) return; _smPage = p; loadRows(true); window.scrollTo(0,0); }
+  function setPageSize(ps) { _smPageSize = parseInt(ps); _smPage = 1; loadRows(true); }
 
-  document.getElementById('yearSelect').addEventListener('change', function() {
-    _smYear = this.value;
-    loadRows(true);
-  });
+  document.getElementById('yearSelect').addEventListener('change', function() { _smYear = this.value; _smPage = 1; loadRows(true); });
+  document.querySelectorAll('input[name=date_type]').forEach(r => r.addEventListener('change', function() { _smDType = this.value; _smPage = 1; loadRows(true); }));
 
-  document.querySelectorAll('input[name=date_type]').forEach(r => {
-    r.addEventListener('change', function() {
-      _smDType = this.value;
-      loadRows(true);
-    });
-  });
+  // Group collapse
+  function toggleGroup(hdr) {
+    hdr.classList.toggle('collapsed');
+    const collapsed = hdr.classList.contains('collapsed');
+    let row = hdr.nextElementSibling;
+    while (row && !row.classList.contains('sm-group-hdr')) {
+      row.style.display = collapsed ? 'none' : '';
+      row = row.nextElementSibling;
+    }
+  }
 
   // Inline status change
   function bindStatusSelects() {
     document.querySelectorAll('.sm-status-sel').forEach(sel => {
-      sel.dataset.prev = sel.value; // snapshot current value for revert on error
+      sel.dataset.prev = sel.value;
       sel.addEventListener('change', function() {
-        const id = this.dataset.id;
-        const newStatus = this.value;
-        this.classList.add('saving');
-        const fd = new FormData();
-        fd.append('status', newStatus);
+        const id = this.dataset.id; this.classList.add('saving');
+        const fd = new FormData(); fd.append('status', this.value);
         fetch('/update_status/' + id, { method: 'POST', body: fd })
-          .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-          .then(data => {
-            this.classList.remove('saving');
-            if (data.ok && window._showToast) window._showToast('Status updated');
-            else if (!data.ok) { this.value = this.dataset.prev || this.value; }
-          })
-          .catch(() => {
-            this.classList.remove('saving');
-            if (window._showToast) window._showToast('Failed to update status', true);
-          });
+          .then(r => r.ok ? r.json() : Promise.reject())
+          .then(d => { this.classList.remove('saving'); if (d.ok && window._showToast) window._showToast('Status updated'); })
+          .catch(() => { this.classList.remove('saving'); this.value = this.dataset.prev; if (window._showToast) window._showToast('Update failed', true); });
       });
     });
   }
 
-  // Bulk selection
-  // Wire select-all once (not inside rebindChecks which runs on every AJAX refresh)
-  const _selectAllEl = document.getElementById('smSelectAll');
-  if (_selectAllEl) {
-    _selectAllEl.addEventListener('change', function() {
-      document.querySelectorAll('.sm-check').forEach(c => c.checked = this.checked);
-      updateBulkBar();
-    });
+  // ---- Selection / bulk ----
+  function selectedIds() {
+    if (_smSelectedAcross) return _smSelectedAcross.slice();
+    return [...document.querySelectorAll('.sm-check:checked')].map(c => c.value);
   }
-
-  function rebindChecks() {
-    const selectAll = document.getElementById('smSelectAll');
-    if (selectAll) selectAll.checked = false;
-    document.querySelectorAll('.sm-check').forEach(c => {
-      c.addEventListener('change', updateBulkBar);
-    });
-    bindStatusSelects();
+  function toggleSelectAll(box) { document.querySelectorAll('.sm-check').forEach(c => c.checked = box.checked); onCheck(); }
+  function onCheck() {
+    const checkedOnPage = document.querySelectorAll('.sm-check:checked').length;
+    const n = _smSelectedAcross ? _smSelectedAcross.length : checkedOnPage;
+    document.getElementById('bulkCount').textContent = n + ' selected';
+    document.getElementById('bulkCountTrash').textContent = n + ' selected';
+    updateBulkBars(n > 0);
+    // select-all-across banner
+    const totalsEl = document.querySelector('.sm-totals');
+    const total = totalsEl ? parseInt(totalsEl.dataset.total || '0') : 0;
+    const grouped = totalsEl && totalsEl.dataset.group === '1';
+    const banner = document.getElementById('selAllBanner');
+    if (!_smSelectedAcross && !grouped && checkedOnPage > 0 && total > checkedOnPage) {
+      document.getElementById('selAllText').textContent = checkedOnPage + ' on this page selected.';
+      document.getElementById('selAllLink').textContent = 'Select all ' + total + ' matching';
+      document.getElementById('selAllClear').style.display = 'none';
+      banner.classList.add('show');
+    } else if (_smSelectedAcross) {
+      document.getElementById('selAllText').textContent = 'All ' + _smSelectedAcross.length + ' matching slips selected.';
+      document.getElementById('selAllLink').textContent = '';
+      document.getElementById('selAllClear').style.display = '';
+      banner.classList.add('show');
+    } else { banner.classList.remove('show'); }
   }
-
-  function updateBulkBar() {
-    const checked = document.querySelectorAll('.sm-check:checked');
-    const bar = document.getElementById('bulkBar');
-    if (checked.length > 0) {
-      bar.classList.add('show');
-      document.getElementById('bulkCount').textContent = checked.length + ' selected';
-    } else {
-      bar.classList.remove('show');
-    }
+  function updateBulkBars(show) {
+    if (show === undefined) show = (_smSelectedAcross ? true : document.querySelectorAll('.sm-check:checked').length > 0);
+    document.getElementById('bulkBar').classList.toggle('show', show && !_smTrashed);
+    document.getElementById('bulkBarTrash').classList.toggle('show', show && !!_smTrashed);
   }
-
   function clearSelection() {
     document.querySelectorAll('.sm-check').forEach(c => c.checked = false);
-    const sa = document.getElementById('smSelectAll');
-    if (sa) sa.checked = false;
-    updateBulkBar();
+    const sa = document.getElementById('smSelectAll'); if (sa) sa.checked = false;
+    clearSelectAllAcross(); onCheck();
+  }
+  function clearSelectAllAcross() { _smSelectedAcross = null; const b = document.getElementById('selAllBanner'); if (b) b.classList.remove('show'); }
+  function selectAllMatching() {
+    fetch('/admin/slips/ids?' + _buildParams())
+      .then(r => r.json())
+      .then(d => { _smSelectedAcross = d.ids || []; onCheck(); })
+      .catch(() => {});
   }
 
-  function bulkDownload() {
-    const ids = [...document.querySelectorAll('.sm-check:checked')].map(c => c.value);
-    if (!ids.length) return;
-    ids.forEach(id => {
-      const a = document.createElement('a');
-      a.href = '/invoice/' + id + '/download';
-      a.download = '';
-      a.click();
-    });
+  function _postForm(action, ids, extra) {
+    const form = document.createElement('form');
+    form.method = 'POST'; form.action = action; if (extra && extra._target) form.target = '_blank';
+    ids.forEach(id => { const i = document.createElement('input'); i.type='hidden'; i.name='selected_invoices'; i.value=id; form.appendChild(i); });
+    if (extra) Object.keys(extra).forEach(k => { if (k[0] !== '_') { const i=document.createElement('input'); i.type='hidden'; i.name=k; i.value=extra[k]; form.appendChild(i); } });
+    document.body.appendChild(form); form.submit();
   }
 
-  function bulkDelete() {
-    const ids = [...document.querySelectorAll('.sm-check:checked')].map(c => c.value);
-    if (!ids.length) return;
-    if (!confirm('Delete ' + ids.length + ' slip(s) permanently?')) return;
-    Promise.all(ids.map(id =>
-      fetch('/delete_invoice/' + id, { method: 'POST' }).then(r => r.ok)
-    )).then(results => {
-      const deleted = results.filter(Boolean).length;
-      clearSelection();
-      loadRows(false);
-      if (window._showToast) window._showToast(deleted + ' slip(s) deleted');
-    }).catch(() => {
-      loadRows(false);
-      if (window._showToast) window._showToast('Some deletions failed', true);
-    });
+  function submitBulk(action) {
+    const ids = selectedIds(); if (!ids.length) return;
+    if (action === 'delete' && !confirm('Move ' + ids.length + ' slip(s) to Trash?')) return;
+    _postForm('/bulk_action', ids, { action: action, _target: action === 'print' });
+  }
+
+  function bulkTrashAction(kind) {
+    const ids = selectedIds(); if (!ids.length) return;
+    if (kind === 'purge' && !confirm('Permanently delete ' + ids.length + ' slip(s)? This cannot be undone.')) return;
+    _postForm(kind === 'restore' ? '/admin/slips/restore' : '/admin/slips/purge', ids, {});
+  }
+
+  // Bulk status modal
+  function openBulkStatusModal() { if (!selectedIds().length) return; document.getElementById('bsCount').textContent = selectedIds().length; document.getElementById('bulkStatusModal').classList.add('open'); }
+  function toggleBsPayDate() { document.getElementById('bsPayRow').style.display = document.getElementById('bsStatus').value === 'Payment Received' ? '' : 'none'; }
+  function saveBulkStatus() {
+    const ids = selectedIds(); if (!ids.length) return;
+    _postForm('/bulk_update_status', ids, { status: document.getElementById('bsStatus').value, payment_date: document.getElementById('bsPayDate').value || '' });
+  }
+  // Request signature modal
+  let _signIds = null;
+  function openSignModal(ids) { _signIds = ids || selectedIds(); if (!_signIds.length) return; document.getElementById('sgCount').textContent = _signIds.length; document.getElementById('signModal').classList.add('open'); }
+  function confirmSign() { _postForm('/request_signature', _signIds, { expiry_days: document.getElementById('sgDays').value }); }
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  // ---- Preview panel ----
+  function rowClick(e, id) { if (e.target.closest('input,select,a,button,form')) return; openPreview(id); }
+  function cloneSlip(e, id, signed) {
+    if (signed && !confirm('This slip is signed — the clone will be unsigned. Continue?')) { e.preventDefault(); return false; }
+    return true;
+  }
+  function _kv(k, v) { return v ? '<div class="sm-pv-item"><span class="k">'+k+'</span><span class="v">'+String(v).replace(/</g,'&lt;')+'</span></div>' : ''; }
+  function openPreview(id) {
+    fetch('/admin/slips/' + id + '/detail').then(r => r.json()).then(d => {
+      if (!d || !d.id) return;
+      document.getElementById('pvTitle').textContent = d.customer_name || '—';
+      document.getElementById('pvSub').textContent = (d.duty_slip_no ? 'Slip #' + d.duty_slip_no + ' · ' : '') + (d.date || '');
+      let h = '<div class="sm-pv-grid">';
+      h += _kv('Company', d.company_name) + _kv('Driver', d.driver_name);
+      h += _kv('Vehicle', d.vehicle_type) + _kv('Vehicle No', d.vehicle_no);
+      h += _kv('Start KM', d.starting_km) + _kv('Close KM', d.closing_km);
+      h += _kv('Total KM', d.total_km) + _kv('Total Time', d.total_time);
+      h += _kv('Start Time', d.starting_time) + _kv('Close Time', d.closing_time);
+      h += _kv('Project Code', d.project_code) + _kv('Mail Approval', d.mail_approval_date);
+      h += _kv('Bill Status', d.bill_status) + _kv('Signature', d.signature_status || 'Not requested');
+      h += '</div>';
+      if (d.route_covered) h += '<div class="sm-pv-grid" style="margin-top:12px"><div class="sm-pv-item full"><span class="k">Route</span><span class="v">'+String(d.route_covered).replace(/</g,'&lt;')+'</span></div></div>';
+      if (d.signature_data) h += '<div class="sm-pv-sig"><div class="k" style="font-size:10px;font-weight:700;text-transform:uppercase;color:#8e8e93;margin-bottom:6px;">Signature</div><img src="'+d.signature_data+'"></div>';
+      document.getElementById('pvBody').innerHTML = h;
+      // actions
+      let a = '<a class="sm-pv-btn blue" href="/invoice/'+d.id+'/download">Download</a>';
+      if (d.deleted_at) {
+        a += '<button class="sm-pv-btn" onclick="previewTrashAction(\'restore\','+d.id+')">Restore</button>';
+        a += '<button class="sm-pv-btn danger" onclick="previewTrashAction(\'purge\','+d.id+')">Delete permanently</button>';
+      } else {
+        a += '<a class="sm-pv-btn" href="/clone/'+d.id+'" onclick="return cloneSlip(event,'+d.id+','+(d.signature_status==='signed'?1:0)+')">Clone</a>';
+        if (d.signature_status !== 'signed') a += '<button class="sm-pv-btn" onclick="openSignModal([\''+d.id+'\'])">Request signature</button>';
+        a += '<button class="sm-pv-btn danger" onclick="previewTrash('+d.id+')">Move to Trash</button>';
+      }
+      document.getElementById('pvActions').innerHTML = a;
+      document.getElementById('pvBackdrop').classList.add('open');
+      document.getElementById('smPreview').classList.add('open');
+    }).catch(() => {});
+  }
+  function closePreview() { document.getElementById('pvBackdrop').classList.remove('open'); document.getElementById('smPreview').classList.remove('open'); }
+  function previewTrash(id) { if (!confirm('Move this slip to Trash?')) return; fetch('/delete_invoice/' + id, { method: 'POST' }).then(() => { closePreview(); loadRows(false); refreshTrashCount(); }); }
+  function previewTrashAction(kind, id) {
+    if (kind === 'purge' && !confirm('Permanently delete this slip?')) return;
+    _postForm(kind === 'restore' ? '/admin/slips/restore' : '/admin/slips/purge', [id], {});
+  }
+  function refreshTrashCount() {
+    const p = _buildParams(); p.set('trashed','1'); p.set('status','all');
+    fetch('/admin/slips/ids?' + p).then(r => r.json()).then(d => { const el = document.getElementById('trashCount'); if (el) el.textContent = d.count; }).catch(()=>{});
+  }
+
+  function rebindAfterLoad() {
+    bindStatusSelects();
+    document.querySelectorAll('.sm-check').forEach(c => c.addEventListener('change', onCheck));
+    onCheck();
   }
 
   window.addEventListener('popstate', () => {
     const p = new URLSearchParams(location.search);
-    _smYear   = p.get('year')      || _smYear;
-    _smMonth  = p.get('month')     || '';
-    _smStatus = p.get('status')    || 'all';
-    _smDType  = p.get('date_type') || 'duty';
+    _smYear = p.get('year') || _smYear; _smMonth = p.get('month') || '';
+    _smStatus = p.get('status') || 'all'; _smDType = p.get('date_type') || 'duty';
+    _smTrashed = p.get('trashed') === '1' ? 1 : 0; _smPage = parseInt(p.get('page')||'1');
     loadRows(false);
   });
 
-  rebindChecks();
+  rebindAfterLoad();
 </script>
 </body>
 </html>
