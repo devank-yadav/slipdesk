@@ -2938,6 +2938,7 @@ def _slip_args():
         'dir':       request.args.get('dir', 'desc'),
         'group':     request.args.get('group', 'none'),
         'trashed':   request.args.get('trashed', '0') == '1',
+        'view':      'grid' if request.args.get('view') == 'grid' else 'list',
         'page':      max(1, int(request.args.get('page', 1) or 1)),
         'page_size': min(200, max(10, int(request.args.get('page_size', 50) or 50))),
     }
@@ -2967,7 +2968,7 @@ def _slip_rows_context(conn, a):
     }
 
     ctx = {'status': a['status'], 'sort': a['sort'], 'dir': a['dir'],
-           'group': a['group'], 'trashed': a['trashed'], 'totals': totals,
+           'group': a['group'], 'trashed': a['trashed'], 'view': a['view'], 'totals': totals,
            'page': a['page'], 'page_size': a['page_size'], 'total_results': total_results,
            'groups': None, 'slips': [], 'group_capped': False}
 

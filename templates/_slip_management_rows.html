@@ -1,30 +1,31 @@
-{# Full content fragment for All Files: totals bar + table (sortable) + pagination/groups. #}
+{# Content fragment for All Files: totals bar + (list table OR grid of cards) + pagination. #}
 {% macro caret(col) %}{% if sort == col %}{% if dir == 'asc' %} ▲{% else %} ▼{% endif %}{% endif %}{% endmacro %}
 
+{% macro badge_class(bill_st) %}{% if bill_st == 'Bill Generated' %}smb-generated{% elif bill_st == 'Bill Submitted' %}smb-submitted{% else %}smb-paid{% endif %}{% endmacro %}
+
+{# ---------- LIST ROW ---------- #}
 {% macro slip_row(s) %}
   {% set bill_st = s[10] %}{% set sig_st = s[11] %}
-  {% if bill_st == 'Bill Generated' %}{% set badge_cls = 'smb-generated' %}
-  {% elif bill_st == 'Bill Submitted' %}{% set badge_cls = 'smb-submitted' %}
-  {% else %}{% set badge_cls = 'smb-paid' %}{% endif %}
   <tr class="sm-row" data-id="{{ s[0] }}" data-signed="{{ '1' if sig_st == 'signed' else '0' }}"
-      onclick="rowClick(event, {{ s[0] }})">
-    <td><input type="checkbox" class="sm-check" value="{{ s[0] }}"></td>
+      onclick="rowClick(event, {{ s[0] }})"
+      oncontextmenu="openCtx(event, {{ s[0] }}, {{ '1' if sig_st == 'signed' else '0' }}, {{ '1' if trashed else '0' }})">
+    <td class="sm-cell-check"><input type="checkbox" class="sm-check" value="{{ s[0] }}" onclick="event.stopPropagation()"></td>
     <td class="sm-slipno">{{ s[1] or '—' }}</td>
     <td>{{ s[2] or '—' }}</td>
     <td>
       <div style="font-weight:600;">{{ s[4] or '—' }}</div>
-      {% if s[5] %}<div style="font-size:11px;color:#8e8e93;">{{ s[5] }}</div>{% endif %}
+      {% if s[5] %}<div style="font-size:11px;color:var(--muted);">{{ s[5] }}</div>{% endif %}
     </td>
     <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ s[6] or '' }}">{{ s[6] or '—' }}</td>
     <td>{{ s[7] or '—' }}</td>
     <td>{{ s[12] or '—' }}</td>
     <td>
       {% if trashed %}
-        <span class="sm-badge {{ badge_cls }}">{{ bill_st }}</span>
+        <span class="sm-badge {{ badge_class(bill_st) }}">{{ bill_st }}</span>
         {% if sig_st == 'signed' %}<span class="sm-badge smb-signed">✓ Signed</span>{% endif %}
       {% else %}
       <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
-        <select class="sm-status-sel" data-id="{{ s[0] }}" title="Change bill status">
+        <select class="sm-status-sel" data-id="{{ s[0] }}" onclick="event.stopPropagation()" title="Change bill status">
           <option value="Bill Generated"   {% if bill_st == 'Bill Generated'   %}selected{% endif %}>Generated</option>
           <option value="Bill Submitted"   {% if bill_st == 'Bill Submitted'   %}selected{% endif %}>Submitted</option>
           <option value="Payment Received" {% if bill_st == 'Payment Received' %}selected{% endif %}>Paid</option>
@@ -35,39 +36,41 @@
       {% endif %}
     </td>
     <td>
-      <div style="display:flex;gap:6px;align-items:center;">
+      <div class="sm-rowacts" onclick="event.stopPropagation()">
         {% if trashed %}
-        <form method="post" action="/admin/slips/restore" style="display:inline;">
-          <input type="hidden" name="selected_invoices" value="{{ s[0] }}">
-          <button class="sm-action-btn" type="submit" title="Restore">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
-          </button>
-        </form>
-        <form method="post" action="/admin/slips/purge" style="display:inline;"
-              onsubmit="return confirm('Permanently delete this slip? This cannot be undone.')">
-          <input type="hidden" name="selected_invoices" value="{{ s[0] }}">
-          <button class="sm-action-btn sm-danger" type="submit" title="Delete permanently">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-          </button>
-        </form>
+        <form method="post" action="/admin/slips/restore" style="display:inline;"><input type="hidden" name="selected_invoices" value="{{ s[0] }}">
+          <button class="sm-action-btn" type="submit" title="Restore"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button></form>
+        <form method="post" action="/admin/slips/purge" style="display:inline;" onsubmit="return confirm('Permanently delete this slip? This cannot be undone.')"><input type="hidden" name="selected_invoices" value="{{ s[0] }}">
+          <button class="sm-action-btn sm-danger" type="submit" title="Delete permanently"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></form>
         {% else %}
-        <a href="/invoice/{{ s[0] }}/download" class="sm-action-btn" title="Download PDF">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        </a>
-        <a href="/clone/{{ s[0] }}" class="sm-action-btn" title="Clone slip"
-           onclick="return cloneSlip(event, {{ s[0] }}, {{ '1' if sig_st == 'signed' else '0' }})">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        </a>
-        <form method="post" action="/delete_invoice/{{ s[0] }}" style="display:inline;"
-              onsubmit="return confirm('Move this slip to Trash?')">
-          <button class="sm-action-btn sm-danger" type="submit" title="Move to Trash">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-          </button>
-        </form>
+        <a href="/invoice/{{ s[0] }}/download" class="sm-action-btn" title="Download PDF"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></a>
+        <a href="/clone/{{ s[0] }}" class="sm-action-btn" title="Clone slip" onclick="return cloneSlip(event, {{ s[0] }}, {{ '1' if sig_st == 'signed' else '0' }})"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></a>
+        <form method="post" action="/delete_invoice/{{ s[0] }}" style="display:inline;" onsubmit="return confirm('Move this slip to Trash?')">
+          <button class="sm-action-btn sm-danger" type="submit" title="Move to Trash"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></form>
         {% endif %}
       </div>
     </td>
   </tr>
+{% endmacro %}
+
+{# ---------- GRID CARD ---------- #}
+{% macro slip_card(s) %}
+  {% set bill_st = s[10] %}{% set sig_st = s[11] %}
+  <div class="sm-card sm-row" data-id="{{ s[0] }}" data-signed="{{ '1' if sig_st == 'signed' else '0' }}"
+       onclick="rowClick(event, {{ s[0] }})"
+       oncontextmenu="openCtx(event, {{ s[0] }}, {{ '1' if sig_st == 'signed' else '0' }}, {{ '1' if trashed else '0' }})">
+    <input type="checkbox" class="sm-check sm-card-check" value="{{ s[0] }}" onclick="event.stopPropagation()">
+    <div class="sm-card-icon">
+      <svg width="34" height="40" viewBox="0 0 24 28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+        <path d="M5 1h10l5 5v20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1z"/><path d="M15 1v5h5"/>
+      </svg>
+      {% if sig_st == 'signed' %}<span class="sm-card-sigdot" title="Signed">✓</span>{% endif %}
+    </div>
+    <div class="sm-card-slip">{{ s[1] or ('#' ~ s[0]) }}</div>
+    <div class="sm-card-cust" title="{{ s[4] or '' }}">{{ s[4] or '—' }}</div>
+    <div class="sm-card-meta">{{ s[2] or '' }}{% if s[7] %} · {{ s[7] }}{% endif %}{% if s[12] %} · {{ s[12] }} km{% endif %}</div>
+    <span class="sm-badge {{ badge_class(bill_st) }} sm-card-badge">{{ bill_st.replace('Bill ','') }}</span>
+  </div>
 {% endmacro %}
 
 <div class="sm-totals" data-total="{{ totals.count }}" data-shown="{{ slips|length if (groups is none and slips) else 0 }}" data-group="{{ '1' if groups is not none else '0' }}">
@@ -76,45 +79,55 @@
   · Generated {{ totals.generated }} · Submitted {{ totals.submitted }} · Paid {{ totals.paid }} · Signed {{ totals.signed }}
 </div>
 
-<table id="smTable">
-  <thead>
-    <tr>
-      <th style="width:34px"><input type="checkbox" id="smSelectAll" onclick="toggleSelectAll(this)"></th>
-      <th class="sm-sortable" onclick="setSort('duty_slip_no')">Slip #{{ caret('duty_slip_no') }}</th>
-      <th class="sm-sortable" onclick="setSort('date')">Date{{ caret('date') }}</th>
-      <th class="sm-sortable" onclick="setSort('customer_name')">Customer{{ caret('customer_name') }}</th>
-      <th>Route</th>
-      <th>Driver</th>
-      <th class="sm-sortable" onclick="setSort('total_km')">Total KM{{ caret('total_km') }}</th>
-      <th class="sm-sortable" onclick="setSort('bill_status')">Status{{ caret('bill_status') }}</th>
-      <th>Actions</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% if groups is not none %}
-      {% if groups %}
-        {% for g in groups %}
-        <tr class="sm-group-hdr" onclick="toggleGroup(this)">
-          <td colspan="9"><span class="sm-grp-caret">▾</span> {{ g.label }}
-            <span class="sm-grp-meta">{{ g.count }} slip{{ 's' if g.count != 1 else '' }}{% if g.km %} · {{ g.km }} km{% endif %}</span></td>
-        </tr>
-        {% for s in g.rows %}{{ slip_row(s) }}{% endfor %}
-        {% endfor %}
-        {% if group_capped %}
-        <tr><td colspan="9" style="padding:14px;text-align:center;color:#e65100;font-size:12px;">
-          Showing the first {{ total_results if total_results < 2000 else 2000 }} — narrow your filter to see the rest.</td></tr>
-        {% endif %}
+{% if view == 'grid' %}
+  {# ---------- GRID VIEW ---------- #}
+  {% if groups is not none %}
+    {% if groups %}
+      {% for g in groups %}
+      <div class="sm-grid-group">{{ g.label }}<span class="sm-grp-meta">{{ g.count }} slip{{ 's' if g.count != 1 else '' }}{% if g.km %} · {{ g.km }} km{% endif %}</span></div>
+      <div class="sm-grid">{% for s in g.rows %}{{ slip_card(s) }}{% endfor %}</div>
+      {% endfor %}
+      {% if group_capped %}<div class="sm-cap-note">Showing the first 2000 — narrow your filter to see the rest.</div>{% endif %}
+    {% else %}<div class="sm-empty">No slips found.</div>{% endif %}
+  {% elif slips %}
+    <div class="sm-grid">{% for s in slips %}{{ slip_card(s) }}{% endfor %}</div>
+  {% else %}<div class="sm-empty">{% if trashed %}Trash is empty.{% else %}No slips found for the selected filters.{% endif %}</div>{% endif %}
+{% else %}
+  {# ---------- LIST VIEW ---------- #}
+  <table id="smTable">
+    <thead>
+      <tr>
+        <th class="sm-cell-check"><input type="checkbox" id="smSelectAll" onclick="toggleSelectAll(this)"></th>
+        <th class="sm-sortable" onclick="setSort('duty_slip_no')">Slip #{{ caret('duty_slip_no') }}</th>
+        <th class="sm-sortable" onclick="setSort('date')">Date{{ caret('date') }}</th>
+        <th class="sm-sortable" onclick="setSort('customer_name')">Customer{{ caret('customer_name') }}</th>
+        <th>Route</th>
+        <th>Driver</th>
+        <th class="sm-sortable" onclick="setSort('total_km')">Total KM{{ caret('total_km') }}</th>
+        <th class="sm-sortable" onclick="setSort('bill_status')">Status{{ caret('bill_status') }}</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if groups is not none %}
+        {% if groups %}
+          {% for g in groups %}
+          <tr class="sm-group-hdr" onclick="toggleGroup(this)">
+            <td colspan="9"><span class="sm-grp-caret">▾</span> {{ g.label }}
+              <span class="sm-grp-meta">{{ g.count }} slip{{ 's' if g.count != 1 else '' }}{% if g.km %} · {{ g.km }} km{% endif %}</span></td>
+          </tr>
+          {% for s in g.rows %}{{ slip_row(s) }}{% endfor %}
+          {% endfor %}
+          {% if group_capped %}<tr><td colspan="9" class="sm-cap-note">Showing the first 2000 — narrow your filter to see the rest.</td></tr>{% endif %}
+        {% else %}<tr><td colspan="9" class="sm-empty-cell">No slips found.</td></tr>{% endif %}
+      {% elif slips %}
+        {% for s in slips %}{{ slip_row(s) }}{% endfor %}
       {% else %}
-        <tr><td colspan="9" style="padding:48px 24px;text-align:center;color:#8e8e93;">No slips found.</td></tr>
+        <tr><td colspan="9" class="sm-empty-cell">{% if trashed %}Trash is empty.{% else %}No slips found for the selected filters.{% endif %}</td></tr>
       {% endif %}
-    {% elif slips %}
-      {% for s in slips %}{{ slip_row(s) }}{% endfor %}
-    {% else %}
-      <tr><td colspan="9" style="padding:48px 24px;text-align:center;color:#8e8e93;">
-        {% if trashed %}Trash is empty.{% else %}No slips found for the selected filters.{% endif %}</td></tr>
-    {% endif %}
-  </tbody>
-</table>
+    </tbody>
+  </table>
+{% endif %}
 
 {% if groups is none and total_results > page_size %}
 {% set total_pages = ((total_results - 1) // page_size) + 1 %}
