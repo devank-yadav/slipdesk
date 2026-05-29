@@ -444,7 +444,14 @@
   function clearAdvFilters() { ['fDateFrom','fDateTo','fCustomer'].forEach(id => document.getElementById(id).value=''); document.getElementById('fDriver').value=''; document.getElementById('fVehicle').value=''; onFilterChange(); }
   function toggleFilters() { const f = document.getElementById('advFilters'); document.getElementById('filterToggle').classList.toggle('on', f.classList.toggle('show')); }
 
-  function selectMonth(m) { _smMonth = m; _smPage = 1; document.querySelectorAll('.sm-month-btn').forEach(b => b.classList.toggle('active', b.dataset.month === m)); loadRows(true); }
+  // Leaving Trash when a month/year/date-type is chosen → back to live slips.
+  function _exitTrash() {
+    if (!_smTrashed) return;
+    _smTrashed = 0; _smStatus = 'all';
+    document.getElementById('trashBtn').classList.remove('active');
+    document.querySelectorAll('.sm-tab').forEach(b => b.classList.toggle('active', b.dataset.status === 'all'));
+  }
+  function selectMonth(m) { _exitTrash(); _smMonth = m; _smPage = 1; document.querySelectorAll('.sm-month-btn').forEach(b => b.classList.toggle('active', b.dataset.month === m)); loadRows(true); }
   function selectStatus(s) { _smStatus = s; _smTrashed = 0; _smPage = 1; document.getElementById('trashBtn').classList.remove('active');
     document.querySelectorAll('.sm-tab').forEach(b => b.classList.toggle('active', b.dataset.status === s)); loadRows(true); updateBulkBars(); }
   function selectTrash() { _smTrashed = 1; _smStatus = 'all'; _smGroup = 'none'; _smPage = 1; document.getElementById('trashBtn').classList.add('active');
@@ -454,8 +461,8 @@
   function gotoPage(p) { if (p < 1) return; _smPage = p; loadRows(true); document.querySelector('.sm-table-wrap').scrollTo(0,0); }
   function setPageSize(ps) { _smPageSize = parseInt(ps); _smPage = 1; loadRows(true); }
 
-  document.getElementById('yearSelect').addEventListener('change', function() { _smYear = this.value; _smPage = 1; loadRows(true); });
-  document.querySelectorAll('input[name=date_type]').forEach(r => r.addEventListener('change', function() { _smDType = this.value; _smPage = 1; loadRows(true); }));
+  document.getElementById('yearSelect').addEventListener('change', function() { _exitTrash(); _smYear = this.value; _smPage = 1; loadRows(true); });
+  document.querySelectorAll('input[name=date_type]').forEach(r => r.addEventListener('change', function() { _exitTrash(); _smDType = this.value; _smPage = 1; loadRows(true); }));
 
   function toggleGroup(hdr) { hdr.classList.toggle('collapsed'); const collapsed = hdr.classList.contains('collapsed');
     let row = hdr.nextElementSibling; while (row && !row.classList.contains('sm-group-hdr')) { row.style.display = collapsed ? 'none' : ''; row = row.nextElementSibling; } }
