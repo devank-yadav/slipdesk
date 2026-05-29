@@ -364,6 +364,33 @@ def _get_sig_for_invoice(conn, invoice_id: int):
     return None
 
 
+def _expiry_days(val, default=7):
+    """Validate a signature-link validity choice (days). Allowed: 7, 14, 30."""
+    try:
+        d = int(val)
+        return d if d in (7, 14, 30) else default
+    except (TypeError, ValueError):
+        return default
+
+
+# Column order used by the signed-PDF SELECT below; maps a row to _build_pdf's data dict.
+_PDF_SELECT_COLS = ("customer_name, company_name, date, duty_slip_no, vehicle_type, "
+                    "vehicle_no, starting_km, closing_km, total_km, starting_time, "
+                    "closing_time, total_time, project_code, mail_approval_date, "
+                    "route_covered, driver_name, closing_date")
+
+
+def _invoice_pdf_dict(row):
+    return {
+        'customer_name': row[0], 'company_name': row[1], 'date': row[2],
+        'duty_slip_no': row[3], 'vehicle_type': row[4], 'vehicle_no': row[5],
+        'starting_km': row[6], 'closing_km': row[7], 'total_km': row[8],
+        'starting_time': row[9], 'closing_time': row[10], 'total_time': row[11],
+        'project_code': row[12], 'mail_approval_date': row[13],
+        'route_covered': row[14], 'driver_name': row[15], 'closing_date': row[16] or '',
+    }
+
+
 def _build_cover_page(title: str, slips: list, subtitle: str = '') -> io.BytesIO:
     """Portrait A4 cover/summary page prepended to batch PDF exports."""
     pdf = _pdf_libs()
@@ -1543,8 +1570,9 @@ def create_sign_link(invoice_id):
             return jsonify({'ok': False, 'error': 'Already signed'}), 400
         token = secrets.token_urlsafe(16)
         now = datetime.now()
+        days = _expiry_days(request.values.get('expiry_days'))
         created_at_sig = now.strftime('%Y-%m-%d %H:%M:%S')
-        expires_at_sig = (now + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+        expires_at_sig = (now + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
         ids_json = _json.dumps([invoice_id])
         conn.execute(
             """INSERT INTO signature_requests (token, invoice_ids, customer_name, created_at, expires_at)
@@ -2080,8 +2108,9 @@ def request_signature():
 
     token = secrets.token_urlsafe(16)
     now = datetime.now()
+    days = _expiry_days(request.form.get('expiry_days'))
     created_at = now.strftime('%Y-%m-%d %H:%M:%S')
-    expires_at = (now + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
+    expires_at = (now + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
     ids_json = _json.dumps([int(i) for i in invoice_ids])
 
     with sqlite3.connect(DATABASE) as conn:
@@ -2106,13 +2135,15 @@ def signatures_page():
     new_token = request.args.get('new_token', '')
     with sqlite3.connect(DATABASE) as conn:
         rows = conn.execute(
-            """SELECT id, token, invoice_ids, customer_name, created_at, expires_at, signed_at, signer_ip, signer_ua
+            """SELECT id, token, invoice_ids, customer_name, created_at, expires_at, signed_at,
+                      signer_ip, signer_ua, signature_data
                FROM signature_requests ORDER BY created_at DESC"""
         ).fetchall()
 
     now = datetime.now()
     now_str = now.strftime('%Y-%m-%d %H:%M:%S')
     requests_data = []
+    stats = {'pending': 0, 'signed': 0, 'expired': 0, 'due': 0}
     for r in rows:
         ids = _json.loads(r[2]) if r[2] else []
         signed_at = r[6]
@@ -2131,17 +2162,78 @@ def signatures_page():
                 hours_pending = int((now - created_dt).total_seconds() / 3600)
             except Exception:
                 pass
+        stats[status] += 1
+        if status == 'pending' and hours_pending is not None and hours_pending >= 48:
+            stats['due'] += 1
         requests_data.append({
             'id': r[0], 'token': r[1], 'invoice_count': len(ids),
             'customer_name': r[3], 'created_at': r[4],
             'expires_at': expires_at, 'signed_at': signed_at,
             'signer_ip': r[7], 'signer_ua': r[8] or '',
             'device': _parse_ua(r[8] or ''),
+            'signature_data': r[9] or '',
             'hours_pending': hours_pending,
             'status': status,
         })
 
-    return render_template('signatures.html', requests=requests_data, new_token=new_token)
+    return render_template('signatures.html', requests=requests_data, new_token=new_token, stats=stats)
+
+
+def _revoke_request(conn, req_id):
+    """Delete a request and clear 'pending' status on its invoices that aren't still
+    covered by another active (unsigned) request."""
+    row = conn.execute(
+        "SELECT invoice_ids FROM signature_requests WHERE id = ?", (req_id,)
+    ).fetchone()
+    if not row:
+        return
+    ids = _json.loads(row[0]) if row[0] else []
+    conn.execute("DELETE FROM signature_requests WHERE id = ?", (req_id,))
+    if ids:
+        remaining = conn.execute(
+            "SELECT invoice_ids FROM signature_requests WHERE signed_at IS NULL"
+        ).fetchall()
+        still_covered = set()
+        for (r_ids,) in remaining:
+            try:
+                still_covered.update(_json.loads(r_ids))
+            except Exception:
+                pass
+        for inv_id in ids:
+            if inv_id not in still_covered:
+                conn.execute(
+                    "UPDATE invoices SET signature_status = NULL WHERE id = ? AND signature_status = 'pending'",
+                    (inv_id,)
+                )
+
+
+def _reissue_request(conn, req_id, days=7):
+    """Replace a request with a fresh token + validity window; reactivate its invoices.
+    Returns the new token, or None if the request was missing."""
+    row = conn.execute(
+        "SELECT invoice_ids, customer_name FROM signature_requests WHERE id = ?", (req_id,)
+    ).fetchone()
+    if not row:
+        return None
+    ids = _json.loads(row[0]) if row[0] else []
+    customer_name = row[1]
+    conn.execute("DELETE FROM signature_requests WHERE id = ?", (req_id,))
+    token = secrets.token_urlsafe(16)
+    now = datetime.now()
+    created_at = now.strftime('%Y-%m-%d %H:%M:%S')
+    expires_at = (now + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+    conn.execute(
+        """INSERT INTO signature_requests (token, invoice_ids, customer_name, created_at, expires_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (token, _json.dumps(ids), customer_name, created_at, expires_at)
+    )
+    if ids:
+        placeholders = ','.join('?' * len(ids))
+        conn.execute(
+            f"UPDATE invoices SET signature_status = 'pending', signed_at = NULL WHERE id IN ({placeholders})",
+            ids
+        )
+    return token
 
 
 @app.route('/admin/signatures/revoke/<int:req_id>', methods=['POST'])
@@ -2149,29 +2241,7 @@ def revoke_signature(req_id):
     if 'admin' not in session:
         return redirect(url_for('home'))
     with sqlite3.connect(DATABASE) as conn:
-        row = conn.execute(
-            "SELECT invoice_ids FROM signature_requests WHERE id = ?", (req_id,)
-        ).fetchone()
-        if row:
-            ids = _json.loads(row[0]) if row[0] else []
-            conn.execute("DELETE FROM signature_requests WHERE id = ?", (req_id,))
-            if ids:
-                # Find invoice IDs still covered by another active (unsigned) request
-                remaining = conn.execute(
-                    "SELECT invoice_ids FROM signature_requests WHERE signed_at IS NULL"
-                ).fetchall()
-                still_covered = set()
-                for (r_ids,) in remaining:
-                    try:
-                        still_covered.update(_json.loads(r_ids))
-                    except Exception:
-                        pass
-                for inv_id in ids:
-                    if inv_id not in still_covered:
-                        conn.execute(
-                            "UPDATE invoices SET signature_status = NULL WHERE id = ? AND signature_status = 'pending'",
-                            (inv_id,)
-                        )
+        _revoke_request(conn, req_id)
     return redirect(url_for('signatures_page'))
 
 
@@ -2180,32 +2250,113 @@ def reissue_signature(req_id):
     if 'admin' not in session:
         return redirect(url_for('home'))
     with sqlite3.connect(DATABASE) as conn:
+        token = _reissue_request(conn, req_id, days=_expiry_days(request.form.get('expiry_days')))
+    if not token:
+        return redirect(url_for('signatures_page'))
+    return redirect(url_for('signatures_page', new_token=token))
+
+
+@app.route('/admin/signatures/bulk', methods=['POST'])
+def bulk_signatures():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    action = request.form.get('action')
+    ids = request.form.getlist('selected')
+    if ids and action in ('revoke', 'delete', 'reissue'):
+        with sqlite3.connect(DATABASE) as conn:
+            for rid in ids:
+                try:
+                    rid = int(rid)
+                except (TypeError, ValueError):
+                    continue
+                if action == 'reissue':
+                    _reissue_request(conn, rid)
+                else:
+                    _revoke_request(conn, rid)
+    return redirect(url_for('signatures_page'))
+
+
+@app.route('/admin/signatures/clear_expired', methods=['POST'])
+def clear_expired_signatures():
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    with sqlite3.connect(DATABASE) as conn:
+        rows = conn.execute(
+            "SELECT id FROM signature_requests WHERE signed_at IS NULL AND expires_at IS NOT NULL AND expires_at < ?",
+            (now_str,)
+        ).fetchall()
+        for (rid,) in rows:
+            _revoke_request(conn, rid)
+    return redirect(url_for('signatures_page'))
+
+
+@app.route('/admin/signatures/<int:req_id>/extend', methods=['POST'])
+def extend_signature(req_id):
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    days = _expiry_days(request.values.get('days'))
+    now = datetime.now()
+    with sqlite3.connect(DATABASE) as conn:
         row = conn.execute(
-            "SELECT invoice_ids, customer_name FROM signature_requests WHERE id = ?", (req_id,)
+            "SELECT invoice_ids, signed_at, expires_at FROM signature_requests WHERE id = ?", (req_id,)
         ).fetchone()
-        if not row:
+        if not row or row[1]:  # missing or already signed → nothing to extend
             return redirect(url_for('signatures_page'))
         ids = _json.loads(row[0]) if row[0] else []
-        customer_name = row[1]
-        conn.execute("DELETE FROM signature_requests WHERE id = ?", (req_id,))
-        # New token + 7-day window
-        token = secrets.token_urlsafe(16)
-        now = datetime.now()
-        created_at = now.strftime('%Y-%m-%d %H:%M:%S')
-        expires_at = (now + timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
-        conn.execute(
-            """INSERT INTO signature_requests (token, invoice_ids, customer_name, created_at, expires_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (token, _json.dumps(ids), customer_name, created_at, expires_at)
-        )
-        # Reset invoice status so the new request is active
-        if ids:
+        # Extend from the later of now / current expiry (so a still-valid link adds on top)
+        base = now
+        try:
+            if row[2]:
+                ex = datetime.strptime(row[2], '%Y-%m-%d %H:%M:%S')
+                if ex > now:
+                    base = ex
+        except Exception:
+            pass
+        new_expires = (base + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+        conn.execute("UPDATE signature_requests SET expires_at = ? WHERE id = ?", (new_expires, req_id))
+        if ids:  # if it had expired, bring invoices back to pending
             placeholders = ','.join('?' * len(ids))
             conn.execute(
-                f"UPDATE invoices SET signature_status = 'pending', signed_at = NULL WHERE id IN ({placeholders})",
+                f"UPDATE invoices SET signature_status = 'pending' WHERE id IN ({placeholders}) AND COALESCE(signature_status,'') != 'signed'",
                 ids
             )
-    return redirect(url_for('signatures_page', new_token=token))
+    return redirect(url_for('signatures_page'))
+
+
+@app.route('/admin/signatures/<int:req_id>/download')
+def download_signed(req_id):
+    if 'admin' not in session:
+        return redirect(url_for('login_page'))
+    with sqlite3.connect(DATABASE) as conn:
+        req = conn.execute(
+            "SELECT invoice_ids, customer_name FROM signature_requests WHERE id = ?", (req_id,)
+        ).fetchone()
+        if not req:
+            return "Not found", 404
+        ids = _json.loads(req[0]) if req[0] else []
+        cust = (req[1] or 'customer').replace(' ', '_')
+        pdfs = []
+        for inv_id in ids:
+            row = conn.execute(
+                f"SELECT {_PDF_SELECT_COLS} FROM invoices WHERE id = ?", (inv_id,)
+            ).fetchone()
+            if not row:
+                continue
+            sig = _get_sig_for_invoice(conn, inv_id)
+            buf = _build_pdf(_invoice_pdf_dict(row), signature_data=sig)
+            pdfs.append((f"slip_{row[3] or inv_id}.pdf", buf.read()))
+    if not pdfs:
+        return "No slips to download", 404
+    if len(pdfs) == 1:
+        return send_file(io.BytesIO(pdfs[0][1]), as_attachment=True,
+                         download_name=f"signed_{cust}.pdf", mimetype='application/pdf')
+    zbuf = io.BytesIO()
+    with zipfile.ZipFile(zbuf, 'w') as z:
+        for fn, b in pdfs:
+            z.writestr(fn, b)
+    zbuf.seek(0)
+    return send_file(zbuf, as_attachment=True, download_name=f"signed_{cust}.zip", mimetype='application/zip')
 
 
 @app.route('/sign/<token>', methods=['GET'])
