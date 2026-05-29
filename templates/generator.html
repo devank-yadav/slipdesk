@@ -1652,8 +1652,7 @@
           debouncedCalc();
         }
       } else if (mode === 'manual') {
-        // Sync map builder → manual text so builder edits appear in the textarea
-        syncMapToText();
+        // Just switch the view — the map never auto-writes the form. Use "Apply" to commit.
         routeTextDirty = false;
       }
     }
@@ -1998,11 +1997,12 @@
 
       // If only origin and no stops → don't call Directions
       if (!stopValues.length && !returnChecked) {
-        // Just origin — clear route
+        // Just origin — nothing to estimate (Total KM left untouched)
         if (dirRenderer) dirRenderer.set('directions', null);
         document.getElementById('distanceDisplay').textContent = 'Add stops to calculate distance';
         document.getElementById('distanceDisplay').className   = 'distance-display';
-        document.getElementById('btnApply').disabled = true;
+        const ae = document.getElementById('btnApply');
+        ae.disabled = true; ae.textContent = '↓ Apply to Slip';
         currentRoute = null;
         return;
       }
@@ -2031,17 +2031,18 @@
           if (returnChecked) stops.push(originShort);
           currentRoute = { distance_km: totalKm, stops };
 
-          distEl.textContent  = 'Total distance: ' + totalKm + ' km';
+          // Show as a non-destructive ESTIMATE — never auto-write Total KM / route text.
+          distEl.textContent  = 'Maps estimate: ' + totalKm + ' km';
           distEl.className    = 'distance-display ready';
           applyEl.disabled    = false;
-
-          // Keep manual text + total KM + hidden structure continuously in sync
-          syncMapToText();
+          applyEl.textContent = '↓ Apply ' + totalKm + ' km';
         } else {
           console.error('Directions API error:', status);
-          distEl.textContent  = 'Could not calculate (' + status + ')';
+          // Keep whatever Total KM the user has — do not blank it.
+          distEl.textContent  = "Couldn't calculate — your Total KM is unchanged";
           distEl.className    = 'distance-display';
           applyEl.disabled    = true;
+          applyEl.textContent = '↓ Apply to Slip';
           currentRoute        = null;
         }
       });
@@ -2083,9 +2084,14 @@
       const retEl = document.getElementById('returnToOrigin');
       if (retEl) retEl.checked = !!data.return_to_origin;
 
+      // Persist the restored structure so generation keeps it even if the user never
+      // clicks Apply. Does NOT touch total_km / route_covered (those stay as the saved values).
+      const rsj = document.getElementById('route_stops_json');
+      if (rsj) rsj.value = JSON.stringify(serializeStops());
+
       // Switch to map mode so waypoints are visible and editable
       setRouteMode('map');
-      // Only calc now if Maps is already loaded; otherwise _onMapsReady will trigger it
+      // Calc only draws the polyline + shows the Maps estimate (no auto-write).
       if (mapsLoaded) setTimeout(debouncedCalc, 300);
     }
 
@@ -2125,8 +2131,16 @@
     }
 
     function applyRoute() {
-      // Sync builder → text/km/json and switch to manual so user sees the filled textarea
-      setRouteMode('manual');
+      // The ONLY place the map writes the form. Explicit, user-triggered.
+      if (!currentRoute) return;
+      syncMapToText();   // writes route_covered + total_km + route_stops_json
+      const btn = document.getElementById('btnApply');
+      if (btn) {
+        const prev = btn.textContent;
+        btn.textContent = 'Applied ✓';
+        btn.style.background = '#166534';
+        setTimeout(() => { btn.textContent = prev; btn.style.background = ''; }, 1800);
+      }
     }
 
     // =====================================================================
