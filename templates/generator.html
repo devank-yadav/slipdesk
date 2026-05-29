@@ -1128,6 +1128,7 @@
     // ROUTE TEXTAREA SHORTCUTS  (,,, → →)
     // =====================================================================
     document.getElementById('route_covered').addEventListener('input', function (e) {
+      routeTextDirty = true;
       var ta = this, val = ta.value, pos = ta.selectionStart;
       var idx = val.lastIndexOf(',,,', pos);
       if (idx !== -1 && idx === pos - 3) {
@@ -1151,7 +1152,7 @@
       const routeEl  = document.getElementById('route_covered');
       micStart.addEventListener('click', () => { rec.start(); micStart.disabled = true; micStop.disabled = false; });
       micStop.addEventListener('click',  () => { rec.stop();  micStart.disabled = false; micStop.disabled = true; });
-      rec.addEventListener('result', e => { routeEl.value += e.results[e.results.length - 1][0].transcript + ' '; });
+      rec.addEventListener('result', e => { routeEl.value += e.results[e.results.length - 1][0].transcript + ' '; routeTextDirty = true; });
     } else {
       document.getElementById('micStart').style.display = 'none';
       document.getElementById('micStop').style.display  = 'none';
@@ -1167,7 +1168,7 @@
     let dirService   = null;
     let dirRenderer  = null;
     let currentRoute = null;
-    let _pendingAutoApply = false;
+    let routeTextDirty = false;   // true when user manually edits the route textarea
     let wpCounter    = 0;
     let dragSrcRow   = null;
 
@@ -1195,6 +1196,13 @@
       document.getElementById('manualSection').style.display = mode === 'manual' ? '' : 'none';
       document.getElementById('mapSection').style.display    = mode === 'map'    ? '' : 'none';
       if (mode === 'map') {
+        // Sync manual text → map builder when the text was edited or the builder is empty
+        const txt = document.getElementById('route_covered').value.trim();
+        const mapEmpty = !document.getElementById('originInput').value.trim()
+                         && !document.querySelector('#waypointsList > .waypoint-row');
+        if (txt && (routeTextDirty || mapEmpty)) parseTextToMap(txt);
+        routeTextDirty = false;
+
         if (!mapsKey) {
           document.getElementById('noKeyNotice').style.display = '';
         } else if (!mapsLoaded) {
@@ -1207,8 +1215,56 @@
             originInput.addEventListener('blur', debouncedCalc);
             _originAcAttached = true;
           }
+          debouncedCalc();
         }
+      } else if (mode === 'manual') {
+        // Sync map builder → manual text so builder edits appear in the textarea
+        syncMapToText();
+        routeTextDirty = false;
       }
+    }
+
+    // Parse "A → B → C" text into origin + stops in the map builder
+    function parseTextToMap(text) {
+      const originEl = document.getElementById('originInput');
+      const listEl   = document.getElementById('waypointsList');
+      const tokens = (text || '').split(/\s*(?:→|->|⟶|=>)\s*/).map(t => t.trim()).filter(Boolean);
+      listEl.innerHTML = '';
+      delete originEl.dataset.shortName;
+      if (!tokens.length) { originEl.value = ''; return; }
+      originEl.value = tokens[0];
+      let stops = tokens.slice(1);
+      let ret = false;
+      if (stops.length && stops[stops.length - 1].toLowerCase() === tokens[0].toLowerCase()) {
+        ret = true; stops = stops.slice(0, -1);
+      }
+      stops.forEach(s => addWaypoint(s, ''));
+      const retEl = document.getElementById('returnToOrigin');
+      if (retEl) retEl.checked = ret;
+    }
+
+    // Rebuild manual textarea (+ total km + hidden json) from current map builder state
+    function syncMapToText() {
+      const originEl = document.getElementById('originInput');
+      const hasMap = originEl.value.trim() || document.querySelector('#waypointsList > .waypoint-row');
+      if (!hasMap) return;   // builder empty → don't wipe manual text
+      let text;
+      if (currentRoute && currentRoute.stops && currentRoute.stops.length) {
+        text = currentRoute.stops.join(' → ');
+      } else {
+        const originShort = originEl.dataset.shortName || originEl.value.trim();
+        const expanded = expandStops();
+        const parts = originShort ? [originShort] : [];
+        expanded.forEach(s => parts.push(s.short || s.value));
+        if (document.getElementById('returnToOrigin').checked && originShort) parts.push(originShort);
+        text = parts.join(' → ');
+      }
+      if (text.trim()) document.getElementById('route_covered').value = applyAliases(text);
+      if (currentRoute && currentRoute.distance_km) {
+        kmSyncLock = true; totalKmEl.value = currentRoute.distance_km; recalcCloseFromStartAndTotal(); kmSyncLock = false;
+      }
+      const rsj = document.getElementById('route_stops_json');
+      if (rsj) rsj.value = JSON.stringify(serializeStops());
     }
 
     // =====================================================================
@@ -1545,10 +1601,8 @@
           distEl.className    = 'distance-display ready';
           applyEl.disabled    = false;
 
-          if (_pendingAutoApply) {
-            _pendingAutoApply = false;
-            _silentApply();
-          }
+          // Keep manual text + total KM + hidden structure continuously in sync
+          syncMapToText();
         } else {
           console.error('Directions API error:', status);
           distEl.textContent  = 'Could not calculate (' + status + ')';
@@ -1623,16 +1677,6 @@
                stops: stopsData, return_to_origin: document.getElementById('returnToOrigin').checked };
     }
 
-    function _silentApply() {
-      // Auto-fills route_covered + total_km but stays in map mode
-      if (!currentRoute) return;
-      document.getElementById('route_covered').value = currentRoute.stops.join(' → ');
-      kmSyncLock = true;
-      totalKmEl.value = currentRoute.distance_km;
-      recalcCloseFromStartAndTotal();
-      kmSyncLock = false;
-      document.getElementById('route_stops_json').value = JSON.stringify(serializeStops());
-    }
 
     const ADDRESS_ALIASES = {
       'Saraswati Enclave, Gurugram': 'Car Stand',
@@ -1647,17 +1691,8 @@
     }
 
     function applyRoute() {
-      if (!currentRoute) return;
-
-      const { distance_km, stops } = currentRoute;
-      document.getElementById('route_covered').value = applyAliases(stops.join(' → '));
-      kmSyncLock = true;
-      totalKmEl.value = distance_km;
-      recalcCloseFromStartAndTotal();
-      kmSyncLock = false;
-      document.getElementById('route_stops_json').value = JSON.stringify(serializeStops());
-
-      setRouteMode('manual');   // switch back so user can see the filled textarea
+      // Sync builder → text/km/json and switch to manual so user sees the filled textarea
+      setRouteMode('manual');
     }
 
     // =====================================================================

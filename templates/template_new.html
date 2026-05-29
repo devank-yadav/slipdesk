@@ -438,7 +438,7 @@
         <div id="mapsLoading" style="display:none;padding:12px 0;color:var(--text-muted);font-size:13px;">
           Loading map…
         </div>
-        <div id="mapBuilder" style="display:none;">
+        <div id="mapBuilder">
           <div class="waypoint-row origin" id="originRow">
             <span class="wp-icon" title="Starting point"><svg width="16" height="16"><use href="#icon-map-pin"/></svg></span>
             <input type="text" id="originInput" class="waypoint-input" placeholder="Starting point…" autocomplete="off">
@@ -520,11 +520,22 @@
       const routeEl  = document.getElementById('route_covered');
       micStart.addEventListener('click', () => { rec.start(); micStart.disabled = true; micStop.disabled = false; });
       micStop.addEventListener('click',  () => { rec.stop();  micStart.disabled = false; micStop.disabled = true; });
-      rec.addEventListener('result', e => { routeEl.value += e.results[e.results.length - 1][0].transcript + ' '; });
+      rec.addEventListener('result', e => { routeEl.value += e.results[e.results.length - 1][0].transcript + ' '; routeTextDirty = true; });
     } else {
       document.getElementById('micStart').style.display = 'none';
       document.getElementById('micStop').style.display  = 'none';
     }
+
+    // Mark the route text dirty on manual edits + ,,, → arrow shortcut
+    document.getElementById('route_covered').addEventListener('input', function () {
+      routeTextDirty = true;
+      var ta = this, val = ta.value, pos = ta.selectionStart;
+      var idx = val.lastIndexOf(',,,', pos);
+      if (idx !== -1 && idx === pos - 3) {
+        ta.value = val.slice(0, idx) + ' → ' + val.slice(pos);
+        var np = idx + 3; ta.setSelectionRange(np, np);
+      }
+    });
 
     // =====================================================================
     // ROUTE MODE TOGGLE
@@ -532,6 +543,7 @@
     let mapsKey = '', mapsLoaded = false, mapsScriptInjected = false;
     let mapInstance = null, dirService = null, dirRenderer = null;
     let currentRoute = null, wpCounter = 0, dragSrcRow = null;
+    let routeTextDirty = false;   // true when user manually edits the route textarea
 
     fetch('/config/maps_key')
       .then(r => r.json())
@@ -554,14 +566,78 @@
       document.getElementById('manualSection').style.display = mode === 'manual' ? '' : 'none';
       document.getElementById('mapSection').style.display    = mode === 'map'    ? '' : 'none';
       if (mode === 'map') {
+        // Sync manual text → map builder when the text was edited or the builder is empty
+        const txt = document.getElementById('route_covered').value.trim();
+        const mapEmpty = !document.getElementById('originInput').value.trim()
+                         && !document.querySelector('#waypointsList > .waypoint-row');
+        if (txt && (routeTextDirty || mapEmpty)) parseTextToMap(txt);
+        routeTextDirty = false;
+
         if (!mapsKey) {
           document.getElementById('noKeyNotice').style.display = '';
         } else if (!mapsLoaded) {
           document.getElementById('mapsLoading').style.display = '';
         } else {
           setTimeout(() => google.maps.event.trigger(mapInstance, 'resize'), 50);
+          debouncedCalc();
         }
+      } else if (mode === 'manual') {
+        // Sync map builder → manual text so builder edits appear in the textarea
+        syncMapToText();
+        routeTextDirty = false;
       }
+    }
+
+    // Parse "A → B → C" text into origin + stops in the map builder
+    function parseTextToMap(text) {
+      const originEl = document.getElementById('originInput');
+      const listEl   = document.getElementById('waypointsList');
+      const tokens = (text || '').split(/\s*(?:→|->|⟶|=>)\s*/).map(t => t.trim()).filter(Boolean);
+      listEl.innerHTML = '';
+      delete originEl.dataset.shortName;
+      if (!tokens.length) { originEl.value = ''; return; }
+      originEl.value = tokens[0];
+      let stops = tokens.slice(1);
+      let ret = false;
+      if (stops.length && stops[stops.length - 1].toLowerCase() === tokens[0].toLowerCase()) {
+        ret = true; stops = stops.slice(0, -1);
+      }
+      stops.forEach(s => addWaypoint(s, ''));
+      const retEl = document.getElementById('returnToOrigin');
+      if (retEl) retEl.checked = ret;
+    }
+
+    // Rebuild manual textarea (+ total km + hidden json) from current map builder state
+    function syncMapToText() {
+      const originEl = document.getElementById('originInput');
+      const hasMap = originEl.value.trim() || document.querySelector('#waypointsList > .waypoint-row');
+      if (!hasMap) return;   // builder empty → don't wipe manual text
+      let text;
+      if (currentRoute && currentRoute.stops && currentRoute.stops.length) {
+        text = currentRoute.stops.join(' → ');
+      } else {
+        const originShort = originEl.dataset.shortName || originEl.value.trim();
+        const expanded = expandStops();
+        const parts = originShort ? [originShort] : [];
+        expanded.forEach(s => parts.push(s.short || s.value));
+        if (document.getElementById('returnToOrigin').checked && originShort) parts.push(originShort);
+        text = parts.join(' → ');
+      }
+      if (text.trim()) document.getElementById('route_covered').value = applyAliases(text);
+      if (currentRoute && currentRoute.distance_km) document.getElementById('total_km').value = currentRoute.distance_km;
+      document.getElementById('route_stops_json').value = JSON.stringify(serializeStops());
+    }
+
+    const ADDRESS_ALIASES = {
+      'Saraswati Enclave, Gurugram': 'Car Stand',
+      'Saraswati Enclave, Gurgaon':  'Car Stand',
+      'Saraswati Enclave':           'Car Stand',
+    };
+    function applyAliases(text) {
+      for (const [addr, alias] of Object.entries(ADDRESS_ALIASES)) {
+        text = text.replace(new RegExp(addr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), alias);
+      }
+      return text;
     }
 
     // =====================================================================
@@ -581,13 +657,19 @@
       const originInput = document.getElementById('originInput');
       attachAutocomplete(originInput);
       originInput.addEventListener('blur', debouncedCalc);
+      // Attach autocomplete to any waypoint inputs already in the DOM (parsed before maps loaded)
+      document.querySelectorAll('#waypointsList .waypoint-input').forEach(inp => {
+        if (!inp.dataset.acAttached) { attachAutocomplete(inp); inp.addEventListener('blur', debouncedCalc); }
+      });
       if (document.getElementById('mapSection').style.display !== 'none') {
-        setTimeout(() => google.maps.event.trigger(mapInstance, 'resize'), 50);
+        setTimeout(() => { google.maps.event.trigger(mapInstance, 'resize'); debouncedCalc(); }, 100);
       }
     };
 
     function attachAutocomplete(input) {
       if (!window.google || !google.maps.places) return;
+      if (input.dataset.acAttached) return;
+      input.dataset.acAttached = '1';
       const ac = new google.maps.places.Autocomplete(input, {
         componentRestrictions: { country: 'in' },
         fields: ['name', 'formatted_address', 'address_components'],
@@ -806,11 +888,11 @@
           const stops = [originShort, ...stopShorts];
           if (returnChecked) stops.push(originShort);
           currentRoute = { distance_km: totalKm, stops };
-          // Always keep route_stops_json in sync so it's saved even without clicking the button
-          document.getElementById('route_stops_json').value = JSON.stringify(serializeStops());
           distEl.textContent = 'Total distance: ' + totalKm + ' km';
           distEl.className   = 'distance-display ready';
           applyEl.disabled   = false;
+          // Keep manual text + total KM + hidden structure continuously in sync
+          syncMapToText();
         } else {
           distEl.textContent = 'Could not calculate (' + status + ')';
           distEl.className   = 'distance-display';
