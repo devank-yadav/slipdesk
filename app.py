@@ -391,6 +391,70 @@ def _invoice_pdf_dict(row):
     }
 
 
+def _sig_coverage(conn):
+    """Return (signed_cover, pending_cover): sets of invoice ids covered by a signed
+    request, and by an active (non-expired) unsigned request — the source of truth."""
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    signed_cover, pending_cover = set(), set()
+    for r_ids, r_signed, r_exp in conn.execute(
+            "SELECT invoice_ids, signed_at, expires_at FROM signature_requests").fetchall():
+        try:
+            cover = set(_json.loads(r_ids or '[]'))
+        except Exception:
+            continue
+        if r_signed:
+            signed_cover |= cover
+        elif not (r_exp and now_str > r_exp):
+            pending_cover |= cover
+    return signed_cover, pending_cover
+
+
+def _resync_sig_status(conn, invoice_ids):
+    """Derive each given invoice's signature_status from signature_requests (the source
+    of truth) and materialise it on the invoice. Keeps reads fast on the indexed column
+    while guaranteeing the flag always reflects whether a real signature exists.
+    Precedence: signed > active-pending > unsigned (NULL)."""
+    try:
+        ids = [int(i) for i in (invoice_ids or [])]
+    except (TypeError, ValueError):
+        return
+    if not ids:
+        return
+    signed_cover, pending_cover = _sig_coverage(conn)
+    for inv_id in ids:
+        if inv_id in signed_cover:
+            conn.execute("UPDATE invoices SET signature_status = 'signed' WHERE id = ?", (inv_id,))
+        elif inv_id in pending_cover:
+            conn.execute("UPDATE invoices SET signature_status = 'pending', signed_at = NULL WHERE id = ?", (inv_id,))
+        else:
+            conn.execute("UPDATE invoices SET signature_status = NULL, signed_at = NULL WHERE id = ?", (inv_id,))
+
+
+def _reconcile_sig_statuses(conn):
+    """One-time repair: reset any invoice whose stored signature_status drifted from the
+    signature_requests source of truth (e.g. a signed request was deleted, leaving the
+    slip flagged 'signed' with no signature)."""
+    signed_cover, pending_cover = _sig_coverage(conn)
+    flagged = conn.execute(
+        "SELECT id, COALESCE(signature_status,'') FROM invoices "
+        "WHERE signature_status IS NOT NULL AND signature_status != ''"
+    ).fetchall()
+    for inv_id, st in flagged:
+        if inv_id in signed_cover:
+            target = 'signed'
+        elif inv_id in pending_cover:
+            target = 'pending'
+        else:
+            target = None
+        if target != (st or None):
+            if target == 'signed':
+                conn.execute("UPDATE invoices SET signature_status = 'signed' WHERE id = ?", (inv_id,))
+            elif target == 'pending':
+                conn.execute("UPDATE invoices SET signature_status = 'pending', signed_at = NULL WHERE id = ?", (inv_id,))
+            else:
+                conn.execute("UPDATE invoices SET signature_status = NULL, signed_at = NULL WHERE id = ?", (inv_id,))
+
+
 def _build_cover_page(title: str, slips: list, subtitle: str = '') -> io.BytesIO:
     """Portrait A4 cover/summary page prepended to batch PDF exports."""
     pdf = _pdf_libs()
@@ -876,6 +940,17 @@ def init_db():
                 created_at TEXT
             )
         ''')
+
+        # One-time repair of any signature_status that drifted from the source of truth
+        # (e.g. a signed request was deleted, leaving a slip flagged 'signed' with no
+        # signature). Guarded by a config flag so the scan runs only once, ever.
+        try:
+            done = conn.execute("SELECT value FROM config WHERE key = 'sig_reconciled_v1'").fetchone()
+            if not done:
+                _reconcile_sig_statuses(conn)
+                conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('sig_reconciled_v1', '1')")
+        except Exception:
+            pass
 
 
 init_db()
@@ -2180,8 +2255,9 @@ def signatures_page():
 
 
 def _revoke_request(conn, req_id):
-    """Delete a request and clear 'pending' status on its invoices that aren't still
-    covered by another active (unsigned) request."""
+    """Delete a request, then re-derive its invoices' signature status from the remaining
+    requests. Deleting a SIGNED request correctly un-signs the slip (status + signed_at),
+    so the dashboard never shows 'Signed' for a slip with no signature."""
     row = conn.execute(
         "SELECT invoice_ids FROM signature_requests WHERE id = ?", (req_id,)
     ).fetchone()
@@ -2189,22 +2265,7 @@ def _revoke_request(conn, req_id):
         return
     ids = _json.loads(row[0]) if row[0] else []
     conn.execute("DELETE FROM signature_requests WHERE id = ?", (req_id,))
-    if ids:
-        remaining = conn.execute(
-            "SELECT invoice_ids FROM signature_requests WHERE signed_at IS NULL"
-        ).fetchall()
-        still_covered = set()
-        for (r_ids,) in remaining:
-            try:
-                still_covered.update(_json.loads(r_ids))
-            except Exception:
-                pass
-        for inv_id in ids:
-            if inv_id not in still_covered:
-                conn.execute(
-                    "UPDATE invoices SET signature_status = NULL WHERE id = ? AND signature_status = 'pending'",
-                    (inv_id,)
-                )
+    _resync_sig_status(conn, ids)
 
 
 def _reissue_request(conn, req_id, days=7):
@@ -2227,12 +2288,7 @@ def _reissue_request(conn, req_id, days=7):
            VALUES (?, ?, ?, ?, ?)""",
         (token, _json.dumps(ids), customer_name, created_at, expires_at)
     )
-    if ids:
-        placeholders = ','.join('?' * len(ids))
-        conn.execute(
-            f"UPDATE invoices SET signature_status = 'pending', signed_at = NULL WHERE id IN ({placeholders})",
-            ids
-        )
+    _resync_sig_status(conn, ids)
     return token
 
 
@@ -2315,12 +2371,7 @@ def extend_signature(req_id):
             pass
         new_expires = (base + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
         conn.execute("UPDATE signature_requests SET expires_at = ? WHERE id = ?", (new_expires, req_id))
-        if ids:  # if it had expired, bring invoices back to pending
-            placeholders = ','.join('?' * len(ids))
-            conn.execute(
-                f"UPDATE invoices SET signature_status = 'pending' WHERE id IN ({placeholders}) AND COALESCE(signature_status,'') != 'signed'",
-                ids
-            )
+        _resync_sig_status(conn, ids)  # reactivates a previously-expired link's invoices to pending
     return redirect(url_for('signatures_page'))
 
 
