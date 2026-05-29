@@ -510,7 +510,19 @@
     if (extra) Object.keys(extra).forEach(k => { if (k[0] !== '_') { const i=document.createElement('input'); i.type='hidden'; i.name=k; i.value=extra[k]; form.appendChild(i); } });
     document.body.appendChild(form); form.submit();
   }
-  function submitBulk(action) { const ids = selectedIds(); if (!ids.length) return; if (action === 'delete' && !confirm('Move ' + ids.length + ' slip(s) to Trash?')) return; _postForm('/bulk_action', ids, { action: action, _target: action === 'print' }); }
+  function submitBulk(action) {
+    const ids = selectedIds(); if (!ids.length) return;
+    if (action === 'delete') {
+      if (!confirm('Move ' + ids.length + ' slip(s) to Trash?')) return;
+      const fd = new FormData(); fd.append('action', 'delete'); ids.forEach(id => fd.append('selected_invoices', id));
+      fetch('/bulk_action', { method: 'POST', body: fd }).then(() => {
+        clearSelection(); loadRows(false); refreshTrashCount();
+        if (window._showToast) window._showToast(ids.length + ' slip(s) moved to Trash');
+      }).catch(() => { if (window._showToast) window._showToast('Delete failed', true); });
+      return;
+    }
+    _postForm('/bulk_action', ids, { action: action, _target: action === 'print' }); // print/download/excel need a real form post
+  }
   function bulkTrashAction(kind) { const ids = selectedIds(); if (!ids.length) return; if (kind === 'purge' && !confirm('Permanently delete ' + ids.length + ' slip(s)? This cannot be undone.')) return; _postForm(kind === 'restore' ? '/admin/slips/restore' : '/admin/slips/purge', ids, {}); }
   function openBulkStatusModal() { if (!selectedIds().length) return; document.getElementById('bsCount').textContent = selectedIds().length; document.getElementById('bulkStatusModal').classList.add('open'); }
   function toggleBsPayDate() { document.getElementById('bsPayRow').style.display = document.getElementById('bsStatus').value === 'Payment Received' ? '' : 'none'; }
