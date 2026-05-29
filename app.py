@@ -699,6 +699,7 @@ def init_db():
             ('payment_date', 'TEXT'),
             ('project_code', 'TEXT'),
             ('mail_approval_date', 'TEXT'),
+            ('route_stops_json', 'TEXT'),
         ]
         for col_name, col_type in required_columns:
             if col_name not in columns:
@@ -1337,7 +1338,10 @@ def clone_invoice(invoice_id):
     driver_list, vehicle_rows, customer_rows = _load_ref_data()
     with sqlite3.connect(DATABASE) as conn:
         row = conn.execute(
-            "SELECT customer_name, company_name, vehicle_type, vehicle_no, driver_name, project_code, mail_approval_date, route_covered FROM invoices WHERE id = ?",
+            """SELECT customer_name, company_name, vehicle_type, vehicle_no, driver_name,
+                      project_code, mail_approval_date, route_covered,
+                      COALESCE(total_km,''), COALESCE(route_stops_json,'')
+               FROM invoices WHERE id = ?""",
             (invoice_id,)
         ).fetchone()
     if not row:
@@ -1347,14 +1351,16 @@ def clone_invoice(invoice_id):
     customer_list = [r[0] for r in customer_rows]
     customer_map  = {r[0]: r[1] for r in customer_rows}
     prefill = {
-        'customer_name': row[0] or '',
-        'company_name': row[1] or '',
-        'vehicle_type': row[2] or '',
-        'vehicle_no': row[3] or '',
-        'driver_name': row[4] or '',
-        'project_code': row[5] or '',
+        'customer_name':     row[0] or '',
+        'company_name':      row[1] or '',
+        'vehicle_type':      row[2] or '',
+        'vehicle_no':        row[3] or '',
+        'driver_name':       row[4] or '',
+        'project_code':      row[5] or '',
         'mail_approval_date': row[6] or '',
-        'route_covered': row[7] or '',
+        'route_covered':     row[7] or '',
+        'total_km':          row[8] or '',
+        'route_stops_json':  row[9] or '',
     }
     next_slip_no = get_next_duty_slip_no()
     today = date.today().strftime('%Y-%m-%d')
@@ -1388,6 +1394,7 @@ def generate_invoice():
     closing_date = request.form.get('closing_date', '') or ''
     route_covered = request.form['route_covered']
     driver_name = request.form['driver_name']
+    route_stops_json = request.form.get('route_stops_json', '')
 
     # Normalize names to existing canonical versions to prevent case-duplicate records
     with sqlite3.connect(DATABASE) as _norm_conn:
@@ -1426,15 +1433,15 @@ def generate_invoice():
                 starting_km, closing_km, total_km,
                 starting_time, closing_time, total_time,
                 project_code, mail_approval_date, closing_date, route_covered, driver_name,
-                admin_username, created_at, bill_status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Bill Generated')
+                admin_username, created_at, bill_status, route_stops_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Bill Generated', ?)
         """, (
             customer_name, company_name, date_value,
             duty_slip_no, vehicle_type, vehicle_no,
             starting_km, closing_km, total_km,
             starting_time, closing_time, total_time,
             project_code, mail_approval_date, closing_date or None, route_covered, driver_name,
-            admin_username, created_at
+            admin_username, created_at, route_stops_json or None
         ))
         # Auto-create customer if not already in the list
         if customer_name:
@@ -1530,7 +1537,8 @@ def last_slip_json():
         row = conn.execute(
             """SELECT customer_name, company_name, vehicle_type, vehicle_no,
                       driver_name, starting_km, total_km, project_code,
-                      mail_approval_date, starting_time, closing_time, route_covered
+                      mail_approval_date, starting_time, closing_time, route_covered,
+                      COALESCE(route_stops_json,'')
                FROM invoices WHERE admin_username = ?
                ORDER BY id DESC LIMIT 1""",
             (session['admin'],)
@@ -1544,6 +1552,7 @@ def last_slip_json():
         'total_km': row[6] or '', 'project_code': row[7] or '',
         'mail_approval_date': row[8] or '', 'starting_time': row[9] or '',
         'closing_time': row[10] or '', 'route_covered': row[11] or '',
+        'route_stops_json': row[12] or '',
     })
 
 

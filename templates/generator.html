@@ -776,6 +776,8 @@
         </button>
       </div>
 
+      <input type="hidden" id="route_stops_json" name="route_stops_json"
+             value="{{ prefill.get('route_stops_json', '') }}">
     </form>
   </div>
 
@@ -1061,9 +1063,14 @@
           set('#closing_time',  d.closing_time);
           set('#project_code',  d.project_code);
           set('#mail_approval_date', d.mail_approval_date);
+          // Always fill from stored data first
           if (d.route_covered) document.getElementById('route_covered').value = d.route_covered;
           if (d.total_km) { totalKmEl.value = d.total_km; recalcCloseFromStartAndTotal(); }
           calcTime();
+          // Restore map builder waypoints if stored
+          if (d.route_stops_json) {
+            try { restoreFromTemplate(JSON.parse(d.route_stops_json)); } catch(e) {}
+          }
           btn.textContent = '✓ Applied';
           setTimeout(() => { btn.textContent = '↩ Last Slip'; }, 2000);
         })
@@ -1597,6 +1604,25 @@
     // =====================================================================
     // APPLY ROUTE TO SLIP
     // =====================================================================
+    function serializeStops() {
+      const originEl = document.getElementById('originInput');
+      const stopsData = [];
+      for (const row of document.querySelectorAll('#waypointsList > .waypoint-row')) {
+        if (row.dataset.type === 'loop') {
+          const fromIn = row.querySelector('.loop-from'), toIn = row.querySelector('.loop-to');
+          stopsData.push({ type: 'loop',
+            from_value: fromIn.value.trim(), from_short: fromIn.dataset.shortName || '',
+            to_value:   toIn.value.trim(),   to_short:   toIn.dataset.shortName   || '',
+            count: parseInt(row.querySelector('.loop-count').value, 10) || 2 });
+        } else {
+          const inp = row.querySelector('.waypoint-input');
+          stopsData.push({ type: 'stop', value: inp.value.trim(), short: inp.dataset.shortName || '' });
+        }
+      }
+      return { origin: { value: originEl.value.trim(), short: originEl.dataset.shortName || '' },
+               stops: stopsData, return_to_origin: document.getElementById('returnToOrigin').checked };
+    }
+
     function _silentApply() {
       // Auto-fills route_covered + total_km but stays in map mode
       if (!currentRoute) return;
@@ -1605,6 +1631,7 @@
       totalKmEl.value = currentRoute.distance_km;
       recalcCloseFromStartAndTotal();
       kmSyncLock = false;
+      document.getElementById('route_stops_json').value = JSON.stringify(serializeStops());
     }
 
     const ADDRESS_ALIASES = {
@@ -1628,6 +1655,7 @@
       totalKmEl.value = distance_km;
       recalcCloseFromStartAndTotal();
       kmSyncLock = false;
+      document.getElementById('route_stops_json').value = JSON.stringify(serializeStops());
 
       setRouteMode('manual');   // switch back so user can see the filled textarea
     }
