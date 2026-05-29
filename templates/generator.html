@@ -1618,22 +1618,29 @@
     let wpCounter    = 0;
     let dragSrcRow   = null;
 
-    // Fetch key then immediately inject Maps script — don't wait for user to click Map Builder
-    fetch('/config/maps_key')
-      .then(r => r.json())
-      .then(d => {
-        mapsKey = d.key || '';
-        if (mapsKey && !mapsScriptInjected) {
-          mapsScriptInjected = true;
-          const s = document.createElement('script');
-          s.src = 'https://maps.googleapis.com/maps/api/js?key=' + mapsKey +
-                  '&libraries=places&callback=_onMapsReady';
-          s.async = true;
-          document.head.appendChild(s);
-        } else if (!mapsKey) {
-          document.getElementById('noKeyNotice').style.display = '';
-        }
-      });
+    // Lazy-load Google Maps — only when the Map Builder is actually opened (or a saved
+    // route needs restoring). Keeps the New Slip page fast: the heavy Maps + Places +
+    // Directions bundle is NOT downloaded for the common Manual-entry flow.
+    function ensureMaps() {
+      if (mapsScriptInjected) return;
+      mapsScriptInjected = true;
+      fetch('/config/maps_key')
+        .then(r => r.json())
+        .then(d => {
+          mapsKey = d.key || '';
+          if (mapsKey) {
+            const s = document.createElement('script');
+            s.src = 'https://maps.googleapis.com/maps/api/js?key=' + mapsKey + '&libraries=places&callback=_onMapsReady';
+            s.async = true;
+            document.head.appendChild(s);
+          } else {
+            mapsScriptInjected = false; // allow retry
+            const n = document.getElementById('noKeyNotice'); if (n) n.style.display = '';
+            const ld = document.getElementById('mapsLoading'); if (ld) ld.style.display = 'none';
+          }
+        })
+        .catch(() => { mapsScriptInjected = false; });
+    }
 
     let _originAcAttached = false;
     function setRouteMode(mode) {
@@ -1649,11 +1656,8 @@
         if (txt && (routeTextDirty || mapEmpty)) parseTextToMap(txt);
         routeTextDirty = false;
 
-        if (!mapsKey) {
-          document.getElementById('noKeyNotice').style.display = '';
-        } else if (!mapsLoaded) {
-          document.getElementById('mapsLoading').style.display = '';
-        } else {
+        ensureMaps();  // kick off the (lazy) Maps load if not already done
+        if (mapsLoaded) {
           setTimeout(() => google.maps.event.trigger(mapInstance, 'resize'), 50);
           if (!_originAcAttached) {
             const originInput = document.getElementById('originInput');
@@ -1662,6 +1666,10 @@
             _originAcAttached = true;
           }
           debouncedCalc();
+        } else {
+          // loading (or key being fetched) → show the loading state; _onMapsReady wires up,
+          // or ensureMaps() reveals the "no key" notice if there's no key.
+          document.getElementById('mapsLoading').style.display = '';
         }
       } else if (mode === 'manual') {
         // Auto-apply the route TEXT from the builder (Total KM stays — set only via Apply).

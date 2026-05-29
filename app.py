@@ -996,11 +996,11 @@ def _canonical_cached(kind, name):
     return name
 
 
-def get_next_duty_slip_no():
-    with sqlite3.connect(DATABASE) as conn:
-        rows = conn.execute(
-            "SELECT duty_slip_no FROM invoices WHERE duty_slip_no IS NOT NULL AND duty_slip_no != '' AND deleted_at IS NULL ORDER BY id DESC LIMIT 200",
-        ).fetchall()
+_NEXT_SLIP_SQL = ("SELECT duty_slip_no FROM invoices WHERE duty_slip_no IS NOT NULL "
+                  "AND duty_slip_no != '' AND deleted_at IS NULL ORDER BY id DESC LIMIT 200")
+
+
+def _next_slip_from_rows(rows):
     max_num = 0
     for (s,) in rows:
         digits = ''.join(c for c in s if c.isdigit())
@@ -1009,6 +1009,12 @@ def get_next_duty_slip_no():
             if n > max_num:
                 max_num = n
     return str(max_num + 1) if max_num > 0 else ''
+
+
+def get_next_duty_slip_no():
+    with sqlite3.connect(DATABASE) as conn:
+        rows = conn.execute(_NEXT_SLIP_SQL).fetchall()
+    return _next_slip_from_rows(rows)
 
 
 _FAVICON_SVG = (
@@ -1428,40 +1434,42 @@ def generator_form():
         return redirect(url_for('home'))
     prefill = {}
     template_id = request.args.get('template_id', type=int)
-    driver_list, vehicle_rows, customer_rows = _load_ref_data()
-    with sqlite3.connect(DATABASE) as conn:
-        quick_templates = conn.execute(
-            "SELECT id, template_name FROM slip_templates WHERE admin_username = ? ORDER BY use_count DESC, created_at DESC",
-            (session['admin'],)
-        ).fetchall()
-        if template_id:
-            t = conn.execute(
-                """SELECT customer_name, company_name, vehicle_type, vehicle_no,
-                          route_covered, dn, remarks, driver_name,
-                          starting_km, total_km,
-                          COALESCE(project_code,''), COALESCE(mail_approval_date,''),
-                          COALESCE(starting_time,''), COALESCE(closing_time,''),
-                          COALESCE(route_stops_json,'')
-                   FROM slip_templates
-                   WHERE id = ? AND admin_username = ?""",
-                (template_id, session['admin']),
-            ).fetchone()
-            if t:
-                prefill = {
-                    'customer_name': t[0] or '', 'company_name': t[1] or '',
-                    'vehicle_type':  t[2] or '', 'vehicle_no':   t[3] or '',
-                    'route_covered': t[4] or '', 'dn':           t[5] or '',
-                    'remarks':       t[6] or '', 'driver_name':  t[7] or '',
-                    'starting_km':   t[8] or '', 'total_km':     t[9] or '',
-                    'project_code':  t[10] or '', 'mail_approval_date': t[11] or '',
-                    'starting_time': t[12] or '', 'closing_time': t[13] or '',
-                    'route_stops_json': t[14] or '',
-                }
+    driver_list, vehicle_rows, customer_rows = _load_ref_data()  # cached (TTL), usually no round-trip
+
+    # Batch quick-templates + next-slip-no (+ template prefill) into ONE round-trip.
+    queries = [
+        ("SELECT id, template_name FROM slip_templates WHERE admin_username = ? ORDER BY use_count DESC, created_at DESC", (session['admin'],)),
+        (_NEXT_SLIP_SQL, ()),
+    ]
+    if template_id:
+        queries.append((
+            """SELECT customer_name, company_name, vehicle_type, vehicle_no,
+                      route_covered, dn, remarks, driver_name, starting_km, total_km,
+                      COALESCE(project_code,''), COALESCE(mail_approval_date,''),
+                      COALESCE(starting_time,''), COALESCE(closing_time,''),
+                      COALESCE(route_stops_json,'')
+               FROM slip_templates WHERE id = ? AND admin_username = ?""",
+            (template_id, session['admin'])))
+    curs = _db_multi_exec(queries)
+    quick_templates = curs[0].fetchall()
+    next_slip_no = _next_slip_from_rows(curs[1].fetchall())
+    if template_id:
+        t = curs[2].fetchone()
+        if t:
+            prefill = {
+                'customer_name': t[0] or '', 'company_name': t[1] or '',
+                'vehicle_type':  t[2] or '', 'vehicle_no':   t[3] or '',
+                'route_covered': t[4] or '', 'dn':           t[5] or '',
+                'remarks':       t[6] or '', 'driver_name':  t[7] or '',
+                'starting_km':   t[8] or '', 'total_km':     t[9] or '',
+                'project_code':  t[10] or '', 'mail_approval_date': t[11] or '',
+                'starting_time': t[12] or '', 'closing_time': t[13] or '',
+                'route_stops_json': t[14] or '',
+            }
     vehicle_list  = [r[0] for r in vehicle_rows]
     vehicle_map   = {r[0]: r[1] for r in vehicle_rows}
     customer_list = [r[0] for r in customer_rows]
     customer_map  = {r[0]: r[1] for r in customer_rows}
-    next_slip_no = get_next_duty_slip_no()
     today = date.today().strftime('%Y-%m-%d')
     return render_template('generator.html',
                            driver_list=driver_list, vehicle_list=vehicle_list, vehicle_map=vehicle_map,
