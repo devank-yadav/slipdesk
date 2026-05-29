@@ -1013,6 +1013,18 @@
     let _downloading = false, _closePending = false;
 
     function submitGenerate(form) {
+      // Persist the route correctly so it restores later:
+      // - Map Builder active → it's the source of truth: write route_covered + route_stops_json.
+      // - Manual active & the text was edited → the saved map structure is stale, so drop it
+      //   (restore will rebuild the map from the route text).
+      try {
+        const mapActive = document.getElementById('mapSection').style.display !== 'none';
+        if (mapActive) {
+          syncMapToText(false);
+        } else if (routeTextDirty) {
+          const rsj = document.getElementById('route_stops_json'); if (rsj) rsj.value = '';
+        }
+      } catch (e) {}
       _lockSubmit();
       fetch('/generate', {
         method: 'POST',
