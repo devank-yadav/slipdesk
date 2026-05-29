@@ -53,6 +53,12 @@
     .quick-tpl-last { background: #f0fdf4; border-color: #86efac; color: #166534; }
     .quick-tpl-last:hover { background: #dcfce7; border-color: #4ade80; }
     .quick-tpl-btn.loading { opacity: 0.5; cursor: wait; }
+    .ai-fill-input {
+      flex: 1; min-width: 200px; padding: 6px 12px; border-radius: 20px;
+      border: 1.5px solid var(--border); background: #fff; color: var(--text);
+      font-size: 12px; font-family: inherit; outline: none;
+    }
+    .ai-fill-input:focus { border-color: var(--primary); }
     .clone-badge {
       display: inline-flex;
       align-items: center;
@@ -531,6 +537,28 @@
     <button type="button" class="quick-tpl-btn" onclick="applyQuickTemplate({{ tpl[0] }})">{{ tpl[1] }}</button>
     {% endfor %}
   </div>
+
+  {% if ai_enabled %}
+  <div class="quick-tpl-bar ai-fill-bar">
+    <span class="quick-tpl-label">AI fill:</span>
+    <input type="text" id="aiText" class="ai-fill-input" autocomplete="off"
+           placeholder="Describe the trip — e.g. Innova for ABC Corp, airport drop & back, driver Ramesh, 9am–1pm, 45km"
+           onkeydown="if(event.key==='Enter'){event.preventDefault();aiFillFromText(document.getElementById('aiTextBtn'));}">
+    <button type="button" class="quick-tpl-btn" id="aiTextBtn" onclick="aiFillFromText(this)">Fill</button>
+    <button type="button" class="quick-tpl-btn" id="aiMicBtn" onclick="aiToggleMic(this)" title="Speak the trip">🎤</button>
+    <label class="quick-tpl-btn" id="aiPhotoLabel" style="margin:0;display:inline-flex;align-items:center;gap:5px;">
+      📷 Scan slip
+      <input type="file" id="aiPhoto" accept="image/*" capture="environment" style="display:none;" onchange="aiFillFromPhoto(this)">
+    </label>
+    <span id="aiStatus" style="font-size:12px;color:var(--text-muted);"></span>
+  </div>
+  <div id="aiWarn" style="display:none;max-width:980px;margin:6px auto 0;padding:0 40px;">
+    <div style="padding:10px 14px;background:#fff8e1;border:1px solid #ffe082;border-radius:8px;font-size:13px;">
+      <strong style="color:#e65100;">Review needed</strong>
+      <div id="aiWarnList" style="margin:5px 0 0;color:#5d4037;"></div>
+    </div>
+  </div>
+  {% endif %}
 
   <div class="form-card">
     <form action="/generate" method="post">
@@ -1110,6 +1138,99 @@
         })
         .finally(() => btn.classList.remove('loading'));
     }
+
+    // =====================================================================
+    // AI ASSIST — fill the form from a sentence or a photo (review, never auto-submit)
+    // =====================================================================
+    function applyAiFields(d) {
+      const set = (sel, val) => { const el = document.querySelector(sel); if (el && val) el.value = val; };
+      set('#customer_name', d.customer_name);
+      set('#company_name',  d.company_name);
+      set('#vehicle_type',  d.vehicle_type);
+      set('#vehicle_no',    d.vehicle_no);
+      set('#driver_name',   d.driver_name);
+      set('#starting_km',   d.starting_km);
+      set('#closing_km',    d.closing_km);
+      set('#starting_time', d.starting_time);
+      set('#closing_time',  d.closing_time);
+      set('#project_code',  d.project_code);
+      set('#mail_approval_date', d.mail_approval_date);
+      set('#date',          d.date);
+      if (d.route_covered) document.getElementById('route_covered').value = d.route_covered;
+      // Derive totals using existing logic
+      if (d.total_km) { totalKmEl.value = d.total_km; recalcCloseFromStartAndTotal(); }
+      else { recalcTotalFromStartAndClose && recalcTotalFromStartAndClose(); }
+      if (typeof calcTime === 'function') calcTime();
+    }
+
+    function _aiShowWarnings(warnings) {
+      const box = document.getElementById('aiWarn');
+      if (!box) return;
+      if (warnings && warnings.length) {
+        document.getElementById('aiWarnList').innerHTML =
+          warnings.map(w => '• ' + w.replace(/</g, '&lt;')).join('<br>');
+        box.style.display = '';
+      } else {
+        box.style.display = 'none';
+      }
+    }
+
+    function _aiStatus(msg) { const el = document.getElementById('aiStatus'); if (el) el.textContent = msg || ''; }
+
+    function aiFillFromText(btn) {
+      const text = (document.getElementById('aiText').value || '').trim();
+      if (!text) { _aiStatus('Type a description first.'); return; }
+      btn.classList.add('loading'); _aiStatus('Reading…');
+      fetch('/ai/parse_slip', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      })
+        .then(r => r.json())
+        .then(d => {
+          if (!d.ok) { _aiStatus(d.error || 'Could not read that.'); return; }
+          applyAiFields(d.fields); _aiShowWarnings(d.warnings); _aiStatus('Filled — please review.');
+        })
+        .catch(() => _aiStatus('AI request failed.'))
+        .finally(() => btn.classList.remove('loading'));
+    }
+
+    function aiFillFromPhoto(input) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const label = document.getElementById('aiPhotoLabel');
+      label.classList.add('loading'); _aiStatus('Reading slip…');
+      const fd = new FormData();
+      fd.append('file', file);
+      fetch('/ai/parse_slip_image', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(d => {
+          if (!d.ok) { _aiStatus(d.error || 'Could not read the photo.'); return; }
+          applyAiFields(d.fields); _aiShowWarnings(d.warnings); _aiStatus('Filled — please review.');
+        })
+        .catch(() => _aiStatus('AI request failed.'))
+        .finally(() => { label.classList.remove('loading'); input.value = ''; });
+    }
+
+    // Dedicated speech recognition for the AI description box (separate from route mic)
+    (function () {
+      const micBtn = document.getElementById('aiMicBtn');
+      const box = document.getElementById('aiText');
+      if (!micBtn || !box) return;
+      const SR2 = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR2) { micBtn.style.display = 'none'; return; }
+      const rec = new SR2();
+      rec.lang = 'en-IN'; rec.continuous = true; rec.interimResults = false;
+      let listening = false;
+      window.aiToggleMic = function (btn) {
+        if (listening) { rec.stop(); return; }
+        try { rec.start(); listening = true; btn.textContent = '⏹'; _aiStatus('Listening…'); }
+        catch (e) { /* already started */ }
+      };
+      rec.addEventListener('result', e => {
+        box.value += (box.value ? ' ' : '') + e.results[e.results.length - 1][0].transcript;
+      });
+      rec.addEventListener('end', () => { listening = false; micBtn.textContent = '🎤'; _aiStatus(''); });
+    })();
 
     // =====================================================================
     // PREFILL FROM TEMPLATE / CLONE

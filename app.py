@@ -10,6 +10,8 @@ from urllib.parse import urlencode
 from datetime import datetime, date, timedelta
 
 from flask import Flask, render_template, request, send_file, redirect, url_for, session, jsonify, Response
+
+import ai_assist
 from functools import lru_cache
 
 import urllib.request
@@ -1327,7 +1329,7 @@ def generator_form():
     return render_template('generator.html',
                            driver_list=driver_list, vehicle_list=vehicle_list, vehicle_map=vehicle_map,
                            customer_list=customer_list, customer_map=customer_map,
-                           quick_templates=quick_templates,
+                           quick_templates=quick_templates, ai_enabled=ai_assist.AI_ENABLED,
                            prefill=prefill, next_slip_no=next_slip_no, today=today)
 
 
@@ -1367,7 +1369,7 @@ def clone_invoice(invoice_id):
     return render_template('generator.html',
                            driver_list=driver_list, vehicle_list=vehicle_list, vehicle_map=vehicle_map,
                            customer_list=customer_list, customer_map=customer_map,
-                           quick_templates=[],
+                           quick_templates=[], ai_enabled=ai_assist.AI_ENABLED,
                            prefill=prefill, next_slip_no=next_slip_no, today=today)
 
 
@@ -1616,6 +1618,66 @@ def get_maps_key():
     if 'admin' not in session:
         return jsonify({'key': ''}), 401
     return jsonify({'key': GOOGLE_MAPS_API_KEY})
+
+
+def _ai_known_names():
+    """Known drivers/customers/vehicle types for AI name normalization."""
+    driver_list, vehicle_rows, customer_rows = _load_ref_data()
+    return {
+        'drivers':   driver_list,
+        'vehicles':  [r[0] for r in vehicle_rows],
+        'customers': [r[0] for r in customer_rows],
+    }
+
+
+@app.route('/ai/parse_slip', methods=['POST'])
+def ai_parse_slip():
+    if 'admin' not in session:
+        return jsonify({'ok': False, 'error': 'unauthorized'}), 401
+    if not ai_assist.AI_ENABLED:
+        return jsonify({'ok': False, 'error': 'AI is not configured'}), 503
+    text = (request.json or {}).get('text', '').strip() if request.is_json else request.form.get('text', '').strip()
+    if not text:
+        return jsonify({'ok': False, 'error': 'No description provided'}), 400
+    try:
+        result = ai_assist.extract_slip_fields(text=text, known=_ai_known_names())
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'AI request failed: %s' % str(e)[:200]}), 502
+    return jsonify({'ok': True, 'fields': result['fields'], 'warnings': result['warnings']})
+
+
+@app.route('/ai/parse_slip_image', methods=['POST'])
+def ai_parse_slip_image():
+    if 'admin' not in session:
+        return jsonify({'ok': False, 'error': 'unauthorized'}), 401
+    if not ai_assist.AI_ENABLED:
+        return jsonify({'ok': False, 'error': 'AI is not configured'}), 503
+
+    image_b64 = None
+    image_mime = 'image/jpeg'
+    MAX_BYTES = 6 * 1024 * 1024  # ~6 MB
+
+    f = request.files.get('file')
+    if f is not None:
+        raw = f.read()
+        if len(raw) > MAX_BYTES:
+            return jsonify({'ok': False, 'error': 'Image too large (max 6 MB)'}), 400
+        import base64 as _b64
+        image_b64 = _b64.b64encode(raw).decode('ascii')
+        image_mime = f.mimetype or 'image/jpeg'
+    elif request.is_json:
+        body = request.json or {}
+        image_b64 = (body.get('image_b64') or '').strip()
+        image_mime = body.get('mime') or 'image/jpeg'
+
+    if not image_b64:
+        return jsonify({'ok': False, 'error': 'No image provided'}), 400
+    try:
+        result = ai_assist.extract_slip_fields(
+            image_b64=image_b64, image_mime=image_mime, known=_ai_known_names())
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'AI request failed: %s' % str(e)[:200]}), 502
+    return jsonify({'ok': True, 'fields': result['fields'], 'warnings': result['warnings']})
 
 
 @app.route('/customer_autocomplete')
