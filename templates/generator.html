@@ -815,13 +815,20 @@
     // =====================================================================
     let _dupDismissed = false;
 
+    // Instant feedback: lock the submit button so the click feels responsive while the
+    // (now single-round-trip) save happens and the success page loads.
+    function _lockSubmit() {
+      const b = document.getElementById('btnSubmit');
+      if (b) { b.disabled = true; b.textContent = 'Generating…'; }
+    }
+
     document.querySelector('form[action="/generate"]').addEventListener('submit', function(e) {
-      if (_dupDismissed) return; // user already acknowledged
+      if (_dupDismissed) { _lockSubmit(); return; } // user already acknowledged
       const form = this;
       const customer = (form.elements['customer_name'] || {}).value || '';
       const date     = (form.elements['dn'] || {}).value || '';
       const vehicleNo= (form.elements['vehicle_no'] || {}).value || '';
-      if (!customer || !date) return; // nothing to check
+      if (!customer || !date) { _lockSubmit(); return; } // nothing to check — submit natively
 
       e.preventDefault();
 
@@ -843,15 +850,17 @@
           document.getElementById('dupWarning').style.display = 'block';
           document.getElementById('dupWarning').scrollIntoView({ behavior:'smooth', block:'nearest' });
         } else {
+          _lockSubmit();
           form.submit();
         }
       })
-      .catch(() => form.submit()); // on network error, allow submit
+      .catch(() => { _lockSubmit(); form.submit(); }); // on network error, allow submit
     });
 
     function dismissDup() {
       _dupDismissed = true;
       document.getElementById('dupWarning').style.display = 'none';
+      _lockSubmit();
       document.querySelector('form[action="/generate"]').submit();
     }
 

@@ -634,9 +634,10 @@ sqlite3.connect = _db_connect
 
 class _MatCursor:
     """Materialised cursor — rows fetched eagerly so connection can close."""
-    def __init__(self, rows):
+    def __init__(self, rows, lastrowid=None):
         self._rows = rows
         self._idx = 0
+        self.lastrowid = lastrowid
 
     def fetchone(self):
         if self._idx < len(self._rows):
@@ -656,7 +657,11 @@ def _db_multi_exec(queries):
         return [_TursoCursor(r) for r in results[:-1]]
     conn = _sqlite_connect(DATABASE)
     try:
-        cursors = [_MatCursor(conn.execute(sql, params).fetchall()) for sql, params in queries]
+        cursors = []
+        for sql, params in queries:
+            cur = conn.execute(sql, params)
+            cursors.append(_MatCursor(cur.fetchall(), lastrowid=cur.lastrowid))
+        conn.commit()  # persist any writes (no-op for read-only batches)
     finally:
         conn.close()
     return cursors
@@ -861,6 +866,20 @@ def _canonical_name(conn, table, name):
         f"SELECT name FROM {table} WHERE LOWER(name) = LOWER(?)", (name,)
     ).fetchone()
     return row[0] if row else name
+
+
+def _canonical_cached(kind, name):
+    """Canonicalize a customer/vehicle name against the in-memory cached reference
+    lists (no DB round-trip). 'kind' is 'customers' or 'vehicles'."""
+    if not name:
+        return name
+    _dl, vehicle_rows, customer_rows = _load_ref_data()
+    rows = customer_rows if kind == 'customers' else vehicle_rows
+    low = name.lower()
+    for r in rows:
+        if r[0] and r[0].lower() == low:
+            return r[0]
+    return name
 
 
 def get_next_duty_slip_no():
@@ -1398,12 +1417,12 @@ def generate_invoice():
     driver_name = request.form['driver_name']
     route_stops_json = request.form.get('route_stops_json', '')
 
-    # Normalize names to existing canonical versions to prevent case-duplicate records
-    with sqlite3.connect(DATABASE) as _norm_conn:
-        if customer_name:
-            customer_name = _canonical_name(_norm_conn, 'customers', customer_name)
-        if vehicle_type:
-            vehicle_type = _canonical_name(_norm_conn, 'vehicles', vehicle_type)
+    # Normalize names to existing canonical versions (case-duplicate guard) using the
+    # in-memory cached reference lists — avoids two DB round-trips on the hot path.
+    if customer_name:
+        customer_name = _canonical_cached('customers', customer_name)
+    if vehicle_type:
+        vehicle_type = _canonical_cached('vehicles', vehicle_type)
 
     slip_data = {
         'customer_name': customer_name,
@@ -1424,59 +1443,45 @@ def generate_invoice():
         'route_covered': route_covered,
         'driver_name': driver_name,
     }
-    buf = _build_pdf(slip_data)
 
+    # Batch all writes into ONE round-trip: auto-create customer/vehicle (idempotent via
+    # the UNIQUE name constraint) + the invoice insert. The new id comes from the invoice
+    # statement's lastrowid — no follow-up SELECT. No PDF is built here; it is regenerated
+    # on demand at download time.
     created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    with sqlite3.connect(DATABASE) as conn:
-        conn.execute("""
-            INSERT INTO invoices(
+    queries = []
+    if customer_name:
+        queries.append((
+            "INSERT OR IGNORE INTO customers (name, company) VALUES (?, ?)",
+            (customer_name, company_name or '')))
+    if vehicle_type:
+        queries.append((
+            "INSERT OR IGNORE INTO vehicles (name, vehicle_no) VALUES (?, ?)",
+            (vehicle_type, vehicle_no or '')))
+    queries.append((
+        """INSERT INTO invoices(
                 customer_name, company_name, date,
                 duty_slip_no, vehicle_type, vehicle_no,
                 starting_km, closing_km, total_km,
                 starting_time, closing_time, total_time,
                 project_code, mail_approval_date, closing_date, route_covered, driver_name,
                 admin_username, created_at, bill_status, route_stops_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Bill Generated', ?)
-        """, (
-            customer_name, company_name, date_value,
-            duty_slip_no, vehicle_type, vehicle_no,
-            starting_km, closing_km, total_km,
-            starting_time, closing_time, total_time,
-            project_code, mail_approval_date, closing_date or None, route_covered, driver_name,
-            admin_username, created_at, route_stops_json or None
-        ))
-        # Auto-create customer if not already in the list
-        if customer_name:
-            exists = conn.execute(
-                "SELECT 1 FROM customers WHERE LOWER(name) = LOWER(?)", (customer_name,)
-            ).fetchone()
-            if not exists:
-                conn.execute(
-                    "INSERT INTO customers (name, company) VALUES (?, ?)",
-                    (customer_name, company_name or '')
-                )
-        # Auto-create vehicle if not already in the list
-        if vehicle_type:
-            exists = conn.execute(
-                "SELECT 1 FROM vehicles WHERE LOWER(name) = LOWER(?)", (vehicle_type,)
-            ).fetchone()
-            if not exists:
-                conn.execute(
-                    "INSERT INTO vehicles (name, vehicle_no) VALUES (?, ?)",
-                    (vehicle_type, vehicle_no or '')
-                )
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Bill Generated', ?)""",
+        (customer_name, company_name, date_value,
+         duty_slip_no, vehicle_type, vehicle_no,
+         starting_km, closing_km, total_km,
+         starting_time, closing_time, total_time,
+         project_code, mail_approval_date, closing_date or None, route_covered, driver_name,
+         admin_username, created_at, route_stops_json or None)))
 
+    cursors = _db_multi_exec(queries)
     _cache_bust()
-    with sqlite3.connect(DATABASE) as _id_conn:
-        new_id = _id_conn.execute(
-            "SELECT id FROM invoices WHERE admin_username = ? AND created_at = ? ORDER BY id DESC LIMIT 1",
-            (admin_username, created_at)
-        ).fetchone()
-    new_invoice_id = new_id[0] if new_id else None
+    new_invoice_id = getattr(cursors[-1], 'lastrowid', None)
 
     if new_invoice_id:
         return redirect(url_for('generator_success', invoice_id=new_invoice_id))
-    # fallback: direct PDF download if ID lookup fails
+    # fallback: direct PDF download if the id lookup somehow fails
+    buf = _build_pdf(slip_data)
     filename = f"slip_{duty_slip_no or customer_name.replace(' ', '_')}.pdf"
     return send_file(buf, as_attachment=True, download_name=filename, mimetype='application/pdf')
 

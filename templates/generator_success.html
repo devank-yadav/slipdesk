@@ -132,14 +132,14 @@
       </svg>
       Download
     </div>
-    <a class="btn btn-blue" href="/invoice/{{ invoice_id }}/download">
+    <button class="btn btn-blue" id="downloadBtn" onclick="downloadPdf(this)">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
         <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
       </svg>
       Download PDF
-    </a>
+    </button>
   </div>
 
   <!-- Signature + WhatsApp -->
@@ -213,6 +213,33 @@ const CUSTOMER_NAME = {{ customer_name | tojson }};
 const DUTY_SLIP_NO  = {{ (duty_slip_no or '') | tojson }};
 const SLIP_DATE     = {{ (slip_date or '') | tojson }};
 let   _signUrl      = '';
+
+// Warm the "New Slip" page so it opens instantly when clicked.
+(function () {
+  const pf = document.createElement('link');
+  pf.rel = 'prefetch'; pf.href = '/generator';
+  document.head.appendChild(pf);
+})();
+
+// Download the PDF in the background — fetch as a blob with button feedback,
+// so the page never freezes or navigates while the server renders the PDF.
+function downloadPdf(btn) {
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.textContent = 'Preparing…';
+  fetch('/invoice/' + INVOICE_ID + '/download')
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'slip_' + (DUTY_SLIP_NO || CUSTOMER_NAME || INVOICE_ID) + '.pdf';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    })
+    .catch(() => { if (window._showToast) window._showToast('Download failed — please retry.', true); })
+    .finally(() => { btn.disabled = false; btn.innerHTML = orig; });
+}
 
 function createSignLink() {
   const btn = document.getElementById('createLinkBtn');
