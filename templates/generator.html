@@ -1420,9 +1420,13 @@
           if (d.route_covered) document.getElementById('route_covered').value = d.route_covered;
           if (d.total_km) { totalKmEl.value = d.total_km; recalcCloseFromStartAndTotal(); }
           calcTime();
-          // Restore map builder waypoints if stored
+          // Reconcile the map builder with the restored route so Manual + Map always match:
+          // use the saved structure if present, otherwise rebuild from the route text
+          // (this also clears any stale stops from a previous build).
           if (d.route_stops_json) {
-            try { restoreFromTemplate(JSON.parse(d.route_stops_json)); } catch(e) {}
+            try { restoreFromTemplate(JSON.parse(d.route_stops_json)); } catch(e) { parseTextToMap(d.route_covered || ''); }
+          } else {
+            parseTextToMap(d.route_covered || '');
           }
           btn.textContent = '✓ Applied';
           setTimeout(() => { btn.textContent = '↩ Last Slip'; }, 2000);
@@ -1454,9 +1458,12 @@
           // Always fill from stored template data immediately — never rely on recalculation
           if (d.route_covered) document.getElementById('route_covered').value = d.route_covered;
           if (d.total_km) { totalKmEl.value = d.total_km; recalcCloseFromStartAndTotal(); }
-          // Also restore Map Builder waypoints if available (for editing), without auto-apply
-          if (d.route_stops_json && mapsLoaded) {
-            try { restoreFromTemplate(JSON.parse(d.route_stops_json)); } catch(e) {}
+          // Reconcile the map builder (works whether or not Maps has loaded): use the saved
+          // structure if present, otherwise rebuild from the route text so both views match.
+          if (d.route_stops_json) {
+            try { restoreFromTemplate(JSON.parse(d.route_stops_json)); } catch(e) { parseTextToMap(d.route_covered || ''); }
+          } else {
+            parseTextToMap(d.route_covered || '');
           }
           // bump use_count silently
           fetch('/templates/' + id + '/use', { method: 'POST' });
@@ -1563,10 +1570,13 @@
     (function () {
       var routeVal  = {{ prefill.get('route_covered', '') | tojson }};
       if (routeVal) document.getElementById('route_covered').value = routeVal;
-      // Restore map builder immediately — don't wait for Maps API
+      // Restore map builder immediately — don't wait for Maps API. Use the saved structure
+      // if present, otherwise rebuild from the route text so Manual + Map stay consistent.
       var tplStops = {{ prefill.get('route_stops_json', '') | tojson }};
       if (tplStops) {
-        try { restoreFromTemplate(JSON.parse(tplStops)); } catch(e) {}
+        try { restoreFromTemplate(JSON.parse(tplStops)); } catch(e) { if (routeVal) parseTextToMap(routeVal); }
+      } else if (routeVal) {
+        parseTextToMap(routeVal);
       }
     })();
 
@@ -2102,9 +2112,21 @@
       if (retEl) retEl.checked = !!data.return_to_origin;
 
       // Persist the restored structure so generation keeps it even if the user never
-      // clicks Apply. Does NOT touch total_km / route_covered (those stay as the saved values).
+      // clicks Apply. Does NOT touch total_km.
       const rsj = document.getElementById('route_stops_json');
       if (rsj) rsj.value = JSON.stringify(serializeStops());
+
+      // Keep manual text in sync: if the route textarea is empty, derive it from the
+      // restored stops so the Manual view always matches the Map Builder.
+      const routeEl = document.getElementById('route_covered');
+      if (routeEl && !routeEl.value.trim()) {
+        const originShort = originEl.dataset.shortName || originEl.value.trim();
+        const parts = originShort ? [originShort] : [];
+        expandStops().forEach(s => parts.push(s.short || s.value));
+        if (retEl && retEl.checked && originShort) parts.push(originShort);
+        if (parts.length) routeEl.value = applyAliases(parts.join(' → '));
+      }
+      routeTextDirty = false;
 
       // Switch to map mode so waypoints are visible and editable
       setRouteMode('map');
