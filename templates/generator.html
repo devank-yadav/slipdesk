@@ -720,15 +720,15 @@
       <div class="calc-row">
         <div class="field">
           <label for="starting_km">Starting KM</label>
-          <input type="text" id="starting_km" name="starting_km" inputmode="numeric">
+          <input type="text" id="starting_km" name="starting_km" inputmode="numeric" value="{{ prefill.get('starting_km', '') }}">
         </div>
         <div class="field">
           <label for="closing_km">Closing KM</label>
-          <input type="text" id="closing_km" name="closing_km" inputmode="numeric">
+          <input type="text" id="closing_km" name="closing_km" inputmode="numeric" value="{{ prefill.get('closing_km', '') }}">
         </div>
         <div class="field auto-col">
           <label class="auto-label-wrap" for="total_km">Total KM <span class="auto-badge">Auto</span></label>
-          <input type="text" id="total_km" name="total_km" class="auto-field" placeholder="Auto-calculated">
+          <input type="text" id="total_km" name="total_km" class="auto-field" placeholder="Auto-calculated" value="{{ prefill.get('total_km', '') }}">
         </div>
       </div>
 

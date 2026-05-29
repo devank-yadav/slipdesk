@@ -1361,7 +1361,9 @@ def clone_invoice(invoice_id):
         row = conn.execute(
             """SELECT customer_name, company_name, vehicle_type, vehicle_no, driver_name,
                       project_code, mail_approval_date, route_covered,
-                      COALESCE(total_km,''), COALESCE(route_stops_json,'')
+                      COALESCE(total_km,''), COALESCE(route_stops_json,''),
+                      COALESCE(starting_km,''), COALESCE(closing_km,''),
+                      COALESCE(starting_time,''), COALESCE(closing_time,'')
                FROM invoices WHERE id = ?""",
             (invoice_id,)
         ).fetchone()
@@ -1382,6 +1384,10 @@ def clone_invoice(invoice_id):
         'route_covered':     row[7] or '',
         'total_km':          row[8] or '',
         'route_stops_json':  row[9] or '',
+        'starting_km':       row[10] or '',
+        'closing_km':        row[11] or '',
+        'starting_time':     row[12] or '',
+        'closing_time':      row[13] or '',
     }
     next_slip_no = get_next_duty_slip_no()
     today = date.today().strftime('%Y-%m-%d')
