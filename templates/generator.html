@@ -1002,6 +1002,7 @@
     // =====================================================================
     let MODAL_INVOICE = null, MODAL_CUSTOMER = '', MODAL_SLIPNO = '', MODAL_DATE = '';
     let NEXT_SLIP_NO = '', _signUrl = '', _modalTimer = null;
+    let _downloading = false, _closePending = false;
 
     function submitGenerate(form) {
       _lockSubmit();
@@ -1048,11 +1049,26 @@
 
       document.getElementById('successModal').classList.add('show');
       clearTimeout(_modalTimer);
-      _modalTimer = setTimeout(closeSuccessModal, 10000); // strict 10s auto-close
+      _closePending = false;
+      _modalTimer = setTimeout(autoCloseModal, 10000); // strict 10s auto-close
+    }
+
+    // 10s timer target: if a download is still in flight, wait for it to finish first
+    // so the PDF is never cut off by the auto-close.
+    function autoCloseModal() {
+      if (_downloading) { _closePending = true; return; }
+      closeSuccessModal();
     }
 
     function closeSuccessModal() {
       clearTimeout(_modalTimer);
+      _closePending = false;
+      // Auto-advance the slip number on ANY dismissal (close / 10s / new slip),
+      // keeping the rest of the form so a similar slip can be regenerated.
+      if (NEXT_SLIP_NO) {
+        const ds = document.getElementById('duty_slip_no');
+        if (ds) ds.value = NEXT_SLIP_NO;
+      }
       document.getElementById('successModal').classList.remove('show');
     }
 
@@ -1061,10 +1077,13 @@
       closeSuccessModal();
     }
 
-    // Download the PDF in the background (blob) so nothing freezes.
+    // Download the PDF in the background (blob) so nothing freezes. The fetch is
+    // independent of the modal, so it always completes — even if it takes longer than
+    // the 10s auto-close (which is deferred until the download finishes).
     function downloadPdf(btn) {
       const orig = btn.textContent;
       btn.disabled = true; btn.textContent = 'Preparing…';
+      _downloading = true;
       fetch('/invoice/' + MODAL_INVOICE + '/download')
         .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
         .then(blob => {
@@ -1075,7 +1094,11 @@
           setTimeout(() => URL.revokeObjectURL(url), 5000);
         })
         .catch(() => { if (window._showToast) window._showToast('Download failed — please retry.', true); })
-        .finally(() => { btn.disabled = false; btn.textContent = orig; });
+        .finally(() => {
+          _downloading = false;
+          btn.disabled = false; btn.textContent = orig;
+          if (_closePending) closeSuccessModal(); // honour a 10s close that waited for us
+        });
     }
 
     function createSignLink() {
