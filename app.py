@@ -2944,15 +2944,13 @@ def _slip_args():
     }
 
 
-def _slip_rows_context(a):
-    """Shared fetch for the rows partial: flat+paginated or grouped, plus filter totals.
-    Batches the totals + list queries into ONE round-trip (key on Turso)."""
+def _slip_rows_queries(a):
+    """Return [(totals_sql, params), (list_sql, params)] for the current filter."""
     col = "date" if a['date_type'] == 'duty' else "created_at"
     where, params = _slip_mgmt_query(
         a['year'], a['month'], a['status'], a['date_type'], a['q'],
         a['date_from'], a['date_to'], a['driver'], a['vehicle'], a['customer'], a['trashed'])
     params = list(params)
-
     totals_sql = (
         f"""SELECT COUNT(*),
                    ROUND(SUM(CAST(NULLIF(total_km,'') AS REAL)), 1),
@@ -2962,19 +2960,19 @@ def _slip_rows_context(a):
                    SUM(CASE WHEN signature_status='signed' THEN 1 ELSE 0 END)
             FROM invoices {where}""")
     order = _slip_order(a['sort'], a['dir'], col)
-    grouped = a['group'] in ('month', 'customer', 'driver')
-    if grouped:
+    if a['group'] in ('month', 'customer', 'driver'):
         list_sql, list_params = f"SELECT {_SLIP_COLS} FROM invoices {where} {order} LIMIT {SLIP_GROUP_LIMIT}", params
     else:
         offset = (a['page'] - 1) * a['page_size']
         list_sql, list_params = (f"SELECT {_SLIP_COLS} FROM invoices {where} {order} LIMIT ? OFFSET ?",
                                  params + [a['page_size'], offset])
+    return [(totals_sql, tuple(params)), (list_sql, tuple(list_params))]
 
-    curs = _db_multi_exec([(totals_sql, tuple(params)), (list_sql, tuple(list_params))])
-    totals_row = curs[0].fetchone()
-    list_rows = curs[1].fetchall()
 
-    total_results = totals_row[0] or 0
+def _build_rows_ctx(a, totals_row, list_rows):
+    """Build the rows-partial context from a totals row + the list rows."""
+    grouped = a['group'] in ('month', 'customer', 'driver')
+    total_results = (totals_row[0] or 0) if totals_row else 0
     totals = {
         'count': total_results, 'km': totals_row[1] or 0,
         'generated': totals_row[2] or 0, 'submitted': totals_row[3] or 0,
@@ -3016,6 +3014,12 @@ def _slip_rows_context(a):
     return ctx
 
 
+def _slip_rows_context(a):
+    """Totals + list in ONE round-trip (used by the AJAX rows endpoint)."""
+    curs = _db_multi_exec(_slip_rows_queries(a))
+    return _build_rows_ctx(a, curs[0].fetchone(), curs[1].fetchall())
+
+
 @app.route('/admin/slips')
 def slip_management():
     if 'admin' not in session:
@@ -3027,7 +3031,7 @@ def slip_management():
     where_y,  params_y  = _slip_mgmt_query(a['year'], None, a['status'], a['date_type'])
     where_sc, params_sc = _slip_mgmt_query(a['year'], a['month'], 'all', a['date_type'])   # status-tab base
     where_tr, params_tr = _slip_mgmt_query(a['year'], '', 'all', a['date_type'], trashed=True)
-    chrome = _db_multi_exec([
+    chrome_queries = [
         ("SELECT DISTINCT strftime('%Y', date) FROM invoices WHERE date IS NOT NULL AND deleted_at IS NULL ORDER BY 1 DESC", ()),
         (f"SELECT strftime('%m', {col}) AS m, COUNT(*) FROM invoices {where_y} GROUP BY m", tuple(params_y)),
         (f"""SELECT COUNT(*),
@@ -3040,19 +3044,24 @@ def slip_management():
         ("SELECT DISTINCT driver_name FROM invoices WHERE driver_name IS NOT NULL AND driver_name != '' AND deleted_at IS NULL ORDER BY driver_name ASC", ()),
         ("SELECT DISTINCT vehicle_type FROM invoices WHERE vehicle_type IS NOT NULL AND vehicle_type != '' AND deleted_at IS NULL ORDER BY vehicle_type ASC", ()),
         ("SELECT value FROM config WHERE key = 'trash_purged_on'", ()),
-    ])
-    years = [r[0] for r in chrome[0].fetchall() if r[0]]
+    ]
+    # Merge chrome + rows (totals + list) into a SINGLE round-trip for the initial load.
+    rows_queries = _slip_rows_queries(a)
+    res = _db_multi_exec(chrome_queries + rows_queries)
+
+    years = [r[0] for r in res[0].fetchall() if r[0]]
     if str(a['year']) not in years and years:
         years.insert(0, str(a['year']))
     years = sorted(set(years), reverse=True)
-    month_counts = {int(r[0]): r[1] for r in chrome[1].fetchall() if r[0]}
-    sc = chrome[2].fetchone() or (0, 0, 0, 0, 0)
+    month_counts = {int(r[0]): r[1] for r in res[1].fetchall() if r[0]}
+    sc = res[2].fetchone() or (0, 0, 0, 0, 0)
     status_counts = {'all': sc[0] or 0, 'generated': sc[1] or 0, 'submitted': sc[2] or 0,
                      'paid': sc[3] or 0, 'signed': sc[4] or 0,
-                     'trash': (chrome[3].fetchone() or (0,))[0] or 0}
-    driver_names  = [r[0] for r in chrome[4].fetchall() if r[0]]
-    vehicle_names = [r[0] for r in chrome[5].fetchall() if r[0]]
-    _purge_row = chrome[6].fetchone()
+                     'trash': (res[3].fetchone() or (0,))[0] or 0}
+    driver_names  = [r[0] for r in res[4].fetchall() if r[0]]
+    vehicle_names = [r[0] for r in res[5].fetchall() if r[0]]
+    _purge_row = res[6].fetchone()
+    ctx = _build_rows_ctx(a, res[7].fetchone(), res[8].fetchall())
 
     # Auto-purge >30-day trash at most once/day (separate write, only when due).
     _today = datetime.now().strftime('%Y-%m-%d')
@@ -3062,8 +3071,6 @@ def slip_management():
             ("DELETE FROM invoices WHERE deleted_at IS NOT NULL AND deleted_at < ?", (cutoff,)),
             ("INSERT OR REPLACE INTO config (key, value) VALUES ('trash_purged_on', ?)", (_today,)),
         ])
-
-    ctx = _slip_rows_context(a)  # one more round-trip (totals + list batched)
 
     return render_template('slip_management.html',
                            year=a['year'], years=years, month=int(a['month']) if a['month'] else 0,
