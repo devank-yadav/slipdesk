@@ -694,8 +694,8 @@
               Loading map…
             </div>
 
-            <div id="mapBuilder" style="display:none;">
-              <!-- Origin — static, autocomplete attached in _onMapsReady -->
+            <div id="mapBuilder">
+              <!-- Origin — autocomplete attached when Maps loads -->
               <div class="waypoint-row origin" id="originRow">
                 <span class="wp-icon" title="Starting point"><svg width="16" height="16"><use href="#icon-map-pin"/></svg></span>
                 <input type="text" id="originInput" class="waypoint-input" placeholder="Starting point…" autocomplete="off">
@@ -1108,8 +1108,13 @@
     // PREFILL FROM TEMPLATE / CLONE
     // =====================================================================
     (function () {
-      var routeVal = {{ prefill.get('route_covered', '') | tojson }};
+      var routeVal  = {{ prefill.get('route_covered', '') | tojson }};
       if (routeVal) document.getElementById('route_covered').value = routeVal;
+      // Restore map builder immediately — don't wait for Maps API
+      var tplStops = {{ prefill.get('route_stops_json', '') | tojson }};
+      if (tplStops) {
+        try { restoreFromTemplate(JSON.parse(tplStops)); } catch(e) {}
+      }
     })();
 
     // =====================================================================
@@ -1205,7 +1210,6 @@
     window._onMapsReady = function () {
       mapsLoaded = true;
       document.getElementById('mapsLoading').style.display = 'none';
-      document.getElementById('mapBuilder').style.display  = '';
 
       mapInstance = new google.maps.Map(document.getElementById('mapPreview'), {
         center: { lat: 28.4595, lng: 77.0266 },
@@ -1219,8 +1223,7 @@
 
       document.getElementById('mapPlaceholder').style.display = 'none';
 
-      // If map section is already visible (user clicked before script loaded),
-      // resize and attach origin autocomplete now
+      // Attach autocomplete to origin
       if (!_originAcAttached) {
         const originInput = document.getElementById('originInput');
         attachAutocomplete(originInput);
@@ -1228,20 +1231,26 @@
         _originAcAttached = true;
       }
 
-      // If map section is already visible (user clicked before script loaded), resize
-      if (document.getElementById('mapSection').style.display !== 'none') {
-        setTimeout(() => google.maps.event.trigger(mapInstance, 'resize'), 50);
-      }
+      // Attach autocomplete to any waypoint inputs already in the DOM
+      // (restored from template before Maps loaded)
+      document.querySelectorAll('#waypointsList .waypoint-input').forEach(inp => {
+        if (!inp.dataset.acAttached) {
+          attachAutocomplete(inp);
+          inp.addEventListener('blur', debouncedCalc);
+          inp.dataset.acAttached = '1';
+        }
+      });
 
-      // Restore map builder stops from template if present
-      const tplStops = {{ prefill.get('route_stops_json', '') | tojson }};
-      if (tplStops) {
-        try { restoreFromTemplate(JSON.parse(tplStops)); } catch(e) {}
+      // If map mode is active (template restored before Maps loaded), calc now
+      if (document.getElementById('mapSection').style.display !== 'none') {
+        setTimeout(() => { google.maps.event.trigger(mapInstance, 'resize'); debouncedCalc(); }, 100);
       }
     };
 
     function attachAutocomplete(input) {
       if (!window.google || !google.maps.places) return;
+      if (input.dataset.acAttached) return;   // already attached
+      input.dataset.acAttached = '1';
       const ac = new google.maps.places.Autocomplete(input, {
         componentRestrictions: { country: 'in' },
         fields: ['name', 'formatted_address', 'address_components'],
@@ -1581,7 +1590,8 @@
 
       // Switch to map mode so waypoints are visible and editable
       setRouteMode('map');
-      setTimeout(debouncedCalc, 300);
+      // Only calc now if Maps is already loaded; otherwise _onMapsReady will trigger it
+      if (mapsLoaded) setTimeout(debouncedCalc, 300);
     }
 
     // =====================================================================
