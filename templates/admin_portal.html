@@ -169,6 +169,7 @@
   <div class="bulk-bar empty" id="bulkBar">
     <span class="count" id="selectedCount">0 selected</span>
     <button class="btn-bulk btn-bulk-print"  onclick="submitBulk('print')"      disabled><svg class="icon" width="14" height="14"><use href="#icon-printer"/></svg> Print</button>
+    <button class="btn-bulk btn-bulk-print"  onclick="submitBulk('print2up')"   disabled title="Two slips per A4 page"><svg class="icon" width="14" height="14"><use href="#icon-printer"/></svg> Print 2/page</button>
     <button class="btn-bulk btn-bulk-dl"     onclick="submitBulk('download')"   disabled><svg class="icon" width="14" height="14"><use href="#icon-download"/></svg> Download</button>
     <button class="btn-bulk btn-bulk-excel"  onclick="submitBulk('excel')"      disabled><svg class="icon" width="14" height="14"><use href="#icon-download"/></svg> Export to Excel</button>
     <button class="btn-bulk btn-bulk-status" onclick="openBulkStatusModal()"    disabled><svg class="icon" width="14" height="14"><use href="#icon-refresh"/></svg> Change Status</button>
@@ -494,7 +495,7 @@
       const form = document.createElement('form');
       form.method = 'POST';
       form.action = '/bulk_action';
-      if (action === 'print') form.target = '_blank';
+      if (action === 'print' || action === 'print2up') form.target = '_blank';
 
       const a = document.createElement('input');
       a.type = 'hidden'; a.name = 'action'; a.value = action;

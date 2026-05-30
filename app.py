@@ -60,6 +60,7 @@ COLOR_TEXT   = (0.05, 0.05, 0.07)
 COLOR_MUTED  = (0.42, 0.42, 0.46)
 COLOR_LINE   = (0.55, 0.55, 0.58)
 COLOR_HEADER = (0.10, 0.10, 0.12)
+COLOR_ACCENT = (0.20, 0.42, 0.72)   # muted brand blue (header accent tick)
 
 
 @lru_cache(maxsize=1)
@@ -174,6 +175,22 @@ def _draw_tracked_center(c, x_center, y, text, font_name, font_size, tracking):
 def draw_slip_template(c, width, height, n_route_lines=1):
     """Draw the static chrome of the duty slip (header, labels, lines)."""
 
+    # ---- Very faint brand watermark (drawn first, sits behind everything) ----
+    c.saveState()
+    c.setFillColorRGB(0.945, 0.95, 0.96)
+    c.setFont('Helvetica-Bold', 58)
+    c.translate(width / 2, height / 2)
+    c.rotate(20)
+    c.drawCentredString(0, -14, 'OSPREY TRAVELS')
+    c.restoreState()
+
+    # ---- Thin page border (keeps the slip contained on the sheet) ----
+    c.saveState()
+    c.setStrokeColorRGB(*COLOR_LINE)
+    c.setLineWidth(0.6)
+    c.roundRect(20, 20, width - 40, height - 40, 9, stroke=1, fill=0)
+    c.restoreState()
+
     # ---- HEADER: contact info (top-left) ----
     c.setFont('Helvetica', 9)
     c.setFillColorRGB(*COLOR_MUTED)
@@ -193,6 +210,10 @@ def draw_slip_template(c, width, height, n_route_lines=1):
     c.setStrokeColorRGB(*COLOR_DARK)
     c.setLineWidth(1.2)
     c.line(40, 525, width - 40, 525)
+    # subtle brand accent tick under the logo
+    c.setStrokeColorRGB(*COLOR_ACCENT)
+    c.setLineWidth(1.6)
+    c.line(width - 40 - 150, 521, width - 40, 521)
 
     # ---- DUTY SLIP NO + DATE block (under header, left side) ----
     c.setFillColorRGB(*COLOR_DARK)
@@ -269,14 +290,23 @@ def draw_slip_template(c, width, height, n_route_lines=1):
     c.setFillColorRGB(*COLOR_MUTED)
     _draw_tracked_center(c, 688, 62, 'USER SIGNATURE', 'Helvetica-Bold', 9, 1.2)
 
+    # ---- Minimal footer (centered, muted) ----
+    c.setFont('Helvetica', 7)
+    c.setFillColorRGB(*COLOR_MUTED)
+    c.drawCentredString(width / 2, 33, 'This is a computer-generated duty slip  ·  Osprey Travels')
+
 
 def fill_slip_data(c, data):
     """Place dynamic values into the template at the correct coordinates."""
     c.setFillColorRGB(*COLOR_TEXT)
     c.setFont('Helvetica', 11)
 
-    # Duty slip no + Date (range if multi-day trip)
+    # Duty slip no (emphasized) + Date (range if multi-day trip)
+    c.setFillColorRGB(*COLOR_DARK)
+    c.setFont('Helvetica-Bold', 12)
     c.drawString(140, 498, data.get('duty_slip_no', '') or '')
+    c.setFillColorRGB(*COLOR_TEXT)
+    c.setFont('Helvetica', 11)
     _closing_date = data.get('closing_date', '') or ''
     if _closing_date:
         try:
@@ -345,6 +375,61 @@ def _build_pdf(data: dict, signature_data: str = None) -> io.BytesIO:
                         mask='auto', preserveAspectRatio=True, anchor='c')
         except Exception:
             pass  # Never break PDF generation over a bad signature image
+    c.save()
+    buf.seek(0)
+    return buf
+
+
+def _build_pdf_2up(slips):
+    """Render two duty slips per A4 page (portrait), each uniformly scaled so the
+    landscape design keeps its aspect ratio (no distortion). A faint dashed cut line
+    separates the two. `slips` is a list of (data, signature_data) tuples."""
+    import base64 as _b64
+    pdf = _pdf_libs()
+    buf = io.BytesIO()
+    PAGE_W, PAGE_H = pdf['A4']                       # portrait: 595 x 842
+    slip_w, slip_h = pdf['landscape'](pdf['A4'])     # landscape slip: 842 x 595
+    c = pdf['canvas'].Canvas(buf, pagesize=pdf['A4'])
+
+    margin, gap = 16, 12
+    slot_h = (PAGE_H - 2 * margin - gap) / 2
+    scale = min((PAGE_W - 2 * margin) / slip_w, slot_h / slip_h)
+    draw_w, draw_h = slip_w * scale, slip_h * scale
+    x_off = (PAGE_W - draw_w) / 2
+    mid = PAGE_H / 2
+    slot_bottoms = [mid + gap / 2, margin]           # [top slot, bottom slot]
+
+    def _draw_one(data, sig, slot_bottom):
+        y_off = slot_bottom + (slot_h - draw_h) / 2
+        c.saveState()
+        c.translate(x_off, y_off)
+        c.scale(scale, scale)
+        route_lines = _wrap_text(data.get('route_covered', '') or '', 'Helvetica', 11, 632)
+        draw_slip_template(c, slip_w, slip_h, n_route_lines=max(len(route_lines), 1))
+        fill_slip_data(c, data)
+        if sig:
+            try:
+                raw = sig.split(',', 1)[1] if ',' in sig else sig
+                sig_img = pdf['ImageReader'](io.BytesIO(_b64.b64decode(raw)))
+                c.drawImage(sig_img, 576, 84, width=224, height=52,
+                            mask='auto', preserveAspectRatio=True, anchor='c')
+            except Exception:
+                pass
+        c.restoreState()
+
+    for i in range(0, len(slips), 2):
+        pair = slips[i:i + 2]
+        for j, (data, sig) in enumerate(pair):
+            _draw_one(data, sig, slot_bottoms[j])
+        if len(pair) == 2:
+            c.saveState()
+            c.setStrokeColorRGB(*COLOR_LINE)
+            c.setLineWidth(0.5)
+            c.setDash(2, 3)
+            c.line(margin, mid, PAGE_W - margin, mid)
+            c.restoreState()
+        c.showPage()
+
     c.save()
     buf.seek(0)
     return buf
@@ -1415,6 +1500,31 @@ def bulk_action():
             writer.write(merged_buffer)
             merged_buffer.seek(0)
             return send_file(merged_buffer, mimetype='application/pdf', download_name='print_batch.pdf', as_attachment=False)
+
+        elif action == 'print2up':
+            rows = conn.execute(
+                f"""SELECT id, duty_slip_no, customer_name, company_name, date,
+                           vehicle_type, vehicle_no, starting_km, closing_km, total_km,
+                           starting_time, closing_time, total_time,
+                           project_code, mail_approval_date, route_covered, driver_name,
+                           COALESCE(bill_status, 'Bill Generated')
+                    FROM invoices WHERE id IN ({placeholders})""",
+                selected_ids
+            ).fetchall()
+            sig_map = _build_sig_map(conn, [int(i) for i in selected_ids])
+            pairs = []
+            for r in rows:
+                data = {
+                    'duty_slip_no': r[1], 'customer_name': r[2], 'company_name': r[3],
+                    'date': r[4], 'vehicle_type': r[5], 'vehicle_no': r[6],
+                    'starting_km': r[7], 'closing_km': r[8], 'total_km': r[9],
+                    'starting_time': r[10], 'closing_time': r[11], 'total_time': r[12],
+                    'project_code': r[13], 'mail_approval_date': r[14],
+                    'route_covered': r[15], 'driver_name': r[16],
+                }
+                pairs.append((data, sig_map.get(r[0])))
+            buf = _build_pdf_2up(pairs)
+            return send_file(buf, mimetype='application/pdf', download_name='print_2up.pdf', as_attachment=False)
 
     return redirect(url_for('admin_portal'))
 

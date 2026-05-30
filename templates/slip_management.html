@@ -319,6 +319,7 @@
     <div class="sm-bulk-bar" id="bulkBar">
       <span id="bulkCount">0 selected</span>
       <button class="sm-bulk-btn" onclick="submitBulk('print')">Print</button>
+      <button class="sm-bulk-btn" onclick="submitBulk('print2up')" title="Two slips per A4 page">Print 2/page</button>
       <button class="sm-bulk-btn" onclick="submitBulk('download')">Download ZIP</button>
       <button class="sm-bulk-btn" onclick="submitBulk('excel')">Excel</button>
       <button class="sm-bulk-btn" onclick="openBulkStatusModal()">Change Status</button>
@@ -521,7 +522,7 @@
       }).catch(() => { if (window._showToast) window._showToast('Delete failed', true); });
       return;
     }
-    _postForm('/bulk_action', ids, { action: action, _target: action === 'print' }); // print/download/excel need a real form post
+    _postForm('/bulk_action', ids, { action: action, _target: action === 'print' || action === 'print2up' }); // print/download/excel need a real form post
   }
   function bulkTrashAction(kind) { const ids = selectedIds(); if (!ids.length) return; if (kind === 'purge' && !confirm('Permanently delete ' + ids.length + ' slip(s)? This cannot be undone.')) return; _postForm(kind === 'restore' ? '/admin/slips/restore' : '/admin/slips/purge', ids, {}); }
   function openBulkStatusModal() { if (!selectedIds().length) return; document.getElementById('bsCount').textContent = selectedIds().length; document.getElementById('bulkStatusModal').classList.add('open'); }
