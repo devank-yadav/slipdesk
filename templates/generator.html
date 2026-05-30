@@ -1576,21 +1576,9 @@
       rec.addEventListener('end', () => { listening = false; micBtn.textContent = '🎤'; _aiStatus(''); });
     })();
 
-    // =====================================================================
-    // PREFILL FROM TEMPLATE / CLONE
-    // =====================================================================
-    (function () {
-      var routeVal  = {{ prefill.get('route_covered', '') | tojson }};
-      if (routeVal) document.getElementById('route_covered').value = routeVal;
-      // Restore map builder immediately — don't wait for Maps API. Use the saved structure
-      // if present, otherwise rebuild from the route text so Manual + Map stay consistent.
-      var tplStops = {{ prefill.get('route_stops_json', '') | tojson }};
-      if (tplStops) {
-        try { restoreFromTemplate(JSON.parse(tplStops)); } catch(e) { if (routeVal) parseTextToMap(routeVal); }
-      } else if (routeVal) {
-        parseTextToMap(routeVal);
-      }
-    })();
+    // (Prefill/clone restore moved to the end of the script — it must run AFTER all
+    //  state vars like wpCounter/mapsKey are initialized, otherwise addWaypoint() hits a
+    //  temporal-dead-zone error and only the origin gets restored.)
 
     // =====================================================================
     // ROUTE TEXTAREA SHORTCUTS  (,,, → →)
@@ -2311,6 +2299,22 @@
       document.querySelector('form[action="/generate"]').addEventListener('submit', function(e) {
         setTimeout(() => { if (!e.defaultPrevented) clearDraft(); }, 0);
       });
+    })();
+
+    // =====================================================================
+    // PREFILL FROM TEMPLATE / CLONE  (runs LAST — after all state + functions exist)
+    // =====================================================================
+    (function () {
+      var routeVal  = {{ prefill.get('route_covered', '') | tojson }};
+      if (routeVal) document.getElementById('route_covered').value = routeVal;
+      // Restore the map builder from the saved structure if present, otherwise rebuild
+      // from the route text so Manual + Map Builder stay consistent.
+      var tplStops = {{ prefill.get('route_stops_json', '') | tojson }};
+      if (tplStops) {
+        try { restoreFromTemplate(JSON.parse(tplStops)); } catch(e) { if (routeVal) parseTextToMap(routeVal); }
+      } else if (routeVal) {
+        parseTextToMap(routeVal);
+      }
     })();
   </script>
 </body>
