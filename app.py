@@ -184,13 +184,6 @@ def draw_slip_template(c, width, height, n_route_lines=1):
     c.drawCentredString(0, -14, 'OSPREY TRAVELS')
     c.restoreState()
 
-    # ---- Thin page border (keeps the slip contained on the sheet) ----
-    c.saveState()
-    c.setStrokeColorRGB(*COLOR_LINE)
-    c.setLineWidth(0.6)
-    c.roundRect(20, 20, width - 40, height - 40, 9, stroke=1, fill=0)
-    c.restoreState()
-
     # ---- HEADER: contact info (top-left) ----
     c.setFont('Helvetica', 9)
     c.setFillColorRGB(*COLOR_MUTED)
@@ -210,10 +203,6 @@ def draw_slip_template(c, width, height, n_route_lines=1):
     c.setStrokeColorRGB(*COLOR_DARK)
     c.setLineWidth(1.2)
     c.line(40, 525, width - 40, 525)
-    # subtle brand accent tick under the logo
-    c.setStrokeColorRGB(*COLOR_ACCENT)
-    c.setLineWidth(1.6)
-    c.line(width - 40 - 150, 521, width - 40, 521)
 
     # ---- DUTY SLIP NO + DATE block (under header, left side) ----
     c.setFillColorRGB(*COLOR_DARK)
@@ -289,11 +278,6 @@ def draw_slip_template(c, width, height, n_route_lines=1):
     c.setFont('Helvetica-Bold', 9)
     c.setFillColorRGB(*COLOR_MUTED)
     _draw_tracked_center(c, 688, 62, 'USER SIGNATURE', 'Helvetica-Bold', 9, 1.2)
-
-    # ---- Minimal footer (centered, muted) ----
-    c.setFont('Helvetica', 7)
-    c.setFillColorRGB(*COLOR_MUTED)
-    c.drawCentredString(width / 2, 33, 'This is a computer-generated duty slip  ·  Osprey Travels')
 
 
 def fill_slip_data(c, data):
