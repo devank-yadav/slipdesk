@@ -13,3 +13,7 @@ venv/
 *.egg-info/
 dist/
 build/
+.claude/
+invoices.db
+*.bak-pre-restore
+*.db.bak*
