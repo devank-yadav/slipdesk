@@ -2173,6 +2173,7 @@
       // The ONLY place the map writes the form. Explicit, user-triggered.
       if (!currentRoute) return;
       syncMapToText(true);   // writes route_covered + total_km + route_stops_json
+      if (window._draftSave) window._draftSave();   // programmatic writes → save the draft now
       const btn = document.getElementById('btnApply');
       if (btn) {
         const prev = btn.textContent;
