@@ -2209,8 +2209,17 @@
           if (el) fields[id] = el.checked;
         });
 
-        // Only save if there's meaningful content
-        const hasContent = DRAFT_FIELDS.some(id => {
+        // Capture the live Map Builder structure too (origin + stops/loops), so the
+        // draft restores the full route — not just the manual text.
+        try {
+          const sj = serializeStops();
+          if ((sj.origin && sj.origin.value) || (sj.stops && sj.stops.length)) {
+            fields['route_stops_json'] = JSON.stringify(sj);
+          }
+        } catch (e) {}
+
+        // Only save if there's meaningful content (any field OR a map route)
+        const hasContent = !!fields['route_stops_json'] || DRAFT_FIELDS.some(id => {
           const v = fields[id];
           return v && v.trim && v.trim() !== '';
         });
@@ -2261,6 +2270,12 @@
           });
           // Recalculate derived fields
           if (typeof calcTime === 'function') calcTime();
+          // Rebuild the Map Builder from the saved structure (or the route text), so the
+          // restored draft has all stops in both Manual and Map Builder.
+          try {
+            if (fields['route_stops_json']) { restoreFromTemplate(JSON.parse(fields['route_stops_json'])); }
+            else if (fields['route_covered']) { parseTextToMap(fields['route_covered']); }
+          } catch(e) {}
           document.getElementById('draftBanner').style.display = 'none';
         } catch(e) {}
       };
