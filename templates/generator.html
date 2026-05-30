@@ -2243,6 +2243,7 @@
         if (ind) ind.style.display = 'none';
       }
       window._clearSlipDraft = clearDraft;
+      window._draftSave = scheduleSave;   // let programmatic actions (e.g. Apply km) trigger a save
 
       function relativeTime(ts) {
         const secs = Math.floor((Date.now() - ts) / 1000);
