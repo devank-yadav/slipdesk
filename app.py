@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 from datetime import datetime, date, timedelta
 
 from flask import Flask, render_template, request, send_file, redirect, url_for, session, jsonify, Response
+from werkzeug.security import generate_password_hash, check_password_hash
 
 import ai_assist
 from functools import lru_cache
@@ -623,6 +624,18 @@ app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = bool(os.environ.get('FLASK_DEBUG'))
 app.secret_key = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
 
+# --- Session cookie hardening (CSRF mitigation via SameSite) ---
+# SameSite=Lax stops the admin session cookie from riding along on cross-site
+# POSTs (the CSRF vector) while still allowing normal top-level navigation.
+# Secure is enabled only in production (Vercel = HTTPS); locally we serve over
+# plain HTTP, so forcing Secure there would stop the cookie being set and break
+# local login.
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=bool(os.environ.get('VERCEL')),
+)
+
 
 @app.after_request
 def _add_perf_headers(response):
@@ -657,7 +670,27 @@ def _add_perf_headers(response):
 
 
 def _hash_pw(pw: str) -> str:
+    """Salted password hash. Uses pbkdf2:sha256 explicitly — werkzeug's scrypt
+    default is unavailable on some OpenSSL/Python builds (raises at runtime)."""
+    return generate_password_hash(pw, method='pbkdf2:sha256')
+
+
+def _legacy_sha256(pw: str) -> str:
     return hashlib.sha256(pw.encode('utf-8')).hexdigest()
+
+
+def _verify_pw(pw: str, stored: str) -> bool:
+    """Verify a password against a stored hash. Supports the new salted werkzeug
+    format AND the legacy bare-sha256 format, so pre-existing rows keep working
+    until they're upgraded on next successful login."""
+    if not stored:
+        return False
+    if stored.startswith(('pbkdf2:', 'scrypt:')):
+        try:
+            return check_password_hash(stored, pw)
+        except Exception:
+            return False
+    return secrets.compare_digest(stored, _legacy_sha256(pw))
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SOURCE_DATABASE = os.path.join(BASE_DIR, 'invoices.db')
@@ -892,11 +925,24 @@ def init_db():
             )
         ''')
         existing = conn.execute("SELECT id, password FROM users WHERE username = ?", ("admin",)).fetchone()
+        # Desired admin password comes from the ADMIN_PASSWORD env var. Locally
+        # (no VERCEL) we fall back to 'admin' for dev convenience. On Vercel we
+        # NEVER fall back: if the env var is somehow missing we leave the stored
+        # hash untouched, so a transient missing-env can never reset the live
+        # password back to a known default.
+        _desired_pw = os.environ.get('ADMIN_PASSWORD') or (None if os.environ.get('VERCEL') else 'admin')
         if not existing:
-            conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", ("admin", _hash_pw("admin")))
-        elif existing[1] and len(existing[1]) != 64:
-            # Migrate plaintext password to sha256 hash
-            conn.execute("UPDATE users SET password = ? WHERE id = ?", (_hash_pw(existing[1]), existing[0]))
+            # Seed the admin row. Use the desired password if known; otherwise a
+            # random one (an unseeded prod with no ADMIN_PASSWORD is locked out,
+            # not left on a guessable default).
+            _seed_pw = _desired_pw or secrets.token_urlsafe(24)
+            conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", ("admin", _hash_pw(_seed_pw)))
+        elif _desired_pw and not _verify_pw(_desired_pw, existing[1] or ''):
+            # Sync the stored hash to match ADMIN_PASSWORD. Guarded by _verify_pw
+            # so it only writes when the password actually changed (no redundant
+            # write on every cold start — important on Turso where each write is
+            # an HTTP round-trip).
+            conn.execute("UPDATE users SET password = ? WHERE id = ?", (_hash_pw(_desired_pw), existing[0]))
 
         conn.execute('''
             CREATE TABLE IF NOT EXISTS drivers (
@@ -1109,15 +1155,24 @@ def login_page():
 
 @app.route('/admin_login', methods=['POST'])
 def admin_login():
-    username = request.form['username']
-    password = request.form['password']
-    with sqlite3.connect(DATABASE) as conn:
-        user = conn.execute(
-            "SELECT * FROM users WHERE username = ? AND password = ?",
-            (username, _hash_pw(password))
-        ).fetchone()
-    if user:
+    username = (request.form.get('username') or '').strip()
+    password = request.form.get('password') or ''
+    user = None
+    if username and password:
+        with sqlite3.connect(DATABASE) as conn:
+            user = conn.execute(
+                "SELECT id, password FROM users WHERE username = ?",
+                (username,)
+            ).fetchone()
+    if user and _verify_pw(password, user[1] or ''):
         session['admin'] = username
+        # Opportunistically upgrade a legacy sha256 hash to the salted format.
+        if not (user[1] or '').startswith(('pbkdf2:', 'scrypt:')):
+            try:
+                with sqlite3.connect(DATABASE) as conn:
+                    conn.execute("UPDATE users SET password = ? WHERE id = ?", (_hash_pw(password), user[0]))
+            except Exception:
+                pass
         return redirect(url_for('admin_portal'))
     return render_template('admin_login.html', error="Invalid credentials")
 
