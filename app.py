@@ -881,6 +881,14 @@ def _db_multi_exec(queries):
 if USE_TURSO:
     DATABASE = TURSO_DATABASE_URL  # value unused for Turso path but kept for consistency
 elif os.getenv('VERCEL'):
+    # Misconfiguration guard: on Vercel WITHOUT Turso env vars we fall back to an
+    # ephemeral /tmp SQLite file that is NOT shared across invocations and is
+    # wiped on every cold start — data silently disappears. Log loudly so this is
+    # obvious in the runtime logs instead of looking like data loss.
+    import sys as _sys
+    print("WARNING: running on Vercel without TURSO_DATABASE_URL/TURSO_AUTH_TOKEN — "
+          "using ephemeral /tmp/invoices.db; data will NOT persist. Set Turso env vars.",
+          file=_sys.stderr, flush=True)
     DATABASE = '/tmp/invoices.db'
 else:
     DATABASE = SOURCE_DATABASE
