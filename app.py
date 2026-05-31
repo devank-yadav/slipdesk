@@ -1126,8 +1126,11 @@ def _canonical_cached(kind, name):
 
 def get_next_duty_slip_no():
     with sqlite3.connect(DATABASE) as conn:
+        # Scan ALL slips (including trashed) so a number is never reused — deleting
+        # the highest slip must not hand its number back out while it sits in Trash
+        # (or could be restored). No LIMIT: an older row can hold the max number.
         rows = conn.execute(
-            "SELECT duty_slip_no FROM invoices WHERE duty_slip_no IS NOT NULL AND duty_slip_no != '' AND deleted_at IS NULL ORDER BY id DESC LIMIT 200",
+            "SELECT duty_slip_no FROM invoices WHERE duty_slip_no IS NOT NULL AND duty_slip_no != ''",
         ).fetchall()
     max_num = 0
     for (s,) in rows:
@@ -3263,7 +3266,7 @@ def slip_management():
         ])
 
     return render_template('slip_management.html',
-                           year=a['year'], years=years, month=int(a['month']) if a['month'] else 0,
+                           year=a['year'], years=years, month=_safe_int(a['month'], 0),
                            date_type=a['date_type'],
                            month_counts=month_counts, status_counts=status_counts,
                            driver_names=driver_names, vehicle_names=vehicle_names,
