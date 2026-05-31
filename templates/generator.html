@@ -1015,14 +1015,22 @@
     function submitGenerate(form) {
       // Persist the route correctly so it restores later:
       // - Map Builder active → it's the source of truth: write route_covered + route_stops_json.
-      // - Manual active & the text was edited → the saved map structure is stale, so drop it
-      //   (restore will rebuild the map from the route text).
+      // - Manual active & the text was edited → the saved map structure is stale. Rebuild a
+      //   fresh structure FROM the edited text (so a later clone still restores a structured
+      //   route), rather than blanking it. Falls back to blank only if parsing fails.
       try {
         const mapActive = document.getElementById('mapSection').style.display !== 'none';
+        const rsj = document.getElementById('route_stops_json');
         if (mapActive) {
           syncMapToText(false);
         } else if (routeTextDirty) {
-          const rsj = document.getElementById('route_stops_json'); if (rsj) rsj.value = '';
+          const txt = (document.getElementById('route_covered').value || '').trim();
+          if (rsj) {
+            try {
+              if (txt) { parseTextToMap(txt); rsj.value = JSON.stringify(serializeStops()); }
+              else { rsj.value = ''; }
+            } catch (e) { rsj.value = ''; }
+          }
         }
       } catch (e) {}
       _lockSubmit();
@@ -1716,15 +1724,27 @@
       const originEl = document.getElementById('originInput');
       const hasMap = originEl.value.trim() || document.querySelector('#waypointsList > .waypoint-row');
       if (!hasMap) return;   // builder empty → don't wipe manual text
+
+      // Build the route text from the LIVE DOM (origin + stops/loops). The cached
+      // currentRoute (from the last Directions call) is only trusted when its stop
+      // count matches the live DOM — otherwise a waypoint edit made before the 700ms
+      // recalc would write a stale route. The cache is preferred only because it
+      // carries geocoder short-names.
+      const originShort = originEl.dataset.shortName || originEl.value.trim();
+      const expanded = expandStops();
+      const returnChecked = document.getElementById('returnToOrigin').checked;
+      // expected segment count if we trust the cache: origin + stops (+origin if return)
+      const liveCount = (originShort ? 1 : 0) + expanded.length + (returnChecked && originShort ? 1 : 0);
       let text;
-      if (currentRoute && currentRoute.stops && currentRoute.stops.length) {
+      if (currentRoute && currentRoute.stops && currentRoute.stops.length === liveCount && liveCount > 0) {
         text = currentRoute.stops.join(' → ');
       } else {
-        const originShort = originEl.dataset.shortName || originEl.value.trim();
-        const expanded = expandStops();
+        // Rebuild from live DOM. Guard: if origin is empty but stops exist, still
+        // emit the stops (don't fabricate a leading separator) — but a route with
+        // no origin is incomplete, so the caller/validation handles that.
         const parts = originShort ? [originShort] : [];
         expanded.forEach(s => parts.push(s.short || s.value));
-        if (document.getElementById('returnToOrigin').checked && originShort) parts.push(originShort);
+        if (returnChecked && originShort) parts.push(originShort);
         text = parts.join(' → ');
       }
       if (text.trim()) document.getElementById('route_covered').value = applyAliases(text);
