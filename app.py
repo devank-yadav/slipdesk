@@ -1388,7 +1388,7 @@ def update_status(invoice_id):
         payment_date = None
     with sqlite3.connect(DATABASE) as conn:
         conn.execute(
-            "UPDATE invoices SET bill_status = ?, payment_date = ? WHERE id = ?",
+            "UPDATE invoices SET bill_status = ?, payment_date = ? WHERE id = ? AND deleted_at IS NULL",
             (new_status, payment_date, invoice_id)
         )
     return jsonify({'ok': True})
@@ -1408,7 +1408,7 @@ def bulk_update_status():
     with sqlite3.connect(DATABASE) as conn:
         placeholders = ','.join('?' * len(selected_ids))
         conn.execute(
-            f"UPDATE invoices SET bill_status = ?, payment_date = ? WHERE id IN ({placeholders})",
+            f"UPDATE invoices SET bill_status = ?, payment_date = ? WHERE id IN ({placeholders}) AND deleted_at IS NULL",
             [status, payment_date] + selected_ids
         )
     return jsonify({'ok': True, 'updated': len(selected_ids), 'status': status, 'payment_date': payment_date or ''})
@@ -1647,7 +1647,7 @@ def clone_invoice(invoice_id):
                       COALESCE(total_km,''), COALESCE(route_stops_json,''),
                       COALESCE(starting_km,''), COALESCE(closing_km,''),
                       COALESCE(starting_time,''), COALESCE(closing_time,'')
-               FROM invoices WHERE id = ?""",
+               FROM invoices WHERE id = ? AND deleted_at IS NULL""",
             (invoice_id,)
         ).fetchone()
     if not row:
