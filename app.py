@@ -1039,6 +1039,10 @@ def init_db():
         cust_cols = [col[1] for col in conn.execute("PRAGMA table_info(customers)").fetchall()]
         if 'portal_token' not in cust_cols:
             conn.execute("ALTER TABLE customers ADD COLUMN portal_token TEXT")
+        # Portal-link expiry. NULL = legacy token with no expiry (kept valid so
+        # links already shared don't break); new links set a concrete date.
+        if 'portal_token_expires' not in cust_cols:
+            conn.execute("ALTER TABLE customers ADD COLUMN portal_token_expires TEXT")
 
         conn.execute('''
             CREATE TABLE IF NOT EXISTS recurring_trips (
@@ -2634,6 +2638,10 @@ def submit_signature(token):
     sig_data = request.form.get('signature_data', '')
     if not sig_data or len(sig_data) < 100:
         return jsonify({'ok': False, 'error': 'Please draw your signature before submitting'})
+    # Upper bound: a canvas signature is a few KB; cap at 2 MB so this public,
+    # unauthenticated endpoint can't be used to write huge blobs to the DB.
+    if len(sig_data) > 2_000_000:
+        return jsonify({'ok': False, 'error': 'Signature image is too large'}), 400
 
     signer_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')
     signer_ua = request.headers.get('User-Agent', '')
@@ -2748,25 +2756,36 @@ def generate_portal_link():
     if not customer_name:
         return redirect(url_for('customers_page'))
     token = secrets.token_urlsafe(24)
+    # Portal links are valid for 90 days. Regenerating replaces the old token,
+    # so any previously shared link stops working immediately.
+    expires = (datetime.now() + timedelta(days=90)).strftime('%Y-%m-%d %H:%M:%S')
     with sqlite3.connect(DATABASE) as conn:
         exists = conn.execute("SELECT 1 FROM customers WHERE LOWER(name) = LOWER(?)", (customer_name,)).fetchone()
         if exists:
-            conn.execute("UPDATE customers SET portal_token = ? WHERE LOWER(name) = LOWER(?)", (token, customer_name))
+            conn.execute("UPDATE customers SET portal_token = ?, portal_token_expires = ? WHERE LOWER(name) = LOWER(?)", (token, expires, customer_name))
         else:
-            conn.execute("INSERT INTO customers (name, portal_token) VALUES (?, ?)", (customer_name, token))
+            conn.execute("INSERT INTO customers (name, portal_token, portal_token_expires) VALUES (?, ?, ?)", (customer_name, token, expires))
     return redirect(url_for('customers_page', new_portal=customer_name, portal_token=token))
 
 
 # --------------------------
 # CUSTOMER PORTAL (public)
 # --------------------------
+def _portal_expired(expires):
+    """True if a portal-token expiry is set AND in the past. NULL/empty = legacy
+    token that never expires (so already-shared links keep working)."""
+    if not expires:
+        return False
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S') > expires
+
+
 @app.route('/portal/<token>')
 def customer_portal(token):
     with sqlite3.connect(DATABASE) as conn:
         cust = conn.execute(
-            "SELECT name, COALESCE(company,'') FROM customers WHERE portal_token = ?", (token,)
+            "SELECT name, COALESCE(company,''), portal_token_expires FROM customers WHERE portal_token = ?", (token,)
         ).fetchone()
-    if not cust:
+    if not cust or _portal_expired(cust[2]):
         return render_template('portal.html', error=True)
     customer_name = cust[0]
     with sqlite3.connect(DATABASE) as conn:
@@ -2786,8 +2805,8 @@ def customer_portal(token):
 @app.route('/portal/<token>/slip/<int:invoice_id>')
 def portal_slip_download(token, invoice_id):
     with sqlite3.connect(DATABASE) as conn:
-        cust = conn.execute("SELECT name FROM customers WHERE portal_token = ?", (token,)).fetchone()
-        if not cust:
+        cust = conn.execute("SELECT name, portal_token_expires FROM customers WHERE portal_token = ?", (token,)).fetchone()
+        if not cust or _portal_expired(cust[1]):
             return "Invalid portal link", 403
         row = conn.execute(
             """SELECT customer_name, company_name, date, duty_slip_no, vehicle_type,
