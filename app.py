@@ -744,7 +744,17 @@ def _turso_pipeline(stmts):
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
-        return _json.loads(resp.read())["results"]
+        results = _json.loads(resp.read())["results"]
+    # Surface per-statement errors instead of returning them as silent empty
+    # results. Without this, a failed INSERT in a batch yields an empty cursor
+    # (lastrowid=None) and the caller can proceed as if the write succeeded
+    # (e.g. generate_invoice returning a PDF for a slip that was never saved).
+    # Error shape matches the existing _TursoConnection.execute check.
+    for _r in results:
+        if isinstance(_r, dict) and _r.get("type") == "error":
+            _msg = (_r.get("error") or {}).get("message", "Turso statement failed")
+            raise sqlite3.OperationalError(_msg)
+    return results
 
 
 def _coerce_cell(cell):
@@ -1847,7 +1857,7 @@ def create_sign_link(invoice_id):
             (token, ids_json, customer_name, created_at_sig, expires_at_sig)
         )
         conn.execute(
-            "UPDATE invoices SET signature_status = 'pending' WHERE id = ? AND COALESCE(signature_status,'') != 'signed'",
+            "UPDATE invoices SET signature_status = 'pending' WHERE id = ? AND COALESCE(signature_status,'') != 'signed' AND deleted_at IS NULL",
             (invoice_id,)
         )
     return jsonify({'ok': True, 'token': token, 'customer_name': customer_name})
@@ -2388,7 +2398,7 @@ def request_signature():
         )
         placeholders = ','.join('?' * len(invoice_ids))
         conn.execute(
-            f"UPDATE invoices SET signature_status = 'pending' WHERE id IN ({placeholders}) AND COALESCE(signature_status,'') != 'signed'",
+            f"UPDATE invoices SET signature_status = 'pending' WHERE id IN ({placeholders}) AND COALESCE(signature_status,'') != 'signed' AND deleted_at IS NULL",
             invoice_ids
         )
 
@@ -2883,7 +2893,7 @@ def sign_all_customer():
         )
         placeholders = ','.join('?' * len(ids))
         conn.execute(
-            f"UPDATE invoices SET signature_status = 'pending' WHERE id IN ({placeholders}) AND COALESCE(signature_status,'') != 'signed'",
+            f"UPDATE invoices SET signature_status = 'pending' WHERE id IN ({placeholders}) AND COALESCE(signature_status,'') != 'signed' AND deleted_at IS NULL",
             ids
         )
     return redirect(url_for('signatures_page', new_token=token))
