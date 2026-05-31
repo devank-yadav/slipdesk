@@ -546,7 +546,12 @@
         + _kv('Start Time', d.starting_time) + _kv('Close Time', d.closing_time) + _kv('Project Code', d.project_code) + _kv('Mail Approval', d.mail_approval_date)
         + _kv('Bill Status', d.bill_status) + _kv('Signature', d.signature_status || 'Not requested') + '</div>';
       if (d.route_covered) h += '<div class="sm-pv-grid" style="margin-top:12px"><div class="sm-pv-item full"><span class="k">Route</span><span class="v">'+String(d.route_covered).replace(/</g,'&lt;')+'</span></div></div>';
-      if (d.signature_data) h += '<div class="sm-pv-sig"><div class="k" style="font-size:10px;font-weight:700;text-transform:uppercase;color:#8e8e93;margin-bottom:6px;">Signature</div><img src="'+d.signature_data+'"></div>';
+      // Only render the signature image if it's a genuine data:image URL (what the
+      // canvas produces). Anything else is rejected — defense-in-depth so a stray
+      // value can't inject markup/attributes via this innerHTML sink.
+      if (d.signature_data && /^data:image\/[a-z+]+;base64,[A-Za-z0-9+/=]+$/.test(d.signature_data)) {
+        h += '<div class="sm-pv-sig"><div class="k" style="font-size:10px;font-weight:700;text-transform:uppercase;color:#8e8e93;margin-bottom:6px;">Signature</div><img src="'+d.signature_data+'"></div>';
+      }
       document.getElementById('pvBody').innerHTML = h;
       let a = '<a class="sm-pv-btn blue" href="/invoice/'+d.id+'/download">Download</a>';
       if (d.deleted_at) { a += '<button class="sm-pv-btn" onclick="previewTrashAction(\'restore\','+d.id+')">Restore</button><button class="sm-pv-btn danger" onclick="previewTrashAction(\'purge\','+d.id+')">Delete permanently</button>'; }
