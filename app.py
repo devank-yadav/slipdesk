@@ -2678,7 +2678,7 @@ def submit_signature(token):
         if ids:
             placeholders = ','.join('?' * len(ids))
             conn.execute(
-                f"UPDATE invoices SET signature_status = 'signed', signed_at = ? WHERE id IN ({placeholders})",
+                f"UPDATE invoices SET signature_status = 'signed', signed_at = ? WHERE id IN ({placeholders}) AND deleted_at IS NULL",
                 [now_str] + ids
             )
 
