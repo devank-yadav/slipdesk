@@ -1381,7 +1381,12 @@
       } else {
         d.setDate(d.getDate() + offset);
       }
-      document.getElementById('date').value = d.toISOString().slice(0, 10);
+      // Build the date from LOCAL parts, not toISOString() (UTC) — the latter
+      // shifts to the next/prev day for IST users in the evening.
+      const y = d.getFullYear();
+      const mo = String(d.getMonth() + 1).padStart(2, '0');
+      const da = String(d.getDate()).padStart(2, '0');
+      document.getElementById('date').value = `${y}-${mo}-${da}`;
       calcTime();
     }
 
@@ -1657,10 +1662,21 @@
           s.src = 'https://maps.googleapis.com/maps/api/js?key=' + mapsKey +
                   '&libraries=places&callback=_onMapsReady';
           s.async = true;
+          // If the Maps script fails to load (bad key, blocked, offline), don't
+          // leave the builder stuck on "Loading map…" forever — surface a hint.
+          s.onerror = function () {
+            const ld = document.getElementById('mapsLoading');
+            if (ld) ld.textContent = 'Map could not load — use Manual entry, or check your connection.';
+          };
           document.head.appendChild(s);
         } else if (!mapsKey) {
           document.getElementById('noKeyNotice').style.display = '';
         }
+      })
+      .catch(() => {
+        // /config/maps_key fetch failed — show the no-key notice so the user
+        // falls back to Manual rather than waiting on a map that never loads.
+        const nn = document.getElementById('noKeyNotice'); if (nn) nn.style.display = '';
       });
 
     let _originAcAttached = false;
