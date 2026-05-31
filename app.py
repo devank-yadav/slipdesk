@@ -1450,7 +1450,7 @@ def bulk_action():
                            starting_time, closing_time, total_time,
                            project_code, mail_approval_date, route_covered, driver_name,
                            closing_date
-                    FROM invoices WHERE id IN ({placeholders})""",
+                    FROM invoices WHERE id IN ({placeholders}) AND deleted_at IS NULL""",
                 selected_ids
             ).fetchall()
             sig_map = _build_sig_map(conn, [int(i) for i in selected_ids])
@@ -1482,7 +1482,7 @@ def bulk_action():
                            route_covered, dn, remarks, project_code,
                            mail_approval_date, bill_status, payment_date,
                            created_at
-                    FROM invoices WHERE id IN ({placeholders})
+                    FROM invoices WHERE id IN ({placeholders}) AND deleted_at IS NULL
                     ORDER BY date DESC, id DESC""",
                 selected_ids,
             ).fetchall()
@@ -1522,7 +1522,7 @@ def bulk_action():
                            starting_time, closing_time, total_time,
                            project_code, mail_approval_date, route_covered, driver_name,
                            COALESCE(bill_status, 'Bill Generated')
-                    FROM invoices WHERE id IN ({placeholders})""",
+                    FROM invoices WHERE id IN ({placeholders}) AND deleted_at IS NULL""",
                 selected_ids
             ).fetchall()
             sig_map = _build_sig_map(conn, [int(i) for i in selected_ids])
@@ -1563,7 +1563,7 @@ def bulk_action():
                            starting_time, closing_time, total_time,
                            project_code, mail_approval_date, route_covered, driver_name,
                            COALESCE(bill_status, 'Bill Generated')
-                    FROM invoices WHERE id IN ({placeholders})""",
+                    FROM invoices WHERE id IN ({placeholders}) AND deleted_at IS NULL""",
                 selected_ids
             ).fetchall()
             sig_map = _build_sig_map(conn, [int(i) for i in selected_ids])
