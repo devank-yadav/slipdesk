@@ -669,6 +669,15 @@ def _add_perf_headers(response):
     return response
 
 
+def _safe_int(val, default=0):
+    """Parse an int from user input, falling back to default on None/blank/non-numeric.
+    Prevents 500s from query args like ?year=abc or ?page=foo."""
+    try:
+        return int(str(val).strip())
+    except (TypeError, ValueError, AttributeError):
+        return default
+
+
 def _hash_pw(pw: str) -> str:
     """Salted password hash. Uses pbkdf2:sha256 explicitly — werkzeug's scrypt
     default is unavailable on some OpenSSL/Python builds (raises at runtime)."""
@@ -1207,8 +1216,8 @@ def admin_portal(_partial=False):
     status_quick   = request.args.get('status_quick', '')  # pending_bill | pending_pay | paid
     sig_filter     = request.args.get('sig_filter', '')    # none | pending | signed
 
-    page = max(int(request.args.get('page', 1) or 1), 1)
-    page_size = int(request.args.get('page_size', 10) or 10)
+    page = max(_safe_int(request.args.get('page'), 1), 1)
+    page_size = _safe_int(request.args.get('page_size'), 10)
     page_size = min(max(page_size, 10), 200)
     offset = (page - 1) * page_size
     base_args = request.args.to_dict(flat=True)
@@ -1675,24 +1684,35 @@ def generate_invoice():
         return redirect(url_for('home'))
 
     admin_username = session['admin']
-    customer_name = request.form['customer_name']
-    company_name = request.form['company_name']
-    date_value = request.form['date']
-    duty_slip_no = request.form['duty_slip_no']
-    vehicle_type = request.form['vehicle_type']
-    vehicle_no = request.form['vehicle_no']
-    starting_km = request.form['starting_km']
-    closing_km = request.form['closing_km']
-    total_km = request.form['total_km']
-    starting_time = request.form['starting_time']
-    closing_time = request.form['closing_time']
-    total_time = request.form['total_time']
+    # Use .get() for every field so a missing key never raises a 500. Required
+    # fields are validated explicitly below.
+    customer_name = (request.form.get('customer_name', '') or '').strip()
+    company_name = request.form.get('company_name', '')
+    date_value = request.form.get('date', '')
+    duty_slip_no = request.form.get('duty_slip_no', '')
+    vehicle_type = request.form.get('vehicle_type', '')
+    vehicle_no = request.form.get('vehicle_no', '')
+    starting_km = request.form.get('starting_km', '')
+    closing_km = request.form.get('closing_km', '')
+    total_km = request.form.get('total_km', '')
+    starting_time = request.form.get('starting_time', '')
+    closing_time = request.form.get('closing_time', '')
+    total_time = request.form.get('total_time', '')
     project_code = request.form.get('project_code', '')
     mail_approval_date = request.form.get('mail_approval_date', '')
     closing_date = request.form.get('closing_date', '') or ''
-    route_covered = request.form['route_covered']
-    driver_name = request.form['driver_name']
+    route_covered = request.form.get('route_covered', '')
+    driver_name = request.form.get('driver_name', '')
     route_stops_json = request.form.get('route_stops_json', '')
+
+    # Minimum required fields to create a slip. Fail with a clear message instead
+    # of a 500 (or silently saving a blank slip).
+    if not customer_name or not date_value:
+        is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        msg = 'Customer name and date are required.'
+        if is_ajax:
+            return jsonify({'ok': False, 'error': msg}), 400
+        return msg, 400
 
     # Normalize names to existing canonical versions (case-duplicate guard) using the
     # in-memory cached reference lists — avoids two DB round-trips on the hot path.
@@ -3056,8 +3076,10 @@ def _slip_mgmt_query(year, month, status, date_type, q=None,
         where += f" AND strftime('%Y', {col}) = ?"
         params.append(str(year))
     if month:
-        where += f" AND strftime('%m', {col}) = ?"
-        params.append(f"{int(month):02d}")
+        _m = _safe_int(month, 0)
+        if 1 <= _m <= 12:
+            where += f" AND strftime('%m', {col}) = ?"
+            params.append(f"{_m:02d}")
     STATUS_MAP = {
         'generated': "COALESCE(bill_status,'Bill Generated') = 'Bill Generated'",
         'submitted':  "bill_status = 'Bill Submitted'",
@@ -3092,7 +3114,7 @@ _SLIP_COLS = ("id, duty_slip_no, date, created_at, customer_name, company_name, 
 def _slip_args():
     """Read all All Files filter/sort/group/pagination args from the request."""
     return {
-        'year':      int(request.args.get('year', date.today().year)),
+        'year':      _safe_int(request.args.get('year'), date.today().year),
         'month':     request.args.get('month', ''),
         'status':    request.args.get('status', 'all'),
         'date_type': request.args.get('date_type', 'duty'),
@@ -3107,8 +3129,8 @@ def _slip_args():
         'group':     request.args.get('group', 'none'),
         'trashed':   request.args.get('trashed', '0') == '1',
         'view':      'grid' if request.args.get('view') == 'grid' else 'list',
-        'page':      max(1, int(request.args.get('page', 1) or 1)),
-        'page_size': min(200, max(10, int(request.args.get('page_size', 50) or 50))),
+        'page':      max(1, _safe_int(request.args.get('page'), 1)),
+        'page_size': min(200, max(10, _safe_int(request.args.get('page_size'), 50))),
     }
 
 
