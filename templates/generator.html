@@ -972,7 +972,7 @@
       const form = this;
       if (_dupDismissed) { submitGenerate(form); return; } // user already acknowledged
       const customer = (form.elements['customer_name'] || {}).value || '';
-      const date     = (form.elements['dn'] || {}).value || '';
+      const date     = (form.elements['date'] || {}).value || '';
       const vehicleNo= (form.elements['vehicle_no'] || {}).value || '';
       if (!customer || !date) { submitGenerate(form); return; } // nothing to check
 
@@ -1195,7 +1195,7 @@
     function saveAsTemplate() {
       const form = document.querySelector('form[action="/generate"]');
       const fields = ['customer_name','company_name','driver_name','vehicle_type',
-                      'vehicle_no','dn','starting_km','total_km','remarks',
+                      'vehicle_no','date','starting_km','total_km','remarks',
                       'project_code','mail_approval_date'];
       const params = new URLSearchParams();
       fields.forEach(f => {
@@ -2189,7 +2189,7 @@
     (function() {
       const DRAFT_KEY = 'osprey_slip_draft';
       const DRAFT_FIELDS = [
-        'customer_name','company_name','dn','duty_slip_no','closing_date',
+        'customer_name','company_name','date','duty_slip_no','closing_date',
         'vehicle_type','vehicle_no','starting_km','closing_km','total_km',
         'starting_time','closing_time','total_time','project_code',
         'mail_approval_date','route_covered','driver_name'
@@ -2226,7 +2226,12 @@
         });
         if (!hasContent) return;
 
-        localStorage.setItem(DRAFT_KEY, JSON.stringify({ ts: Date.now(), fields }));
+        // Wrap in try/catch: localStorage can throw (Safari private mode, quota
+        // exceeded with a large route_stops_json). A failed autosave must never
+        // break form editing.
+        try {
+          localStorage.setItem(DRAFT_KEY, JSON.stringify({ ts: Date.now(), fields }));
+        } catch (e) { return; }
 
         // Show subtle "Draft saved" indicator
         const ind = document.getElementById('draftSavedIndicator');
@@ -2287,13 +2292,17 @@
         document.getElementById('draftBanner').style.display = 'none';
       };
 
-      // On page load: show restore banner if draft exists
+      // On page load: show restore banner if draft exists. Include the draft's
+      // customer name so the user makes an informed choice — otherwise restoring
+      // could silently merge one customer's draft into a different new slip.
       if (!isClone) {
         const raw = localStorage.getItem(DRAFT_KEY);
         if (raw) {
           try {
-            const { ts } = JSON.parse(raw);
-            document.getElementById('draftAge').textContent = relativeTime(ts);
+            const { ts, fields } = JSON.parse(raw);
+            const who = (fields && fields['customer_name'] || '').trim();
+            const ageEl = document.getElementById('draftAge');
+            ageEl.textContent = relativeTime(ts) + (who ? ` · ${who}` : '');
             document.getElementById('draftBanner').style.display = '';
           } catch(e) { clearDraft(); }
         }
