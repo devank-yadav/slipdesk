@@ -607,7 +607,7 @@
     <span class="quick-tpl-label">Quick fill:</span>
     <button type="button" class="quick-tpl-btn quick-tpl-last" id="lastSlipBtn" onclick="applyLastSlip(this)">↩ Last Slip</button>
     {% for tpl in quick_templates %}
-    <button type="button" class="quick-tpl-btn" onclick="applyQuickTemplate({{ tpl[0] }})">{{ tpl[1] }}</button>
+    <button type="button" class="quick-tpl-btn" onclick="applyQuickTemplate({{ tpl[0] }}, this)">{{ tpl[1] }}</button>
     {% endfor %}
   </div>
 
@@ -1039,7 +1039,15 @@
         const b = document.getElementById('btnSubmit');
         if (b) { b.disabled = false; b.textContent = 'Generate Duty Slip'; }
       })
-      .catch(() => { form.submit(); }); // fallback: native submit → success page
+      .catch(() => {
+        // Do NOT native-resubmit here: if the first POST actually reached the
+        // server (and saved) but the response was malformed/truncated, a second
+        // submit would create a DUPLICATE slip. Re-enable the button and let the
+        // user retry deliberately.
+        const b = document.getElementById('btnSubmit');
+        if (b) { b.disabled = false; b.textContent = 'Generate Duty Slip'; }
+        alert('Could not confirm the slip was saved. Please check All Files before retrying — if it is not there, click Generate again.');
+      });
     }
 
     function openSuccessModal(d) {
@@ -1450,9 +1458,11 @@
         .finally(() => btn.classList.remove('loading'));
     }
 
-    function applyQuickTemplate(id) {
-      const btn = event.currentTarget;
-      btn.classList.add('loading');
+    function applyQuickTemplate(id, btn) {
+      // btn is passed from the inline handler (this). Don't rely on the global
+      // `event` object — it's undefined in Firefox and on keyboard activation.
+      btn = btn || (typeof event !== 'undefined' ? event.currentTarget : null);
+      if (btn) btn.classList.add('loading');
       fetch('/templates/' + id + '/json')
         .then(r => r.json())
         .then(d => {
@@ -1480,7 +1490,7 @@
           // bump use_count silently
           fetch('/templates/' + id + '/use', { method: 'POST' });
         })
-        .finally(() => btn.classList.remove('loading'));
+        .finally(() => { if (btn) btn.classList.remove('loading'); });
     }
 
     // =====================================================================
