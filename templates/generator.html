@@ -1820,7 +1820,7 @@
       input.dataset.acAttached = '1';
       const ac = new google.maps.places.Autocomplete(input, {
         componentRestrictions: { country: 'in' },
-        fields: ['place_id', 'name', 'formatted_address', 'geometry'],
+        fields: ['place_id', 'name', 'formatted_address', 'geometry', 'address_components'],
       });
       ac.addListener('place_changed', () => {
         const place = ac.getPlace();
@@ -1828,9 +1828,26 @@
         // that didn't resolve to a place.
         if (!place || !(place.place_id || place.geometry)) return;
         if (place.name) {
-          // Show only the place NAME in the field and in the route text…
-          input.value = place.name;
-          input.dataset.shortName = place.name;
+          // Show NAME + SECTOR (e.g. "Car Stand, Sector 37"). The sector is an
+          // Indian sublocality; prefer the primary sector, then finer ones, then
+          // any "Sector …" component, falling back to the city if there's no
+          // sector. Routing still uses place_id, so accuracy is unaffected.
+          const comps = place.address_components || [];
+          const findSector = (types) => comps.find(c =>
+            types.some(t => c.types.includes(t)) && /sector/i.test(c.long_name));
+          const sector = findSector(['sublocality_level_1'])
+                      || findSector(['sublocality_level_2'])
+                      || findSector(['sublocality', 'neighborhood'])
+                      || comps.find(c => /sector/i.test(c.long_name));
+          const locality = comps.find(c => c.types.includes('locality'));
+          const area = sector || locality;
+          let label = place.name;
+          if (area && area.long_name &&
+              place.name.toLowerCase().indexOf(area.long_name.toLowerCase()) === -1) {
+            label = place.name + ', ' + area.long_name;
+          }
+          input.value = label;
+          input.dataset.shortName = label;
           // …but keep the exact location for accurate distance routing.
           if (place.place_id) input.dataset.placeId = place.place_id;
           else delete input.dataset.placeId;
