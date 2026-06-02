@@ -1820,27 +1820,31 @@
       input.dataset.acAttached = '1';
       const ac = new google.maps.places.Autocomplete(input, {
         componentRestrictions: { country: 'in' },
-        fields: ['name', 'formatted_address', 'address_components'],
+        fields: ['place_id', 'name', 'formatted_address', 'geometry'],
       });
       ac.addListener('place_changed', () => {
         const place = ac.getPlace();
-        if (!place || !place.geometry) return;
-        if (place && place.name) {
-          let shortName = place.name;
-          if (place.address_components) {
-            const subloc = place.address_components.find(c => c.types.includes('sublocality_level_1'));
-            const loc    = place.address_components.find(c => c.types.includes('locality'));
-            const area   = subloc || loc;
-            if (area && area.short_name !== place.name) {
-              shortName = place.name + ', ' + area.short_name;
-            }
-          }
-          input.dataset.shortName = shortName;
+        // A real selection has a place_id (and usually geometry). Ignore raw text
+        // that didn't resolve to a place.
+        if (!place || !(place.place_id || place.geometry)) return;
+        if (place.name) {
+          // Show only the place NAME in the field and in the route text…
+          input.value = place.name;
+          input.dataset.shortName = place.name;
+          // …but keep the exact location for accurate distance routing.
+          if (place.place_id) input.dataset.placeId = place.place_id;
+          else delete input.dataset.placeId;
+          input.dataset.fullValue = place.formatted_address || '';
         }
         debouncedCalc();
       });
-      // Clear cached short name if the user manually edits the field
-      input.addEventListener('input', () => { delete input.dataset.shortName; });
+      // If the user manually edits the field, the cached name + routing refs no
+      // longer apply — drop them so the typed text is used as-is.
+      input.addEventListener('input', () => {
+        delete input.dataset.shortName;
+        delete input.dataset.placeId;
+        delete input.dataset.fullValue;
+      });
     }
 
     // =====================================================================
@@ -1967,16 +1971,19 @@
       row.querySelector('.loop-preview').textContent = '↻ ' + seq.join(' → ');
     }
 
-    // Expand a stops/loops list into a flat sequence of { value, short }
+    // Expand a stops/loops list into a flat sequence of { value, short, placeId, full }.
+    // - value/short: display text (short = place name when picked from Google)
+    // - placeId/full: exact routing references so distance stays accurate even
+    //   though only the name is shown.
     function expandStops() {
       const result = [];
       const items = [...document.querySelectorAll('#waypointsList > .waypoint-row')];
       let prev = null;
-      const push = (value, short) => {
+      const push = (value, short, placeId, full) => {
         if (!value) return;
         // Avoid consecutive duplicates
         if (prev && prev.value === value) return;
-        const item = { value, short: short || value };
+        const item = { value, short: short || value, placeId: placeId || '', full: full || '' };
         result.push(item);
         prev = item;
       };
@@ -1990,18 +1997,23 @@
           if (!fromV || !toV) continue;
           const fromS  = fromIn.dataset.shortName || fromV;
           const toS    = toIn.dataset.shortName   || toV;
+          const fromPid = fromIn.dataset.placeId || '', fromFull = fromIn.dataset.fullValue || '';
+          const toPid   = toIn.dataset.placeId   || '', toFull   = toIn.dataset.fullValue   || '';
           const count  = Math.max(1, parseInt(row.querySelector('.loop-count').value, 10) || 1);
-          let curV = fromV, curS = fromS;
-          push(curV, curS);
+          let curV = fromV, curS = fromS, curPid = fromPid, curFull = fromFull;
+          push(curV, curS, curPid, curFull);
           for (let i = 0; i < count; i++) {
-            const nextV = (curV === fromV) ? toV : fromV;
-            const nextS = (curV === fromV) ? toS : fromS;
-            push(nextV, nextS);
-            curV = nextV; curS = nextS;
+            const toFrom = (curV === fromV);
+            const nextV = toFrom ? toV : fromV;
+            const nextS = toFrom ? toS : fromS;
+            const nextPid = toFrom ? toPid : fromPid;
+            const nextFull = toFrom ? toFull : fromFull;
+            push(nextV, nextS, nextPid, nextFull);
+            curV = nextV; curS = nextS; curPid = nextPid; curFull = nextFull;
           }
         } else {
           const i = row.querySelector('.waypoint-input');
-          push(i.value.trim(), i.dataset.shortName || '');
+          push(i.value.trim(), i.dataset.shortName || '', i.dataset.placeId || '', i.dataset.fullValue || '');
         }
       }
       return result;
@@ -2055,16 +2067,24 @@
         return;
       }
 
-      const expanded = expandStops();   // [{value, short}, ...]
+      const expanded = expandStops();   // [{value, short, placeId, full}, ...]
       const stopValues = expanded.map(s => s.value);
 
+      // Build the routing reference for each location: prefer the exact place_id,
+      // then the full address, then the (possibly name-only) text. This keeps the
+      // distance accurate even though the field shows just the name.
+      const refOf = (placeId, full, text) =>
+        placeId ? { placeId } : (full || text);
+      const originRef = refOf(originEl.dataset.placeId, originEl.dataset.fullValue, origin);
+      const stopRefs  = expanded.map(s => refOf(s.placeId, s.full, s.value));
+
       const returnChecked = document.getElementById('returnToOrigin').checked;
-      const destination   = returnChecked ? origin : (stopValues[stopValues.length - 1] || origin);
+      const destination   = returnChecked ? originRef : (stopRefs[stopRefs.length - 1] || originRef);
 
       // For Directions API: middle stops are waypoints, last stop is destination (unless returning)
       const waypointsForAPI = returnChecked
-        ? stopValues.map(loc => ({ location: loc, stopover: true }))
-        : stopValues.slice(0, -1).map(loc => ({ location: loc, stopover: true }));
+        ? stopRefs.map(loc => ({ location: loc, stopover: true }))
+        : stopRefs.slice(0, -1).map(loc => ({ location: loc, stopover: true }));
 
       // If only origin and no stops → don't call Directions
       if (!stopValues.length && !returnChecked) {
@@ -2079,7 +2099,7 @@
       }
 
       dirService.route({
-        origin,
+        origin: originRef,
         destination,
         waypoints: waypointsForAPI,
         travelMode: google.maps.TravelMode.DRIVING,
