@@ -1898,6 +1898,42 @@ def last_slip_json():
     })
 
 
+@app.route('/last_closing_km')
+def last_closing_km():
+    """Suggest the next Starting KM = the previous slip's Closing KM. Scoped to the
+    SAME vehicle_no when given (odometer continuity), falling back to the overall
+    most-recent slip with a non-empty closing_km. Returns matched_vehicle so the UI
+    can label the hint."""
+    if 'admin' not in session:
+        return jsonify({}), 401
+    vehicle_no = (request.args.get('vehicle_no') or '').strip()
+    base = ("SELECT closing_km, vehicle_no FROM invoices "
+            "WHERE admin_username = ? AND deleted_at IS NULL "
+            "AND closing_km IS NOT NULL AND TRIM(closing_km) != '' ")
+    row = None
+    matched_vehicle = False
+    with sqlite3.connect(DATABASE) as conn:
+        if vehicle_no:
+            row = conn.execute(
+                base + "AND LOWER(vehicle_no) = LOWER(?) ORDER BY id DESC LIMIT 1",
+                (session['admin'], vehicle_no)
+            ).fetchone()
+            if row:
+                matched_vehicle = True
+        if not row:
+            row = conn.execute(
+                base + "ORDER BY id DESC LIMIT 1",
+                (session['admin'],)
+            ).fetchone()
+    if not row:
+        return jsonify({}), 404
+    return jsonify({
+        'closing_km': row[0] or '',
+        'vehicle_no': row[1] or '',
+        'matched_vehicle': matched_vehicle,
+    })
+
+
 @app.route('/templates/<int:template_id>/json', methods=['GET'])
 def template_json(template_id):
     if 'admin' not in session:

@@ -721,6 +721,11 @@
         <div class="field">
           <label for="starting_km">Starting KM</label>
           <input type="text" id="starting_km" name="starting_km" inputmode="numeric" value="{{ prefill.get('starting_km', '') }}">
+          <div id="startKmHint" style="display:none;margin-top:5px;font-size:12px;color:var(--text-muted);">
+            <span id="startKmHintText"></span>
+            <button type="button" id="startKmHintUse" onclick="useStartKmHint()"
+                    style="margin-left:6px;padding:1px 8px;border:1px solid var(--blue);background:#eef4ff;color:var(--blue);border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Use</button>
+          </div>
         </div>
         <div class="field">
           <label for="closing_km">Closing KM</label>
@@ -1372,6 +1377,55 @@
       recalcCloseFromStartAndTotal();
       kmSyncLock = false;
     });
+
+    // =====================================================================
+    // SUGGESTED STARTING KM  (= previous slip's closing KM, per-vehicle)
+    // =====================================================================
+    let _startKmSuggestion = '';
+    function useStartKmHint() {
+      if (!_startKmSuggestion) return;
+      startKmEl.value = _startKmSuggestion;
+      startKmEl.dispatchEvent(new Event('input'));  // triggers Total/Closing recalc
+      const hint = document.getElementById('startKmHint');
+      if (hint) hint.style.display = 'none';
+    }
+    function fetchStartKmHint() {
+      const hint = document.getElementById('startKmHint');
+      if (!hint || !startKmEl) return;
+      // Don't nag if Starting KM is already filled (clone / template / draft / typed).
+      if (startKmEl.value.trim()) { hint.style.display = 'none'; return; }
+      const veh = (document.getElementById('vehicle_no') || {}).value || '';
+      const qs = veh.trim() ? ('?vehicle_no=' + encodeURIComponent(veh.trim())) : '';
+      fetch('/last_closing_km' + qs)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+          if (!d || !d.closing_km || startKmEl.value.trim()) { hint.style.display = 'none'; return; }
+          _startKmSuggestion = String(d.closing_km);
+          const where = d.matched_vehicle ? ' · for this vehicle' : ' · last slip';
+          document.getElementById('startKmHintText').textContent =
+            'Previous closing: ' + _startKmSuggestion + ' km' + where;
+          hint.style.display = '';
+        })
+        .catch(() => { hint.style.display = 'none'; });
+    }
+    // Re-check when the vehicle changes (suggestion is per-vehicle) and hide once
+    // the user fills Starting KM themselves.
+    (function () {
+      const veh = document.getElementById('vehicle_no');
+      let _vehTimer = null;
+      if (veh) {
+        const trigger = () => { clearTimeout(_vehTimer); _vehTimer = setTimeout(fetchStartKmHint, 300); };
+        veh.addEventListener('change', trigger);
+        veh.addEventListener('blur', trigger);
+      }
+      if (startKmEl) {
+        startKmEl.addEventListener('input', () => {
+          if (startKmEl.value.trim()) {
+            const h = document.getElementById('startKmHint'); if (h) h.style.display = 'none';
+          }
+        });
+      }
+    })();
 
     function setQuickDate(offset) {
       const d = new Date();
@@ -2424,6 +2478,9 @@
       } else if (routeVal) {
         parseTextToMap(routeVal);
       }
+      // Suggest Starting KM from the previous slip's closing KM — runs last, so the
+      // "already filled" guard sees any clone/template/draft prefill first.
+      if (typeof fetchStartKmHint === 'function') { try { fetchStartKmHint(); } catch (e) {} }
     })();
   </script>
 </body>
