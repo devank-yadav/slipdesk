@@ -721,10 +721,10 @@
         <div class="field">
           <label for="starting_km">Starting KM</label>
           <input type="text" id="starting_km" name="starting_km" inputmode="numeric" value="{{ prefill.get('starting_km', '') }}">
-          <div id="startKmHint" style="display:none;margin-top:5px;font-size:12px;color:var(--text-muted);">
-            <span id="startKmHintText"></span>
+          <div id="startKmHint" style="display:none;margin-top:7px;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span id="startKmHintText" style="font-size:12.5px;color:var(--text-muted);font-weight:500;"></span>
             <button type="button" id="startKmHintUse" onclick="useStartKmHint()"
-                    style="margin-left:6px;padding:1px 8px;border:1px solid var(--blue);background:#eef4ff;color:var(--blue);border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">Use</button>
+                    style="padding:5px 14px;border:none;background:var(--blue);color:#fff;border-radius:7px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 1px 3px rgba(0,122,255,0.35);">↓ Use this</button>
           </div>
         </div>
         <div class="field">
@@ -1309,10 +1309,12 @@
       const vehicleItems = Object.entries(vehicleMap).map(([v, no]) => ({ value: v, secondary: no || '' }));
       new Autocomplete(vTypeEl, vehicleItems, item => {
         if (vehicleMap[item.value] !== undefined) vNoEl.value = vehicleMap[item.value];
+        if (window._refreshStartKmHint) window._refreshStartKmHint();  // vehicle changed → refresh per-vehicle KM hint
       });
       vTypeEl.addEventListener('input', function () {
         const no = vehicleMap[this.value];
         if (no !== undefined) vNoEl.value = no;
+        if (window._refreshStartKmHint) window._refreshStartKmHint();  // programmatic vehicle_no set → refresh hint
       });
 
       const customerItems = Object.entries(customerMap).map(([c, co]) => ({ value: c, secondary: co || '' }));
@@ -1395,28 +1397,35 @@
       // Don't nag if Starting KM is already filled (clone / template / draft / typed).
       if (startKmEl.value.trim()) { hint.style.display = 'none'; return; }
       const veh = (document.getElementById('vehicle_no') || {}).value || '';
-      const qs = veh.trim() ? ('?vehicle_no=' + encodeURIComponent(veh.trim())) : '';
-      fetch('/last_closing_km' + qs)
+      // Strictly per-vehicle: no vehicle entered → no suggestion (never show a
+      // different car's reading).
+      if (!veh.trim()) { hint.style.display = 'none'; _startKmSuggestion = ''; return; }
+      fetch('/last_closing_km?vehicle_no=' + encodeURIComponent(veh.trim()))
         .then(r => r.ok ? r.json() : null)
         .then(d => {
-          if (!d || !d.closing_km || startKmEl.value.trim()) { hint.style.display = 'none'; return; }
+          if (!d || !d.closing_km || startKmEl.value.trim()) { hint.style.display = 'none'; _startKmSuggestion = ''; return; }
           _startKmSuggestion = String(d.closing_km);
-          const where = d.matched_vehicle ? ' · for this vehicle' : ' · last slip';
           document.getElementById('startKmHintText').textContent =
-            'Previous closing: ' + _startKmSuggestion + ' km' + where;
-          hint.style.display = '';
+            'This vehicle last ended at ' + _startKmSuggestion + ' km';
+          hint.style.display = 'flex';
         })
-        .catch(() => { hint.style.display = 'none'; });
+        .catch(() => { hint.style.display = 'none'; _startKmSuggestion = ''; });
     }
+    // Expose a debounced refresh so other code (e.g. the vehicle_type→vehicle_no
+    // auto-fill, which sets the value programmatically without firing events) can
+    // re-run the per-vehicle suggestion.
+    let _vehTimer = null;
+    window._refreshStartKmHint = function () {
+      clearTimeout(_vehTimer); _vehTimer = setTimeout(fetchStartKmHint, 250);
+    };
     // Re-check when the vehicle changes (suggestion is per-vehicle) and hide once
     // the user fills Starting KM themselves.
     (function () {
       const veh = document.getElementById('vehicle_no');
-      let _vehTimer = null;
       if (veh) {
-        const trigger = () => { clearTimeout(_vehTimer); _vehTimer = setTimeout(fetchStartKmHint, 300); };
-        veh.addEventListener('change', trigger);
-        veh.addEventListener('blur', trigger);
+        veh.addEventListener('change', window._refreshStartKmHint);
+        veh.addEventListener('blur', window._refreshStartKmHint);
+        veh.addEventListener('input', window._refreshStartKmHint);
       }
       if (startKmEl) {
         startKmEl.addEventListener('input', () => {

@@ -1900,37 +1900,29 @@ def last_slip_json():
 
 @app.route('/last_closing_km')
 def last_closing_km():
-    """Suggest the next Starting KM = the previous slip's Closing KM. Scoped to the
-    SAME vehicle_no when given (odometer continuity), falling back to the overall
-    most-recent slip with a non-empty closing_km. Returns matched_vehicle so the UI
-    can label the hint."""
+    """Suggest the next Starting KM = the previous slip's Closing KM for the SAME
+    vehicle (odometer continuity). STRICTLY per-vehicle: if no vehicle_no is given,
+    or that vehicle has no prior slip with a closing_km, return nothing — never
+    suggest a different car's reading."""
     if 'admin' not in session:
         return jsonify({}), 401
     vehicle_no = (request.args.get('vehicle_no') or '').strip()
-    base = ("SELECT closing_km, vehicle_no FROM invoices "
-            "WHERE admin_username = ? AND deleted_at IS NULL "
-            "AND closing_km IS NOT NULL AND TRIM(closing_km) != '' ")
-    row = None
-    matched_vehicle = False
+    if not vehicle_no:
+        return jsonify({}), 404
     with sqlite3.connect(DATABASE) as conn:
-        if vehicle_no:
-            row = conn.execute(
-                base + "AND LOWER(vehicle_no) = LOWER(?) ORDER BY id DESC LIMIT 1",
-                (session['admin'], vehicle_no)
-            ).fetchone()
-            if row:
-                matched_vehicle = True
-        if not row:
-            row = conn.execute(
-                base + "ORDER BY id DESC LIMIT 1",
-                (session['admin'],)
-            ).fetchone()
+        row = conn.execute(
+            "SELECT closing_km, vehicle_no FROM invoices "
+            "WHERE admin_username = ? AND deleted_at IS NULL "
+            "AND closing_km IS NOT NULL AND TRIM(closing_km) != '' "
+            "AND LOWER(TRIM(vehicle_no)) = LOWER(?) ORDER BY id DESC LIMIT 1",
+            (session['admin'], vehicle_no)
+        ).fetchone()
     if not row:
         return jsonify({}), 404
     return jsonify({
         'closing_km': row[0] or '',
         'vehicle_no': row[1] or '',
-        'matched_vehicle': matched_vehicle,
+        'matched_vehicle': True,
     })
 
 
