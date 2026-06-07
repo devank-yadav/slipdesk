@@ -295,6 +295,7 @@
         </select>
       </label>
       <button class="sm-filter-toggle" id="filterToggle" onclick="toggleFilters()">Filters</button>
+      <button class="sm-filter-toggle" id="recomputeKmBtn" onclick="openRecomputeModal()" title="Fix a whole month's odometer readings for one vehicle">↻ Recompute KM</button>
     </div>
 
     <div class="sm-filters" id="advFilters">
@@ -367,6 +368,32 @@
     <label style="font-size:12px;color:var(--muted);">Link valid for</label>
     <select id="sgDays"><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option></select>
     <div class="sm-modal-row"><button onclick="closeModal('signModal')">Cancel</button><button class="primary" onclick="confirmSign()">Create link</button></div>
+  </div>
+</div>
+<!-- Recompute month KM modal -->
+<div class="sm-modal" id="recomputeModal">
+  <div class="sm-modal-box" style="max-width:680px;">
+    <h3>Recompute odometer KM for a month</h3>
+    <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">
+      Pick a vehicle and enter its correct <b>starting reading</b> for the month. Each slip's
+      <b>Total KM stays the same</b>; starting &amp; closing are rebuilt in a continuous chain
+      (date, then slip number). Preview before applying.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:10px;">
+      <div><label style="font-size:11px;color:var(--muted);display:block;">Year</label>
+        <input type="number" id="rcYear" style="width:90px;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;"></div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;">Month</label>
+        <select id="rcMonth" style="padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;"></select></div>
+      <div style="flex:1;min-width:140px;"><label style="font-size:11px;color:var(--muted);display:block;">Vehicle</label>
+        <select id="rcVehicle" onchange="rcVehicleChanged()" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;"><option value="">Loading…</option></select></div>
+      <div><label style="font-size:11px;color:var(--muted);display:block;">Month starting KM</label>
+        <input type="number" id="rcStartKm" inputmode="numeric" placeholder="e.g. 12000" style="width:140px;padding:8px;border:1px solid var(--border);border-radius:8px;font-family:inherit;"></div>
+      <button class="primary" onclick="rcPreview()" style="padding:8px 14px;">Preview</button>
+    </div>
+    <div id="rcResult" style="max-height:340px;overflow:auto;font-size:12.5px;"></div>
+    <div class="sm-modal-row" style="margin-top:12px;">
+      <button onclick="closeModal('recomputeModal')">Close</button>
+      <button class="primary" id="rcApplyBtn" onclick="rcApply()" disabled style="opacity:0.5;">Apply changes</button>
+    </div>
   </div>
 </div>
 
@@ -532,6 +559,107 @@
   function openSignModal(ids) { _signIds = ids || selectedIds(); if (!_signIds.length) return; document.getElementById('sgCount').textContent = _signIds.length; document.getElementById('signModal').classList.add('open'); }
   function confirmSign() { _postForm('/request_signature', _signIds, { expiry_days: document.getElementById('sgDays').value }); }
   function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  // ===== Recompute month KM (per-vehicle, preview → apply) =====
+  const RC_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function _rcEsc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  function openRecomputeModal() {
+    const ySel = document.getElementById('rcYear'); ySel.value = _smYear;
+    const mSel = document.getElementById('rcMonth');
+    mSel.innerHTML = RC_MONTHS.map((m,i)=>'<option value="'+(i+1)+'">'+m+'</option>').join('');
+    mSel.value = _smMonth || '1';  // default to the selected month, else January
+    document.getElementById('rcStartKm').value = '';
+    document.getElementById('rcResult').innerHTML = '';
+    _rcSetApply(false);
+    document.getElementById('recomputeModal').classList.add('open');
+    rcLoadVehicles();
+    // Reload the vehicle list whenever year/month change.
+    ySel.onchange = rcLoadVehicles; mSel.onchange = rcLoadVehicles;
+  }
+  function _rcSetApply(on) {
+    const b = document.getElementById('rcApplyBtn');
+    b.disabled = !on; b.style.opacity = on ? '1' : '0.5';
+  }
+  function rcVehicleChanged() { document.getElementById('rcResult').innerHTML=''; _rcSetApply(false); }
+  function rcLoadVehicles() {
+    const y = document.getElementById('rcYear').value, m = document.getElementById('rcMonth').value;
+    const sel = document.getElementById('rcVehicle');
+    sel.innerHTML = '<option value="">Loading…</option>';
+    document.getElementById('rcResult').innerHTML = ''; _rcSetApply(false);
+    fetch('/admin/slips/recompute_preview?year='+encodeURIComponent(y)+'&month='+encodeURIComponent(m))
+      .then(r => r.ok ? r.json() : {vehicles:[]})
+      .then(d => {
+        const vs = (d && d.vehicles) || [];
+        if (!vs.length) { sel.innerHTML = '<option value="">No vehicles this month</option>'; return; }
+        sel.innerHTML = '<option value="">Select a vehicle…</option>' +
+          vs.map(v => '<option value="'+_rcEsc(v.vehicle_no)+'">'+_rcEsc(v.vehicle_no)+' ('+v.count+' slip'+(v.count!=1?'s':'')+')</option>').join('');
+      })
+      .catch(() => { sel.innerHTML = '<option value="">Could not load</option>'; });
+  }
+  function rcPreview() {
+    const y = document.getElementById('rcYear').value, m = document.getElementById('rcMonth').value;
+    const veh = document.getElementById('rcVehicle').value;
+    const start = document.getElementById('rcStartKm').value;
+    const box = document.getElementById('rcResult');
+    if (!veh) { box.innerHTML = '<div style="color:var(--red);">Pick a vehicle first.</div>'; _rcSetApply(false); return; }
+    if (start === '' || isNaN(parseFloat(start))) { box.innerHTML = '<div style="color:var(--red);">Enter a valid starting KM.</div>'; _rcSetApply(false); return; }
+    box.innerHTML = 'Calculating…';
+    fetch('/admin/slips/recompute_preview?year='+encodeURIComponent(y)+'&month='+encodeURIComponent(m)+'&vehicle_no='+encodeURIComponent(veh)+'&start_km='+encodeURIComponent(start))
+      .then(r => r.json())
+      .then(d => {
+        if (!d || !d.ok) { box.innerHTML = '<div style="color:var(--red);">'+_rcEsc((d&&d.error)||'Could not preview')+'</div>'; _rcSetApply(false); return; }
+        if (!d.rows.length) { box.innerHTML = '<div style="color:var(--muted);">No slips for that vehicle/month.</div>'; _rcSetApply(false); return; }
+        let warn = '';
+        const anyBad = d.rows.some(r => r.flags.indexOf('no_total')>=0);
+        const anySigned = d.rows.some(r => r.flags.indexOf('signed')>=0);
+        if (anyBad) warn += '<div style="color:#b45309;margin-bottom:6px;">⚠ Some slips have no Total KM — their closing equals starting. Fix the total first if needed.</div>';
+        if (anySigned) warn += '<div style="color:#b45309;margin-bottom:6px;">⚠ Some slips are signed — their KM will still be changed.</div>';
+        let h = warn + '<table style="width:100%;border-collapse:collapse;">'+
+          '<tr style="text-align:left;color:var(--muted);border-bottom:1px solid var(--hairline);">'+
+          '<th style="padding:4px;">Slip</th><th style="padding:4px;">Date</th><th style="padding:4px;">Total</th>'+
+          '<th style="padding:4px;">Start</th><th style="padding:4px;">Close</th></tr>';
+        d.rows.forEach(r => {
+          const sChg = String(r.old_start)!==String(r.new_start), cChg = String(r.old_close)!==String(r.new_close);
+          const arrow = (oldv,newv,chg) => chg
+            ? '<span style="color:var(--muted);text-decoration:line-through;">'+_rcEsc(oldv||'—')+'</span> → <b style="color:var(--blue);">'+_rcEsc(newv)+'</b>'
+            : _rcEsc(newv);
+          const flag = r.flags.indexOf('no_total')>=0 ? ' ⚠' : '';
+          h += '<tr style="border-bottom:1px solid var(--hairline);">'+
+            '<td style="padding:4px;">'+_rcEsc(r.duty_slip_no||'—')+flag+'</td>'+
+            '<td style="padding:4px;">'+_rcEsc(r.date)+'</td>'+
+            '<td style="padding:4px;">'+_rcEsc(r.total_km||'—')+'</td>'+
+            '<td style="padding:4px;">'+arrow(r.old_start,r.new_start,sChg)+'</td>'+
+            '<td style="padding:4px;">'+arrow(r.old_close,r.new_close,cChg)+'</td></tr>';
+        });
+        h += '</table>';
+        box.innerHTML = h;
+        _rcSetApply(true);
+      })
+      .catch(() => { box.innerHTML = '<div style="color:var(--red);">Preview failed.</div>'; _rcSetApply(false); });
+  }
+  function rcApply() {
+    const y = document.getElementById('rcYear').value, m = document.getElementById('rcMonth').value;
+    const veh = document.getElementById('rcVehicle').value;
+    const start = document.getElementById('rcStartKm').value;
+    if (!veh || start === '') return;
+    if (!confirm('Apply the new odometer readings to all '+_rcEsc(veh)+' slips in '+RC_MONTHS[(parseInt(m,10)||1)-1]+' '+y+'? This overwrites their starting & closing KM.')) return;
+    _rcSetApply(false);
+    const fd = new FormData();
+    fd.append('year', y); fd.append('month', m); fd.append('vehicle_no', veh); fd.append('start_km', start);
+    fetch('/admin/slips/recompute_apply', { method:'POST', body: fd })
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.ok) {
+          if (window._showToast) window._showToast('Updated '+d.updated+' slip(s)');
+          closeModal('recomputeModal');
+          loadRows(false);
+        } else {
+          if (window._showToast) window._showToast((d&&d.error)||'Apply failed', true);
+          _rcSetApply(true);
+        }
+      })
+      .catch(() => { if (window._showToast) window._showToast('Apply failed', true); _rcSetApply(true); });
+  }
 
   // Preview
   function rowClick(e, id) { if (e.target.closest('input,select,a,button,form')) return; openPreview(id); }

@@ -678,6 +678,31 @@ def _safe_int(val, default=0):
         return default
 
 
+def _safe_float(val, default=0.0):
+    """Parse a float from a free-form KM string ('1340', '1,340', '140.5').
+    Strips commas/spaces; non-numeric/blank → default."""
+    try:
+        return float(str(val).replace(',', '').strip())
+    except (TypeError, ValueError, AttributeError):
+        return default
+
+
+def _fmt_km(n):
+    """Format a computed KM number cleanly: integer → no decimals, else 1 dp."""
+    try:
+        f = float(n)
+    except (TypeError, ValueError):
+        return ''
+    return str(int(f)) if f == int(f) else f'{f:.1f}'
+
+
+def _km_sort_key(slip_no):
+    """Numeric-aware key for chaining slips by duty_slip_no. Extracts the digits
+    so 'OSP-2' < 'OSP-10'; non-numeric slip nos sort last (big sentinel)."""
+    digits = ''.join(c for c in str(slip_no or '') if c.isdigit())
+    return int(digits) if digits else 10**12
+
+
 def _hash_pw(pw: str) -> str:
     """Salted password hash. Uses pbkdf2:sha256 explicitly — werkzeug's scrypt
     default is unavailable on some OpenSSL/Python builds (raises at runtime)."""
@@ -1924,6 +1949,113 @@ def last_closing_km():
         'vehicle_no': row[1] or '',
         'matched_vehicle': True,
     })
+
+
+def _recompute_chain(admin, year, month, vehicle_no, start_km):
+    """Build the recomputed odometer chain for one vehicle in one month.
+
+    Returns a list of dicts (id, duty_slip_no, date, old_start, old_close,
+    total_km, new_start, new_close, flags) in chain order. total_km is kept
+    fixed; starting/closing are rewritten so the chain is continuous from
+    start_km. SINGLE SOURCE OF TRUTH — used by both preview and apply, so the
+    apply step never trusts client-computed numbers.
+    """
+    yr = f"{_safe_int(year, 0):04d}"
+    mo = f"{_safe_int(month, 0):02d}"
+    with sqlite3.connect(DATABASE) as conn:
+        rows = conn.execute(
+            "SELECT id, duty_slip_no, date, COALESCE(starting_km,''), COALESCE(closing_km,''), "
+            "COALESCE(total_km,''), COALESCE(signature_status,'') FROM invoices "
+            "WHERE admin_username = ? AND deleted_at IS NULL "
+            "AND strftime('%Y', date) = ? AND strftime('%m', date) = ? "
+            "AND LOWER(TRIM(vehicle_no)) = LOWER(?)",
+            (admin, yr, mo, vehicle_no)
+        ).fetchall()
+    # Chain order: date ASC, then numeric duty_slip_no, then id.
+    rows = sorted(rows, key=lambda r: (r[2] or '', _km_sort_key(r[1]), r[0]))
+    chain = []
+    running = float(start_km)
+    for r in rows:
+        tkm_raw = r[5]
+        tkm = _safe_float(tkm_raw, 0.0)
+        bad_total = (str(tkm_raw).strip() == '') or (_safe_float(tkm_raw, None) is None)
+        new_start = running
+        new_close = running + tkm
+        running = new_close
+        flags = []
+        if bad_total:
+            flags.append('no_total')
+        if r[6] == 'signed':
+            flags.append('signed')
+        chain.append({
+            'id': r[0],
+            'duty_slip_no': r[1] or '',
+            'date': r[2] or '',
+            'old_start': r[3], 'old_close': r[4],
+            'total_km': r[5],
+            'new_start': _fmt_km(new_start),
+            'new_close': _fmt_km(new_close),
+            'flags': flags,
+        })
+    return chain
+
+
+@app.route('/admin/slips/recompute_preview')
+def recompute_preview():
+    """Preview the per-vehicle month KM recompute (read-only, writes nothing).
+    With no vehicle_no: list the distinct vehicles in that month so the UI can
+    populate its picker. With a vehicle_no + start_km: return the chain."""
+    if 'admin' not in session:
+        return jsonify({}), 401
+    admin = session['admin']
+    year = request.args.get('year', '')
+    month = request.args.get('month', '')
+    vehicle_no = (request.args.get('vehicle_no') or '').strip()
+    yr = f"{_safe_int(year, 0):04d}"
+    mo = f"{_safe_int(month, 0):02d}"
+    if not vehicle_no:
+        with sqlite3.connect(DATABASE) as conn:
+            vrows = conn.execute(
+                "SELECT vehicle_no, COUNT(*) FROM invoices "
+                "WHERE admin_username = ? AND deleted_at IS NULL "
+                "AND strftime('%Y', date) = ? AND strftime('%m', date) = ? "
+                "AND vehicle_no IS NOT NULL AND TRIM(vehicle_no) != '' "
+                "GROUP BY LOWER(TRIM(vehicle_no)) ORDER BY COUNT(*) DESC",
+                (admin, yr, mo)
+            ).fetchall()
+        return jsonify({'vehicles': [{'vehicle_no': r[0], 'count': r[1]} for r in vrows]})
+    start_km = _safe_float(request.args.get('start_km'), None)
+    if start_km is None:
+        return jsonify({'ok': False, 'error': 'Enter a valid starting KM'}), 400
+    chain = _recompute_chain(admin, year, month, vehicle_no, start_km)
+    return jsonify({'ok': True, 'rows': chain, 'count': len(chain)})
+
+
+@app.route('/admin/slips/recompute_apply', methods=['POST'])
+def recompute_apply():
+    """Apply the per-vehicle month KM recompute. Rebuilds the chain server-side
+    (never trusts client numbers) and writes only starting_km/closing_km."""
+    if 'admin' not in session:
+        return jsonify({'ok': False}), 401
+    admin = session['admin']
+    year = request.form.get('year', '')
+    month = request.form.get('month', '')
+    vehicle_no = (request.form.get('vehicle_no') or '').strip()
+    start_km = _safe_float(request.form.get('start_km'), None)
+    if not vehicle_no or start_km is None:
+        return jsonify({'ok': False, 'error': 'Vehicle and a valid starting KM are required'}), 400
+    chain = _recompute_chain(admin, year, month, vehicle_no, start_km)
+    if not chain:
+        return jsonify({'ok': False, 'error': 'No slips found for that vehicle/month'}), 404
+    queries = [
+        ("UPDATE invoices SET starting_km = ?, closing_km = ? "
+         "WHERE id = ? AND admin_username = ? AND deleted_at IS NULL",
+         (c['new_start'], c['new_close'], c['id'], admin))
+        for c in chain
+    ]
+    _db_multi_exec(queries)
+    _cache_bust()
+    return jsonify({'ok': True, 'updated': len(chain)})
 
 
 @app.route('/templates/<int:template_id>/json', methods=['GET'])
