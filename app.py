@@ -703,6 +703,106 @@ def _km_sort_key(slip_no):
     return int(digits) if digits else 10**12
 
 
+# ===================================================================
+# MONTHLY GST TAX INVOICE — helpers (Step 1)
+# ===================================================================
+
+# Default seller (company) block — pre-seeds the config so the invoice works out
+# of the box; editable in Settings → Company / GST details.
+_SELLER_DEFAULTS = {
+    'seller_name':       'OSPREY TRAVELS',
+    'seller_address':    'B-213, Sarswati Enclave Near Sector-10A Gurugram (HR.)',
+    'seller_contact':    '09718305627, 9718305628, 9990043176',
+    'seller_email':      'ospreytravels05@gmail.com',
+    'seller_gstin':      '06AFOPY0188G2ZX',
+    'seller_state_code': '6',
+}
+
+
+def _config_get(conn, key, default=''):
+    row = conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
+    return (row[0] if row and row[0] is not None else default)
+
+
+def _config_set(conn, key, value):
+    conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, value))
+
+
+def _seller_config():
+    """Return the seller/company block, falling back to the sample defaults for
+    any key that hasn't been customised in Settings yet."""
+    out = dict(_SELLER_DEFAULTS)
+    try:
+        with sqlite3.connect(DATABASE) as conn:
+            for k in _SELLER_DEFAULTS:
+                v = _config_get(conn, k, None)
+                if v:
+                    out[k] = v
+    except Exception:
+        pass
+    return out
+
+
+def _fiscal_year(d=None):
+    """Indian fiscal year string for a date (Apr–Mar). e.g. 2025-05-31 -> '2025-26'."""
+    if d is None:
+        d = date.today()
+    elif isinstance(d, str):
+        try:
+            d = datetime.strptime(d[:10], '%Y-%m-%d').date()
+        except Exception:
+            d = date.today()
+    y = d.year
+    start = y if d.month >= 4 else y - 1
+    return f"{start}-{str(start + 1)[-2:]}"
+
+
+def _next_invoice_no(conn, fy):
+    """Next sequence number for a fiscal year, formatted 'FY/NNN' (e.g.
+    '2025-26/090'). Reads+bumps a per-FY counter in config. Stays editable per
+    invoice — this only supplies the suggested next value."""
+    key = f"invoice_seq_{fy}"
+    last = _safe_int(_config_get(conn, key, '0'), 0)
+    nxt = last + 1
+    _config_set(conn, key, str(nxt))
+    return f"{fy}/{nxt:03d}"
+
+
+def _inr(n):
+    """Format a number as a plain rupee amount (2 dp, dropped if whole)."""
+    try:
+        f = round(float(n), 2)
+    except (TypeError, ValueError):
+        return '0'
+    return str(int(f)) if f == int(f) else f'{f:.2f}'
+
+
+def _invoice_totals(lines, tax):
+    """Compute invoice totals from line items + tax settings. SERVER-SIDE source
+    of truth (never trust client-sent totals).
+
+    lines: list of dicts each with an 'amount' (already qty*rate or a fixed amount).
+    tax:   {'cgst': pct, 'sgst': pct, 'igst': pct, 'toll': amount} where pcts are
+           fractions (0.09) OR percents (9) — both accepted.
+    Returns dict: taxable, cgst_amt, sgst_amt, igst_amt, gst_total, toll, grand_total.
+    """
+    def _pct(v):
+        v = _safe_float(v, 0.0)
+        return v / 100.0 if v > 1 else v  # accept 9 or 0.09
+    taxable = sum(_safe_float(l.get('amount'), 0.0) for l in (lines or []))
+    cgst = round(taxable * _pct((tax or {}).get('cgst')), 2)
+    sgst = round(taxable * _pct((tax or {}).get('sgst')), 2)
+    igst = round(taxable * _pct((tax or {}).get('igst')), 2)
+    toll = round(_safe_float((tax or {}).get('toll'), 0.0), 2)
+    gst_total = round(cgst + sgst + igst, 2)
+    grand = round(taxable + gst_total + toll, 2)
+    return {
+        'taxable': round(taxable, 2),
+        'cgst_amt': cgst, 'sgst_amt': sgst, 'igst_amt': igst,
+        'gst_total': gst_total, 'toll': toll, 'grand_total': grand,
+    }
+
+
 def _hash_pw(pw: str) -> str:
     """Salted password hash. Uses pbkdf2:sha256 explicitly — werkzeug's scrypt
     default is unavailable on some OpenSSL/Python builds (raises at runtime)."""
@@ -1086,6 +1186,31 @@ def init_db():
         sig_cols = [col[1] for col in conn.execute("PRAGMA table_info(signature_requests)").fetchall()]
         if 'signer_ua' not in sig_cols:
             conn.execute("ALTER TABLE signature_requests ADD COLUMN signer_ua TEXT")
+
+        # Monthly GST tax invoices (aggregate a month's slips into a billed invoice).
+        # Header/lines/tax are stored as JSON so every invoice stays re-editable and
+        # re-exportable without schema churn (same pattern as route_stops_json).
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS monthly_invoices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                admin_username TEXT,
+                invoice_no TEXT,
+                fiscal_year TEXT,
+                invoice_date TEXT,
+                kind TEXT,
+                customer_name TEXT,
+                period_year TEXT,
+                period_month TEXT,
+                bill_to_json TEXT,
+                lines_json TEXT,
+                tax_json TEXT,
+                totals_json TEXT,
+                status TEXT,
+                created_at TEXT,
+                updated_at TEXT,
+                deleted_at TEXT
+            )
+        ''')
 
         # Customer portal token
         cust_cols = [col[1] for col in conn.execute("PRAGMA table_info(customers)").fetchall()]
@@ -2259,6 +2384,12 @@ def settings_page():
                 with sqlite3.connect(DATABASE) as conn:
                     conn.execute("DELETE FROM customers WHERE id = ?", (customer_id,))
                 message = "Customer removed."
+        elif action == 'save_company':
+            # Company / GST details used on monthly tax invoices.
+            with sqlite3.connect(DATABASE) as conn:
+                for k in _SELLER_DEFAULTS:
+                    _config_set(conn, k, (request.form.get(k, '') or '').strip())
+            message = "Company / GST details saved."
         _cache_bust()
 
     # Batch all settings queries → 1 HTTP round-trip on Turso
@@ -2308,7 +2439,8 @@ def settings_page():
                            monthly_report_rows=monthly_report_rows,
                            not_submitted=not_submitted,
                            bill_submitted=bill_submitted,
-                           payment_received=payment_received)
+                           payment_received=payment_received,
+                           seller=_seller_config())
 
 
 @app.route('/export/monthly_report')
