@@ -348,6 +348,10 @@
       <svg class="icon" width="16" height="16"><use href="#icon-truck"/></svg>
       <span class="nav-label">Drivers</span>
     </a>
+    <a href="/admin/invoices" class="nav-link {% if '/admin/invoices' in request.path %}active{% endif %}">
+      <svg class="icon" width="16" height="16"><use href="#icon-currency"/></svg>
+      <span class="nav-label">Invoices</span>
+    </a>
     {# Bulk Import hidden from the menu (route still works directly) #}
     {#
     <a href="/admin/bulk_import" class="nav-link {% if '/admin/bulk_import' in request.path %}active{% endif %}">

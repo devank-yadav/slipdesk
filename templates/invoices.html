@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <title>Monthly Invoice — Osprey Travels</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --primary:#007aff; --primary-hover:#0062cc; --danger:#ff3b30;
+      --text:#1c1c1e; --muted:#8e8e93; --border:#e5e5ea; --bg:#f2f2f7;
+      --card:#fff; --hairline:#ededf2; --blue:#007aff; --green:#166534;
+    }
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+           background:var(--bg); color:var(--text); }
+    .wrap { max-width:1080px; margin:0 auto; padding:20px 16px 80px; }
+    h1 { font-size:21px; margin:14px 0 4px; }
+    .sub { color:var(--muted); font-size:13px; margin-bottom:18px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:16px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:end; }
+    label { font-size:11px; color:var(--muted); font-weight:600; display:block; }
+    input, select { padding:8px 9px; border:1px solid var(--border); border-radius:8px; font-family:inherit; font-size:13px; margin-top:3px; }
+    .btn { padding:8px 14px; border:1px solid var(--border); border-radius:8px; background:#fff; font-weight:600; font-size:13px; cursor:pointer; font-family:inherit; color:var(--text); }
+    .btn.primary { background:var(--primary); color:#fff; border-color:var(--primary); }
+    .btn:disabled { opacity:.5; cursor:not-allowed; }
+    table.inv { width:100%; border-collapse:collapse; font-size:12.5px; margin-top:10px; }
+    table.inv th { text-align:left; color:var(--muted); font-weight:600; border-bottom:1px solid var(--border); padding:6px 4px; font-size:11px; }
+    table.inv td { border-bottom:1px solid var(--hairline); padding:3px 4px; vertical-align:middle; }
+    table.inv input { width:100%; margin:0; padding:5px 6px; font-size:12.5px; }
+    table.inv input.amt { background:#f7f7fa; font-weight:600; }
+    .hint { font-size:10.5px; color:var(--muted); }
+    .grp-start td { border-top:2px solid var(--border); }
+    .totals { margin-top:14px; margin-left:auto; max-width:380px; }
+    .totals .tr { display:flex; justify-content:space-between; padding:4px 0; font-size:13px; }
+    .totals .tr.grand { font-weight:800; font-size:16px; border-top:2px solid var(--border); margin-top:4px; padding-top:8px; }
+    .col-narrow { width:60px; } .col-mid { width:90px; }
+    .pill { padding:5px 11px; border-radius:20px; border:1.5px solid var(--border); background:#fff; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+    .pill.on { border-color:var(--blue); color:var(--blue); background:#eef4ff; }
+    .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#1c1c1e; color:#fff; padding:10px 18px; border-radius:10px; font-size:13px; opacity:0; transition:.2s; pointer-events:none; z-index:99; }
+    .toast.show { opacity:1; }
+    .seg { display:inline-flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-top:3px; }
+    .seg button { border:none; background:#fff; padding:8px 14px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit; color:var(--muted); }
+    .seg button.on { background:var(--primary); color:#fff; }
+    .muted-note { font-size:12px; color:var(--muted); }
+  </style>
+</head>
+<body>
+  {% include 'navbar.html' %}
+  <div class="wrap">
+    <h1>Monthly Tax Invoice</h1>
+    <div class="sub">Pull a month's slips for a customer, fill rates &amp; extras, and generate a GST invoice. Everything is editable.</div>
+
+    <!-- Setup -->
+    <div class="card">
+      <div class="row">
+        <div><label>Invoice type</label>
+          <div class="seg" id="kindSeg">
+            <button type="button" data-kind="per_day" class="on" onclick="setKind('per_day')">Per-day cars</button>
+            <button type="button" data-kind="innova" onclick="setKind('innova')">Innova (fixed monthly)</button>
+          </div>
+        </div>
+        <div><label>Customer</label><br>
+          <select id="fCustomer" style="min-width:240px;">
+            <option value="">Select customer…</option>
+            {% for c in customer_list %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+          </select>
+        </div>
+        <div><label>Year</label><br><input type="number" id="fYear" value="{{ cur_year }}" style="width:90px;"></div>
+        <div><label>Month</label><br>
+          <select id="fMonth" style="width:120px;">
+            {% for i in range(1,13) %}<option value="{{ i }}" {% if i == cur_month %}selected{% endif %}>{{ ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][i-1] }}</option>{% endfor %}
+          </select>
+        </div>
+        <button class="btn primary" onclick="prefill()">↻ Pull slips</button>
+      </div>
+      <div class="muted-note" id="pullNote" style="margin-top:8px;"></div>
+    </div>
+
+    <!-- Bill-to + invoice no -->
+    <div class="card" id="billCard" style="display:none;">
+      <div class="row">
+        <div style="flex:2;min-width:280px;"><label>Bill to (M/s …)</label><input type="text" id="btName" style="width:100%;"></div>
+        <div><label>Bill No.</label><input type="text" id="btInvNo" style="width:150px;"></div>
+        <div><label>Date</label><input type="date" id="btDate" style="width:150px;"></div>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <div style="flex:2;min-width:280px;"><label>Address</label><input type="text" id="btAddr" style="width:100%;"></div>
+        <div><label>Customer GSTIN</label><input type="text" id="btGstin" style="width:180px;"></div>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <div style="flex:1;min-width:220px;"><label>Kind Attn</label><input type="text" id="btAttn" style="width:100%;"></div>
+        <div style="flex:1;min-width:220px;"><label>Vehicle / project list (shown on invoice)</label><input type="text" id="btVehicles" style="width:100%;"></div>
+      </div>
+    </div>
+
+    <!-- Lines -->
+    <div class="card" id="linesCard" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <strong>Line items</strong>
+        <button class="btn" onclick="addLine()">+ Add row</button>
+      </div>
+      <table class="inv">
+        <thead><tr>
+          <th style="width:46px;">S.No</th><th style="width:74px;">HSN/SAC</th><th style="width:108px;">Date</th>
+          <th>Particulars</th><th style="width:80px;">Qty/Km</th><th style="width:80px;">Rate</th>
+          <th style="width:92px;">Amount</th><th style="width:30px;"></th>
+        </tr></thead>
+        <tbody id="lineBody"></tbody>
+      </table>
+
+      <!-- Tax footer -->
+      <div class="totals">
+        <div class="tr"><span>Total Taxable Value</span><b id="tTaxable">0</b></div>
+        <div class="tr" style="align-items:center;">
+          <span>GST mode</span>
+          <span>
+            <button type="button" class="pill on" id="pillIntra" onclick="setGstMode('intra')">CGST+SGST</button>
+            <button type="button" class="pill" id="pillInter" onclick="setGstMode('inter')">IGST</button>
+          </span>
+        </div>
+        <div class="tr" id="rowCgst"><span>CGST <input type="number" id="pctCgst" value="9" style="width:54px;">%</span><b id="tCgst">0</b></div>
+        <div class="tr" id="rowSgst"><span>SGST <input type="number" id="pctSgst" value="9" style="width:54px;">%</span><b id="tSgst">0</b></div>
+        <div class="tr" id="rowIgst" style="display:none;"><span>IGST <input type="number" id="pctIgst" value="18" style="width:54px;">%</span><b id="tIgst">0</b></div>
+        <div class="tr"><span>Parking &amp; Toll Tax</span><input type="number" id="toll" value="0" style="width:90px;text-align:right;" oninput="recompute()"></div>
+        <div class="tr grand"><span>Total Invoice Value</span><b id="tGrand">0</b></div>
+      </div>
+
+      <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn primary" onclick="saveInvoice()">💾 Save</button>
+        <button class="btn" id="btnPdf" onclick="downloadOut('pdf')" disabled title="Available after Step 3">Download PDF</button>
+        <button class="btn" id="btnXlsx" onclick="downloadOut('xlsx')" disabled title="Available after Step 4">Download Excel</button>
+        <span class="muted-note" id="saveNote" style="align-self:center;"></span>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+<script>
+  let _kind = 'per_day';
+  let _invId = 0;
+  let _gstMode = 'intra';
+
+  function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
+  function _num(v){ const n=parseFloat(String(v==null?'':v).replace(/,/g,'').trim()); return isNaN(n)?0:n; }
+  function _fmt(n){ n=Math.round(n*100)/100; return n===Math.trunc(n)? String(n) : n.toFixed(2); }
+
+  function setKind(k){ _kind=k; document.querySelectorAll('#kindSeg button').forEach(b=>b.classList.toggle('on', b.dataset.kind===k)); }
+  function setGstMode(m){
+    _gstMode=m;
+    document.getElementById('pillIntra').classList.toggle('on', m==='intra');
+    document.getElementById('pillInter').classList.toggle('on', m==='inter');
+    document.getElementById('rowCgst').style.display = m==='intra'?'':'none';
+    document.getElementById('rowSgst').style.display = m==='intra'?'':'none';
+    document.getElementById('rowIgst').style.display = m==='inter'?'':'none';
+    recompute();
+  }
+
+  function lineRow(l, isGroupStart){
+    const tr=document.createElement('tr');
+    if(isGroupStart) tr.className='grp-start';
+    const cell=(html)=>{const td=document.createElement('td'); td.innerHTML=html; return td;};
+    tr.appendChild(cell('<input value="'+(l.sno||'')+'" class="f-sno">'));
+    tr.appendChild(cell('<input value="'+(l.hsn||'')+'" class="f-hsn">'));
+    tr.appendChild(cell('<input value="'+(l.date||'')+'" class="f-date" placeholder="">'));
+    let p='<input value="'+(l.particulars||'').replace(/"/g,'&quot;')+'" class="f-part">';
+    if(l.km_hint||l.time_hint){ p+='<div class="hint">slip: '+(l.km_hint||'?')+' km'+(l.time_hint?(' · '+l.time_hint):'')+'</div>'; }
+    tr.appendChild(cell(p));
+    tr.appendChild(cell('<input value="'+(l.qty||'')+'" class="f-qty" inputmode="numeric">'));
+    tr.appendChild(cell('<input value="'+(l.rate||'')+'" class="f-rate" inputmode="numeric">'));
+    tr.appendChild(cell('<input value="'+(l.amount||'')+'" class="f-amt amt" inputmode="numeric">'));
+    tr.appendChild(cell('<button class="btn" style="padding:2px 8px;" onclick="this.closest(\'tr\').remove();recompute();">✕</button>'));
+    // qty*rate → amount (auto, but amount stays editable)
+    const q=tr.querySelector('.f-qty'), r=tr.querySelector('.f-rate'), a=tr.querySelector('.f-amt');
+    const auto=()=>{ if(_num(q.value)&&_num(r.value)){ a.value=_fmt(_num(q.value)*_num(r.value)); } recompute(); };
+    q.addEventListener('input',auto); r.addEventListener('input',auto); a.addEventListener('input',recompute);
+    return tr;
+  }
+  function renderLines(lines){
+    const tb=document.getElementById('lineBody'); tb.innerHTML='';
+    (lines||[]).forEach(l=> tb.appendChild(lineRow(l, !!l.is_base)));
+    recompute();
+  }
+  function addLine(){ document.getElementById('lineBody').appendChild(lineRow({}, false)); }
+
+  function collectLines(){
+    return [...document.querySelectorAll('#lineBody tr')].map(tr=>({
+      sno: tr.querySelector('.f-sno').value, hsn: tr.querySelector('.f-hsn').value,
+      date: tr.querySelector('.f-date').value, particulars: tr.querySelector('.f-part').value,
+      qty: tr.querySelector('.f-qty').value, rate: tr.querySelector('.f-rate').value,
+      amount: tr.querySelector('.f-amt').value,
+    }));
+  }
+  function recompute(){
+    const taxable=[...document.querySelectorAll('#lineBody .f-amt')].reduce((s,el)=>s+_num(el.value),0);
+    document.getElementById('tTaxable').textContent=_fmt(taxable);
+    let cgst=0,sgst=0,igst=0;
+    if(_gstMode==='intra'){ cgst=taxable*_num(document.getElementById('pctCgst').value)/100; sgst=taxable*_num(document.getElementById('pctSgst').value)/100; }
+    else { igst=taxable*_num(document.getElementById('pctIgst').value)/100; }
+    const toll=_num(document.getElementById('toll').value);
+    document.getElementById('tCgst').textContent=_fmt(cgst);
+    document.getElementById('tSgst').textContent=_fmt(sgst);
+    document.getElementById('tIgst').textContent=_fmt(igst);
+    document.getElementById('tGrand').textContent=_fmt(taxable+cgst+sgst+igst+toll);
+  }
+
+  function prefill(){
+    const cust=document.getElementById('fCustomer').value;
+    const y=document.getElementById('fYear').value, m=document.getElementById('fMonth').value;
+    if(!cust){ toast('Pick a customer first'); return; }
+    document.getElementById('pullNote').textContent='Loading…';
+    fetch('/admin/invoices/prefill?kind='+_kind+'&customer='+encodeURIComponent(cust)+'&year='+y+'&month='+m)
+      .then(r=>r.ok?r.json():null).then(d=>{
+        if(!d||!d.ok){ document.getElementById('pullNote').textContent=(d&&d.error)||'Could not load'; return; }
+        _invId=0;
+        document.getElementById('pullNote').textContent = d.slip_count+' slip(s) found for this customer/month. Edit the rows below.';
+        document.getElementById('billCard').style.display='';
+        document.getElementById('linesCard').style.display='';
+        const bt=d.bill_to||{};
+        document.getElementById('btName').value = bt.name || ('M/s  '+cust+',');
+        document.getElementById('btAddr').value = bt.address || '';
+        document.getElementById('btGstin').value = bt.gstin || '';
+        document.getElementById('btAttn').value = bt.attn || '';
+        document.getElementById('btVehicles').value = bt.vehicles || (d.vehicle_nos||[]).join(', ');
+        document.getElementById('btInvNo').value = d.invoice_no || '';
+        document.getElementById('btDate').value = d.invoice_date || '';
+        renderLines(d.lines);
+        window._fy = d.fiscal_year; window._py=y; window._pm=m;
+      })
+      .catch(()=>{ document.getElementById('pullNote').textContent='Load failed'; });
+  }
+
+  function buildPayload(){
+    return {
+      id:_invId, kind:_kind, customer_name:document.getElementById('fCustomer').value,
+      invoice_no:document.getElementById('btInvNo').value, invoice_date:document.getElementById('btDate').value,
+      fiscal_year:window._fy||'', period_year:window._py||document.getElementById('fYear').value,
+      period_month:window._pm||document.getElementById('fMonth').value,
+      bill_to:{ name:document.getElementById('btName').value, address:document.getElementById('btAddr').value,
+                gstin:document.getElementById('btGstin').value, attn:document.getElementById('btAttn').value,
+                vehicles:document.getElementById('btVehicles').value },
+      lines:collectLines(),
+      tax:{ cgst:_gstMode==='intra'?_num(document.getElementById('pctCgst').value):0,
+            sgst:_gstMode==='intra'?_num(document.getElementById('pctSgst').value):0,
+            igst:_gstMode==='inter'?_num(document.getElementById('pctIgst').value):0,
+            toll:_num(document.getElementById('toll').value) },
+    };
+  }
+  function saveInvoice(cb){
+    const fd=new FormData(); fd.append('payload', JSON.stringify(buildPayload()));
+    return fetch('/admin/invoices/save',{method:'POST',body:fd}).then(r=>r.json()).then(d=>{
+      if(d&&d.ok){ _invId=d.id; document.getElementById('btInvNo').value=d.invoice_no;
+        document.getElementById('saveNote').textContent='Saved · '+d.invoice_no;
+        toast('Invoice saved'); if(cb) cb(d); }
+      else toast((d&&d.error)||'Save failed');
+    }).catch(()=>toast('Save failed'));
+  }
+  function downloadOut(fmt){
+    // Steps 3/4 enable these; save first so the export reflects edits.
+    saveInvoice(d=>{ if(d&&d.id) window.open('/admin/invoices/'+d.id+'/'+fmt,'_blank'); });
+  }
+
+  // If ?id= is present, load that invoice into the builder (for Step 5 list links).
+  (function(){
+    const id=new URLSearchParams(location.search).get('id');
+    if(!id) return;
+    fetch('/admin/invoices/'+id+'/json').then(r=>r.ok?r.json():null).then(d=>{
+      if(!d||!d.ok) return;
+      _invId=d.id; setKind(d.kind||'per_day');
+      document.getElementById('fCustomer').value=d.customer_name||'';
+      window._fy=d.fiscal_year; window._py=d.period_year; window._pm=d.period_month;
+      document.getElementById('billCard').style.display='';
+      document.getElementById('linesCard').style.display='';
+      const bt=d.bill_to||{};
+      document.getElementById('btName').value=bt.name||''; document.getElementById('btAddr').value=bt.address||'';
+      document.getElementById('btGstin').value=bt.gstin||''; document.getElementById('btAttn').value=bt.attn||'';
+      document.getElementById('btVehicles').value=bt.vehicles||'';
+      document.getElementById('btInvNo').value=d.invoice_no||''; document.getElementById('btDate').value=d.invoice_date||'';
+      const tax=d.tax||{};
+      if(_num(tax.igst)>0){ setGstMode('inter'); document.getElementById('pctIgst').value=tax.igst; }
+      else { setGstMode('intra'); if(tax.cgst!=null)document.getElementById('pctCgst').value=tax.cgst; if(tax.sgst!=null)document.getElementById('pctSgst').value=tax.sgst; }
+      document.getElementById('toll').value=tax.toll||0;
+      renderLines(d.lines);
+      document.getElementById('btnPdf').disabled=false; document.getElementById('btnXlsx').disabled=false;
+    });
+  })();
+</script>
+</body>
+</html>

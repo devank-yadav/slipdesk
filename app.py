@@ -2183,6 +2183,205 @@ def recompute_apply():
     return jsonify({'ok': True, 'updated': len(chain)})
 
 
+# ===================================================================
+# MONTHLY GST TAX INVOICES — builder backend (Step 2)
+# ===================================================================
+_INVOICE_HSN = '996601'  # SAC for "rental services of road vehicles" (from sample)
+
+
+@app.route('/admin/invoices')
+def invoices_page():
+    """The monthly invoice builder + (Step 5) saved list. Step 2 renders the
+    builder shell; the saved list is filled in later."""
+    if 'admin' not in session:
+        return redirect(url_for('home'))
+    _dl, _vr, customer_rows = _load_ref_data()
+    customer_list = [r[0] for r in customer_rows]
+    today = date.today()
+    return render_template('invoices.html',
+                           customer_list=customer_list,
+                           seller=_seller_config(),
+                           cur_year=today.year, cur_month=today.month)
+
+
+@app.route('/admin/invoices/prefill')
+def invoice_prefill():
+    """Suggest invoice lines from a customer's slips for a month. Read-only.
+    kind: 'per_day' → one row per slip; 'innova' → one fixed monthly block.
+    The user edits everything after; this is only a starting point."""
+    if 'admin' not in session:
+        return jsonify({}), 401
+    admin = session['admin']
+    year = request.args.get('year', '')
+    month = request.args.get('month', '')
+    customer = (request.args.get('customer') or '').strip()
+    kind = request.args.get('kind', 'per_day')
+    yr = f"{_safe_int(year, 0):04d}"
+    mo = f"{_safe_int(month, 0):02d}"
+    if not customer:
+        return jsonify({'ok': False, 'error': 'Pick a customer'}), 400
+
+    with sqlite3.connect(DATABASE) as conn:
+        slips = conn.execute(
+            "SELECT duty_slip_no, date, COALESCE(total_km,''), COALESCE(total_time,''), "
+            "COALESCE(vehicle_no,''), COALESCE(vehicle_type,'') FROM invoices "
+            "WHERE admin_username = ? AND deleted_at IS NULL "
+            "AND strftime('%Y', date) = ? AND strftime('%m', date) = ? "
+            "AND LOWER(TRIM(customer_name)) = LOWER(?) ORDER BY date ASC, id ASC",
+            (admin, yr, mo, customer)
+        ).fetchall()
+        # Bill-to + invoice-no suggestion: reuse this customer's most recent saved invoice.
+        last = conn.execute(
+            "SELECT bill_to_json FROM monthly_invoices WHERE admin_username = ? "
+            "AND LOWER(TRIM(customer_name)) = LOWER(?) AND deleted_at IS NULL "
+            "ORDER BY id DESC LIMIT 1",
+            (admin, customer)
+        ).fetchone()
+        inv_date = f"{yr}-{mo}-{_month_last_day(int(yr), int(mo)):02d}"
+        fy = _fiscal_year(inv_date)
+        # Peek the next number WITHOUT consuming it (consume only on save).
+        seq_key = f"invoice_seq_{fy}"
+        peek = _safe_int(_config_get(conn, seq_key, '0'), 0) + 1
+    suggested_no = f"{fy}/{peek:03d}"
+
+    bill_to = {}
+    if last and last[0]:
+        try:
+            bill_to = _json.loads(last[0])
+        except Exception:
+            bill_to = {}
+    vehicle_nos = sorted({s[4] for s in slips if s[4]})
+
+    if kind == 'innova':
+        lines = [{
+            'sno': '1', 'hsn': _INVOICE_HSN,
+            'date': f"{yr}-{mo}-01", 'date_to': inv_date,
+            'particulars': 'ONE MONTH FIXED ____KM.& __ HRS. PER DAY',
+            'qty': '', 'rate': '', 'amount': '', 'is_base': True,
+        }, {
+            'sno': '', 'hsn': '', 'date': '', 'particulars': 'After Extra Running km.',
+            'qty': '', 'rate': '', 'amount': ''},
+            {'sno': '', 'hsn': '', 'date': '', 'particulars': 'After per day use Extra Hrs.',
+             'qty': '', 'rate': '', 'amount': ''},
+        ]
+    else:
+        lines = []
+        for i, s in enumerate(slips, 1):
+            d = (s[1] or '')[:10]
+            lines.append({'sno': str(i), 'hsn': _INVOICE_HSN, 'date': d,
+                          'particulars': '__ Km. & __ Hours- ', 'qty': '', 'rate': '', 'amount': '',
+                          'km_hint': s[2], 'time_hint': s[3], 'is_base': True})
+            lines.append({'sno': '', 'hsn': '', 'date': '', 'particulars': 'Extra Km.Running - ',
+                          'qty': '', 'rate': '', 'amount': ''})
+            lines.append({'sno': '', 'hsn': '', 'date': '', 'particulars': 'Over Time after 8 hours',
+                          'qty': '', 'rate': '', 'amount': ''})
+
+    return jsonify({
+        'ok': True, 'kind': kind, 'slip_count': len(slips),
+        'lines': lines, 'bill_to': bill_to, 'vehicle_nos': vehicle_nos,
+        'invoice_no': suggested_no, 'invoice_date': inv_date, 'fiscal_year': fy,
+    })
+
+
+@app.route('/admin/invoices/save', methods=['POST'])
+def invoice_save():
+    """Create or update a monthly invoice. Totals recomputed server-side."""
+    if 'admin' not in session:
+        return jsonify({'ok': False}), 401
+    admin = session['admin']
+    try:
+        payload = _json.loads(request.form.get('payload') or '{}')
+    except Exception:
+        return jsonify({'ok': False, 'error': 'Bad payload'}), 400
+
+    inv_id = _safe_int(payload.get('id'), 0)
+    kind = payload.get('kind', 'per_day')
+    customer = (payload.get('customer_name') or '').strip()
+    invoice_date = (payload.get('invoice_date') or date.today().strftime('%Y-%m-%d'))[:10]
+    fy = payload.get('fiscal_year') or _fiscal_year(invoice_date)
+    lines = payload.get('lines') or []
+    tax = payload.get('tax') or {}
+    bill_to = payload.get('bill_to') or {}
+    period_year = str(payload.get('period_year') or '')
+    period_month = str(payload.get('period_month') or '')
+    totals = _invoice_totals(lines, tax)
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    with sqlite3.connect(DATABASE) as conn:
+        if inv_id:
+            # Update existing (keep its invoice_no unless the user edited it).
+            invoice_no = (payload.get('invoice_no') or '').strip()
+            conn.execute(
+                "UPDATE monthly_invoices SET invoice_no=?, fiscal_year=?, invoice_date=?, kind=?, "
+                "customer_name=?, period_year=?, period_month=?, bill_to_json=?, lines_json=?, "
+                "tax_json=?, totals_json=?, updated_at=? "
+                "WHERE id=? AND admin_username=? AND deleted_at IS NULL",
+                (invoice_no, fy, invoice_date, kind, customer, period_year, period_month,
+                 _json.dumps(bill_to), _json.dumps(lines), _json.dumps(tax),
+                 _json.dumps(totals), now, inv_id, admin)
+            )
+        else:
+            # New: assign the next FY number (consume the sequence now), unless the
+            # user typed their own.
+            invoice_no = (payload.get('invoice_no') or '').strip()
+            if not invoice_no:
+                invoice_no = _next_invoice_no(conn, fy)
+            else:
+                # Keep the FY counter ahead of a manually-typed number when it matches FY/NNN.
+                try:
+                    tail = int(invoice_no.split('/')[-1])
+                    key = f"invoice_seq_{fy}"
+                    if tail > _safe_int(_config_get(conn, key, '0'), 0):
+                        _config_set(conn, key, str(tail))
+                except Exception:
+                    pass
+            cur = conn.execute(
+                "INSERT INTO monthly_invoices(admin_username, invoice_no, fiscal_year, invoice_date, "
+                "kind, customer_name, period_year, period_month, bill_to_json, lines_json, tax_json, "
+                "totals_json, status, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (admin, invoice_no, fy, invoice_date, kind, customer, period_year, period_month,
+                 _json.dumps(bill_to), _json.dumps(lines), _json.dumps(tax), _json.dumps(totals),
+                 'Draft', now, now)
+            )
+            inv_id = getattr(cur, 'lastrowid', None)
+    return jsonify({'ok': True, 'id': inv_id, 'invoice_no': invoice_no, 'totals': totals})
+
+
+@app.route('/admin/invoices/<int:inv_id>/json')
+def invoice_json(inv_id):
+    """Load a saved invoice back into the builder."""
+    if 'admin' not in session:
+        return jsonify({}), 401
+    with sqlite3.connect(DATABASE) as conn:
+        r = conn.execute(
+            "SELECT id, invoice_no, fiscal_year, invoice_date, kind, customer_name, "
+            "period_year, period_month, bill_to_json, lines_json, tax_json, totals_json, status "
+            "FROM monthly_invoices WHERE id=? AND admin_username=? AND deleted_at IS NULL",
+            (inv_id, session['admin'])
+        ).fetchone()
+    if not r:
+        return jsonify({}), 404
+    def _j(s):
+        try:
+            return _json.loads(s) if s else None
+        except Exception:
+            return None
+    return jsonify({
+        'ok': True, 'id': r[0], 'invoice_no': r[1], 'fiscal_year': r[2], 'invoice_date': r[3],
+        'kind': r[4], 'customer_name': r[5], 'period_year': r[6], 'period_month': r[7],
+        'bill_to': _j(r[8]) or {}, 'lines': _j(r[9]) or [], 'tax': _j(r[10]) or {},
+        'totals': _j(r[11]) or {}, 'status': r[12] or 'Draft',
+    })
+
+
+def _month_last_day(y, m):
+    if m == 12:
+        return 31
+    from datetime import date as _d
+    return (_d(y, m + 1, 1) - timedelta(days=1)).day
+
+
 @app.route('/templates/<int:template_id>/json', methods=['GET'])
 def template_json(template_id):
     if 'admin' not in session:
