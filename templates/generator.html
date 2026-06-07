@@ -1932,7 +1932,7 @@
     // =====================================================================
     // WAYPOINTS
     // =====================================================================
-    function addWaypoint(prefillValue, prefillShort) {
+    function addWaypoint(prefillValue, prefillShort, prefillPlaceId, prefillFull) {
       wpCounter++;
       const id = 'wp_' + wpCounter;
       const row = document.createElement('div');
@@ -1950,6 +1950,10 @@
       const input = row.querySelector('.waypoint-input');
       if (prefillValue) input.value = prefillValue;
       if (prefillShort) input.dataset.shortName = prefillShort;
+      // Restore the exact routing references so a re-route after restore uses the
+      // same place as the original pick (not the ambiguous short text).
+      if (prefillPlaceId) input.dataset.placeId = prefillPlaceId;
+      if (prefillFull) input.dataset.fullValue = prefillFull;
       attachAutocomplete(input);
       input.addEventListener('blur', debouncedCalc);
       bindDrag(row);
@@ -2229,10 +2233,12 @@
     function restoreFromTemplate(data) {
       if (!data || !data.origin) return;
 
-      // Set origin
+      // Set origin (+ restore exact routing refs so re-routing matches the original pick)
       const originEl = document.getElementById('originInput');
       originEl.value = data.origin.value || '';
       if (data.origin.short) originEl.dataset.shortName = data.origin.short;
+      if (data.origin.place_id) originEl.dataset.placeId = data.origin.place_id; else delete originEl.dataset.placeId;
+      if (data.origin.full) originEl.dataset.fullValue = data.origin.full; else delete originEl.dataset.fullValue;
 
       // Clear existing waypoints
       document.getElementById('waypointsList').innerHTML = '';
@@ -2245,13 +2251,15 @@
             const fromIn = row.querySelector('.loop-from');
             const toIn   = row.querySelector('.loop-to');
             const cntIn  = row.querySelector('.loop-count');
-            if (fromIn) { fromIn.value = s.from_value || ''; if (s.from_short) fromIn.dataset.shortName = s.from_short; attachAutocomplete(fromIn); }
-            if (toIn)   { toIn.value   = s.to_value   || ''; if (s.to_short)   toIn.dataset.shortName   = s.to_short;   attachAutocomplete(toIn); }
+            if (fromIn) { fromIn.value = s.from_value || ''; if (s.from_short) fromIn.dataset.shortName = s.from_short;
+                          if (s.from_place_id) fromIn.dataset.placeId = s.from_place_id; if (s.from_full) fromIn.dataset.fullValue = s.from_full; attachAutocomplete(fromIn); }
+            if (toIn)   { toIn.value   = s.to_value   || ''; if (s.to_short)   toIn.dataset.shortName   = s.to_short;
+                          if (s.to_place_id) toIn.dataset.placeId = s.to_place_id; if (s.to_full) toIn.dataset.fullValue = s.to_full; attachAutocomplete(toIn); }
             if (cntIn)  { cntIn.value  = s.count || 2; }
             updateLoopPreview(row);
           }
         } else {
-          addWaypoint(s.value || '', s.short || '');
+          addWaypoint(s.value || '', s.short || '', s.place_id || '', s.full || '');
         }
       });
 
@@ -2293,14 +2301,18 @@
           const fromIn = row.querySelector('.loop-from'), toIn = row.querySelector('.loop-to');
           stopsData.push({ type: 'loop',
             from_value: fromIn.value.trim(), from_short: fromIn.dataset.shortName || '',
+            from_place_id: fromIn.dataset.placeId || '', from_full: fromIn.dataset.fullValue || '',
             to_value:   toIn.value.trim(),   to_short:   toIn.dataset.shortName   || '',
+            to_place_id: toIn.dataset.placeId || '', to_full: toIn.dataset.fullValue || '',
             count: parseInt(row.querySelector('.loop-count').value, 10) || 2 });
         } else {
           const inp = row.querySelector('.waypoint-input');
-          stopsData.push({ type: 'stop', value: inp.value.trim(), short: inp.dataset.shortName || '' });
+          stopsData.push({ type: 'stop', value: inp.value.trim(), short: inp.dataset.shortName || '',
+            place_id: inp.dataset.placeId || '', full: inp.dataset.fullValue || '' });
         }
       }
-      return { origin: { value: originEl.value.trim(), short: originEl.dataset.shortName || '' },
+      return { origin: { value: originEl.value.trim(), short: originEl.dataset.shortName || '',
+                         place_id: originEl.dataset.placeId || '', full: originEl.dataset.fullValue || '' },
                stops: stopsData, return_to_origin: document.getElementById('returnToOrigin').checked };
     }
 
