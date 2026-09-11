@@ -1,0 +1,4 @@
+# The templates are Jinja views (markup plus inline JS/CSS) rendered by the
+# Flask app. Leave them out of GitHub's language stats so the repo reads as
+# what it is: a Python application.
+templates/** linguist-detectable=false
